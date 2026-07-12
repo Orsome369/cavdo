@@ -9,7 +9,7 @@
         // ==========================================
         // 🔑 PASTE YOUR ACTUAL GEMINI API KEY HERE:
         // ==========================================
-        const GEMINI_API_KEY = "AQ.Ab8RN6JpRiw8gwEvla34-xngfcoC3ZZXyu3H0ssb2JCytfX1wA";
+        const GEMINI_API_KEY = "AQ.Ab8RN6LqWpQFwKWiGksnbWXBVzJotlhq9cpkWMkg_ITHKqcTow";
 
         // ==========================================
         // 🔑 PASTE YOUR POLLINATIONS API KEY HERE:
@@ -295,20 +295,26 @@
             padding: 40px 0 160px 0;
         }
 
-        .main-container.drag-over::after {
-            content: "Drop files anywhere to attach";
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(19, 26, 21, 0.85);
-            border: 2px dashed #2fd05c;
+        .drop-zone-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
             display: flex;
             align-items: center;
             justify-content: center;
+            background: rgba(19, 26, 21, 0.88);
+            border: 2px dashed #2fd05c;
             font-size: 20px;
             font-weight: 600;
             color: #2fd05c;
-            z-index: 100;
+            opacity: 0;
             pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+
+        .drop-zone-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .welcome-box {
@@ -419,6 +425,25 @@
             opacity: 1;
         }
         .edit-msg-btn:hover {
+            color: #2fd05c;
+        }
+
+        .copy-msg-btn {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.35);
+            cursor: pointer;
+            font-size: 14px;
+            position: absolute;
+            left: -60px;
+            top: 14px;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+        }
+        .message.user:hover .copy-msg-btn {
+            opacity: 1;
+        }
+        .copy-msg-btn:hover {
             color: #2fd05c;
         }
 
@@ -557,6 +582,12 @@
             color: #2fd05c;
         }
 
+        .code-tray-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
         .code-btn {
             background: none;
             border: none;
@@ -565,6 +596,9 @@
             font-size: 13px;
             font-weight: 500;
             transition: color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
 
         .code-btn:hover {
@@ -616,13 +650,57 @@
         .attachment-pill {
             display: flex;
             align-items: center;
-            gap: 8px;
-            background: rgba(47, 208, 92, 0.1);
-            border: 1px solid rgba(47, 208, 92, 0.2);
-            padding: 4px 10px;
-            border-radius: 8px;
+            gap: 10px;
+            background: rgba(47, 208, 92, 0.08);
+            border: 1px solid rgba(47, 208, 92, 0.25);
+            padding: 6px 12px 6px 6px;
+            border-radius: 12px;
             font-size: 13px;
-            color: #2fd05c;
+            color: #eafff0;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .attachment-icon-box {
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
+            border-radius: 8px;
+            background: rgba(47, 208, 92, 0.18);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .attachment-thumb {
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .attachment-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            max-width: 220px;
+        }
+
+        .attachment-file-name {
+            font-weight: 600;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .attachment-file-meta {
+            font-size: 11px;
+            color: rgba(234, 255, 240, 0.6);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
         }
 
         .remove-attachment-btn {
@@ -631,15 +709,16 @@
             color: #ff4a4a;
             cursor: pointer;
             font-weight: bold;
-            font-size: 14px;
+            font-size: 16px;
+            padding: 0 2px;
         }
 
         .input-bar {
             width: 100%;
-            height: 64px;
-            padding: 0 10px 0 20px;
+            min-height: 64px;
+            padding: 10px 10px 10px 20px;
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             gap: 12px;
             background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(30px) saturate(140%);
@@ -683,7 +762,8 @@
             color: #fff;
         }
 
-        .input-bar input {
+        .input-bar input,
+        .input-bar textarea {
             flex: 1;
             background: none;
             border: none;
@@ -693,106 +773,32 @@
             font-weight: 500;
         }
 
-        .input-bar input::placeholder {
-            color: rgba(255, 255, 255, 0.3);
+        .input-bar textarea {
+            resize: none;
+            max-height: 160px;
+            min-height: 24px;
+            line-height: 1.5;
+            padding: 6px 0;
+            font-family: 'Inter', Arial, sans-serif;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
         }
 
-        /* ==========================================================================================
-           🌐 INJECTED: LIQUID DROP-DOWN OVERLAY MENU WRAPPER & SELECTOR HOOKED ABOVE SEARCH TRACK
-           ========================================================================================== */
-        .liquid-selector-container {
-            align-self: flex-start;
-            margin-left: 12px;
-            position: relative;
-            user-select: none;
+        .input-bar textarea::-webkit-scrollbar {
+            width: 5px;
         }
-
-        .liquid-trigger-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 8px 14px;
-            border-radius: 999px;
-            font-size: 14px;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.75);
-            cursor: pointer;
-            transition: background 0.2s, border-color 0.2s, color 0.2s;
+        .input-bar textarea::-webkit-scrollbar-track {
+            background: transparent;
         }
-
-        .liquid-trigger-pill:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(47, 208, 92, 0.25);
-            color: #fff;
-        }
-
-        .liquid-trigger-pill::after {
-            content: "";
-            width: 0;
-            height: 0;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 5px solid rgba(255, 255, 255, 0.5);
-            margin-left: 2px;
-            transition: transform 0.2s ease;
-        }
-
-        .liquid-selector-container.open .liquid-trigger-pill::after {
-            transform: rotate(180deg);
-        }
-
-        .liquid-menu-dropdown {
-            position: absolute;
-            bottom: calc(100% + 8px);
-            left: 0;
-            background: rgba(22, 31, 24, 0.95);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 16px;
-            box-shadow: 0 -10px 30px rgba(0,0,0,0.5), 0 10px 30px rgba(0,0,0,0.3);
-            display: none;
-            flex-direction: column;
-            min-width: 170px;
-            padding: 6px;
-            z-index: 150;
-            animation: liquidPop 0.2s ease-out;
-        }
-
-        @keyframes liquidPop {
-            from { transform: translateY(10px) scale(0.95); opacity: 0; }
-            to { transform: translateY(0) scale(1); opacity: 1; }
-        }
-
-        .liquid-selector-container.open .liquid-menu-dropdown {
-            display: flex;
-        }
-
-        .liquid-menu-option {
-            padding: 10px 14px;
-            color: rgba(255, 255, 255, 0.75);
-            font-size: 13.5px;
-            font-weight: 500;
-            cursor: pointer;
-            border: none;
-            background: none;
-            text-align: left;
+        .input-bar textarea::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
             border-radius: 10px;
-            transition: background 0.2s, color 0.2s;
-            width: 100%;
         }
 
-        .liquid-menu-option:hover {
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
-        }
-
-        .liquid-menu-option.active {
-            color: #2fd05c;
-            background: rgba(47, 208, 92, 0.08);
-            font-weight: 600;
+        .input-bar input::placeholder,
+        .input-bar textarea::placeholder {
+            color: rgba(255, 255, 255, 0.3);
         }
 
         .action-btn {
@@ -819,6 +825,148 @@
         .action-btn.stop-state {
             background: #ff4a4a !important;
             color: #fff !important;
+        }
+
+        /* Model Selector (sender bar) */
+        .model-selector {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .model-selector-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            height: 36px;
+            padding: 0 12px 0 12px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .model-selector-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .model-selector-btn .model-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2fd05c;
+            flex-shrink: 0;
+        }
+
+        .model-selector-btn .model-caret {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-left: 2px;
+            transition: transform 0.2s ease;
+        }
+
+        .model-selector.open .model-caret {
+            transform: rotate(180deg);
+        }
+
+        .model-dropdown {
+            position: absolute;
+            bottom: 52px;
+            left: 0;
+            width: 250px;
+            background: rgba(20, 24, 21, 0.92);
+            backdrop-filter: blur(30px) saturate(160%);
+            -webkit-backdrop-filter: blur(30px) saturate(160%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 18px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 50;
+        }
+
+        .model-dropdown.show {
+            display: flex;
+            animation: modalPop 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .model-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .model-option:hover:not(.disabled) {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .model-option.active {
+            background: rgba(47, 208, 92, 0.12);
+        }
+
+        .model-option.disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            filter: grayscale(1);
+            pointer-events: none;
+        }
+
+        .model-option-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .model-option-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            flex: 1;
+        }
+
+        .model-option-name {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .model-option-desc {
+            font-size: 11.5px;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .model-option.disabled .model-option-desc {
+            color: #ff6a6a;
+        }
+
+        .model-option-check {
+            font-size: 14px;
+            color: #2fd05c;
+            width: 16px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 900px) {
+            .model-selector-btn span.model-label-text { display: none; }
+            .model-dropdown { width: 220px; }
         }
 
         /* Image Generation Layout Modules */
@@ -1060,13 +1208,14 @@
     </style>
 </head>
 <body>
+    <div class="drop-zone-overlay" id="dropZoneOverlay">📥 Drop files anywhere to attach</div>
+
 
     <div class="sidebar">
         <div class="logo">CAVDO</div>
         <button class="new-chat-btn" id="newChatBtn">
             <span>+</span> New Chat
         </button>
-
         <div class="history-section" id="historySection">
             <div class="history-title">Recent Chats</div>
         </div>
@@ -1088,32 +1237,35 @@
         </div>
 
         <div class="search-area">
-            <!-- ==========================================================================================
-                 🌐 INJECTED: LIQUID DROP-DOWN OVERLAY SELECT TRACK RIGHT ABOVE THE USER INPUT BAR
-                 ========================================================================================== -->
-            <div class="liquid-selector-container" id="liquidSelectorContainer">
-                <div class="liquid-trigger-pill" id="liquidTriggerPill">Cavdo Speed</div>
-                <div class="liquid-menu-dropdown">
-                    <button class="liquid-menu-option" data-value="cavdo-lite">Cavdo Lite</button>
-                    <button class="liquid-menu-option active" data-value="cavdo-speed">Cavdo Speed</button>
-                    <button class="liquid-menu-option" data-value="cavdo-ultimate">Cavdo Ultimate</button>
-                </div>
-            </div>
-
             <div class="attachment-preview-tray" id="previewTray">
-                <div class="attachment-pill">
-                    <span id="previewFileName">file.txt</span>
-                    <button class="remove-attachment-btn" id="removeFileBtn">×</button>
+                <div class="attachment-pill" id="attachmentPill">
+                    <div class="attachment-icon-box" id="attachmentIconBox">📄</div>
+                    <img class="attachment-thumb" id="attachmentThumb" style="display:none;">
+                    <div class="attachment-info">
+                        <span class="attachment-file-name" id="previewFileName">file.txt</span>
+                        <span class="attachment-file-meta" id="previewFileMeta">Reading file…</span>
+                    </div>
+                    <button class="remove-attachment-btn" id="removeFileBtn" title="Remove attachment">×</button>
                 </div>
             </div>
 
             <div class="input-bar">
                 <div class="search-icon" id="statusIndicator">🔍</div>
-                
+
                 <button class="attach-file-btn" id="attachBtn" title="Upload any file">+</button>
                 <input type="file" id="fileInput" style="display: none;">
 
-                <input type="text" id="userInput" placeholder="Ask Cavdo anything..." autocomplete="off">
+                <textarea id="userInput" rows="1" placeholder="Ask Cavdo anything..." autocomplete="off"></textarea>
+
+                <div class="model-selector" id="modelSelector">
+                    <button class="model-selector-btn" id="modelSelectorBtn" type="button" title="Choose model">
+                        <span class="model-dot" id="modelDot"></span>
+                        <span class="model-label-text" id="modelSelectorLabel">Cavdo Ultimate</span>
+                        <span class="model-caret">▲</span>
+                    </button>
+                    <div class="model-dropdown" id="modelDropdown"></div>
+                </div>
+
                 <button class="action-btn" id="actionBtn">↑</button>
             </div>
         </div>
@@ -1153,6 +1305,197 @@
     </div>
 
     <script>
+        // ==========================================
+        // 🧠 MODEL TIERS — highest to lowest.
+        // When the active tier's Gemini quota runs out, Cavdo
+        // automatically drops to the next tier down and greys
+        // out the exhausted option in the model menu.
+        // Swap the textModel/codeModel strings for whichever
+        // real Gemini model IDs you have access to.
+        // ==========================================
+        const MODEL_TIERS = [
+            {
+                key: 'ultimate',
+                label: 'Cavdo Ultimate',
+                desc: 'Highest intelligence',
+                icon: '💎',
+                textModel: 'gemini-3.5-flash',
+                codeModel: 'gemini-3.5-flash'
+            },
+            {
+                key: 'speed',
+                label: 'Cavdo Speed',
+                desc: 'Balanced & fast',
+                icon: '⚡',
+                textModel: 'gemini-2.5-flash',
+                codeModel: 'gemini-2.5-flash'
+            },
+            {
+                key: 'lite',
+                label: 'Cavdo Lite',
+                desc: 'Lightweight & efficient',
+                icon: '🍃',
+                textModel: 'gemini-3.1-flash-lite',
+                codeModel: 'gemini-3.1-flash-lite'
+            }
+        ];
+
+        // How long a model stays greyed-out after it hits its limit
+        // before Cavdo automatically re-checks it (ms). Default 24h,
+        // matching typical Gemini free-tier daily quota resets.
+        const MODEL_LIMIT_RESET_MS = 24 * 60 * 60 * 1000;
+        const EXHAUSTED_STORAGE_KEY = 'cavdo_exhausted_models';
+        const ACTIVE_TIER_STORAGE_KEY = 'cavdo_active_model_tier';
+
+        function loadExhaustedMap() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(EXHAUSTED_STORAGE_KEY)) || {};
+                const now = Date.now();
+                let changed = false;
+                for (const key of Object.keys(raw)) {
+                    if (now - raw[key] > MODEL_LIMIT_RESET_MS) {
+                        delete raw[key];
+                        changed = true;
+                    }
+                }
+                if (changed) localStorage.setItem(EXHAUSTED_STORAGE_KEY, JSON.stringify(raw));
+                return raw;
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function markModelExhausted(tierKey) {
+            const map = loadExhaustedMap();
+            map[tierKey] = Date.now();
+            localStorage.setItem(EXHAUSTED_STORAGE_KEY, JSON.stringify(map));
+        }
+
+        function isModelExhausted(tierKey) {
+            const map = loadExhaustedMap();
+            return Object.prototype.hasOwnProperty.call(map, tierKey);
+        }
+
+        function getTierIndexByKey(key) {
+            const idx = MODEL_TIERS.findIndex(t => t.key === key);
+            return idx === -1 ? 0 : idx;
+        }
+
+        // Restore last selected tier, falling back to the first
+        // non-exhausted tier available.
+        let activeTierIndex = getTierIndexByKey(localStorage.getItem(ACTIVE_TIER_STORAGE_KEY) || 'ultimate');
+        if (isModelExhausted(MODEL_TIERS[activeTierIndex].key)) {
+            const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key));
+            activeTierIndex = firstFree === -1 ? activeTierIndex : firstFree;
+        }
+
+        function getActiveTier() {
+            return MODEL_TIERS[activeTierIndex];
+        }
+
+        function setActiveTier(index, { persist = true } = {}) {
+            activeTierIndex = index;
+            if (persist) localStorage.setItem(ACTIVE_TIER_STORAGE_KEY, MODEL_TIERS[index].key);
+            renderModelDropdown();
+            updateModelSelectorLabel();
+        }
+
+        function updateModelSelectorLabel() {
+            const tier = getActiveTier();
+            const labelEl = document.getElementById('modelSelectorLabel');
+            const dotEl = document.getElementById('modelDot');
+            if (labelEl) labelEl.textContent = tier.label;
+            if (dotEl) dotEl.style.background = tier.key === 'lite' ? '#8fd0a0' : (tier.key === 'speed' ? '#2fd05c' : '#2fe0c0');
+        }
+
+        function renderModelDropdown() {
+            const dropdown = document.getElementById('modelDropdown');
+            if (!dropdown) return;
+            dropdown.innerHTML = '';
+
+            MODEL_TIERS.forEach((tier, index) => {
+                const exhausted = isModelExhausted(tier.key);
+                const isActive = index === activeTierIndex;
+
+                const opt = document.createElement('div');
+                opt.className = 'model-option' + (exhausted ? ' disabled' : '') + (isActive ? ' active' : '');
+                opt.title = exhausted ? `${tier.label} — limit reached, resets automatically` : tier.desc;
+
+                opt.innerHTML = `
+                    <div class="model-option-icon">${tier.icon}</div>
+                    <div class="model-option-text">
+                        <div class="model-option-name">${tier.label}</div>
+                        <div class="model-option-desc">${exhausted ? 'Limit reached — unavailable' : tier.desc}</div>
+                    </div>
+                    <div class="model-option-check">${isActive ? '✓' : ''}</div>
+                `;
+
+                if (!exhausted) {
+                    opt.onclick = () => {
+                        setActiveTier(index);
+                        closeModelDropdown();
+                    };
+                }
+
+                dropdown.appendChild(opt);
+            });
+        }
+
+        function openModelDropdown() {
+            document.getElementById('modelDropdown').classList.add('show');
+            document.getElementById('modelSelector').classList.add('open');
+        }
+
+        function closeModelDropdown() {
+            document.getElementById('modelDropdown').classList.remove('show');
+            document.getElementById('modelSelector').classList.remove('open');
+        }
+
+        function toggleModelDropdown() {
+            const dropdown = document.getElementById('modelDropdown');
+            if (dropdown.classList.contains('show')) {
+                closeModelDropdown();
+            } else {
+                renderModelDropdown();
+                openModelDropdown();
+            }
+        }
+
+        document.getElementById('modelSelectorBtn').onclick = (e) => {
+            e.stopPropagation();
+            toggleModelDropdown();
+        };
+
+        document.addEventListener('click', (e) => {
+            const selector = document.getElementById('modelSelector');
+            if (selector && !selector.contains(e.target)) closeModelDropdown();
+        });
+
+        renderModelDropdown();
+        updateModelSelectorLabel();
+
+        // Detects a Gemini rate-limit / quota-exhausted response so
+        // Cavdo can auto-switch down to the next available model.
+        function isRateLimitResponse(response, data) {
+            if (response && response.status === 429) return true;
+            const msg = (data && data.error && (data.error.message || data.error.status)) || '';
+            const lowered = String(msg).toLowerCase();
+            return lowered.includes('quota') || lowered.includes('rate limit') || lowered.includes('resource_exhausted') || lowered.includes('resource exhausted');
+        }
+
+        // Switches to the next lower model tier after the current one
+        // hits its limit. Returns the new tier, or null if every tier
+        // is exhausted.
+        function downgradeAfterLimit() {
+            markModelExhausted(MODEL_TIERS[activeTierIndex].key);
+            renderModelDropdown();
+            const nextFree = MODEL_TIERS.findIndex((t, i) => i > activeTierIndex && !isModelExhausted(t.key));
+            const fallbackAny = nextFree !== -1 ? nextFree : MODEL_TIERS.findIndex(t => !isModelExhausted(t.key));
+            if (fallbackAny === -1) return null;
+            setActiveTier(fallbackAny);
+            return MODEL_TIERS[fallbackAny];
+        }
+
         const actionBtn = document.getElementById('actionBtn');
         const userInput = document.getElementById('userInput');
         const welcomeBox = document.getElementById('welcomeBox');
@@ -1167,6 +1510,9 @@
         const fileInput = document.getElementById('fileInput');
         const previewTray = document.getElementById('previewTray');
         const previewFileName = document.getElementById('previewFileName');
+        const previewFileMeta = document.getElementById('previewFileMeta');
+        const attachmentIconBox = document.getElementById('attachmentIconBox');
+        const attachmentThumb = document.getElementById('attachmentThumb');
         const removeFileBtn = document.getElementById('removeFileBtn');
 
         const customModalOverlay = document.getElementById('customModalOverlay');
@@ -1180,14 +1526,6 @@
         const previewWindowTitle = document.getElementById('previewWindowTitle');
         const previewModalDownloadBtn = document.getElementById('previewModalDownloadBtn');
         const previewModalCloseBtn = document.getElementById('previewModalCloseBtn');
-        
-        // Liquid Select Elements
-        const liquidSelectorContainer = document.getElementById('liquidSelectorContainer');
-        const liquidTriggerPill = document.getElementById('liquidTriggerPill');
-        const liquidOptions = document.querySelectorAll('.liquid-menu-option');
-
-        // State holder for active model variable framework
-        let currentSelectedModelValue = "cavdo-speed";
 
         let isGenerating = false;
         let abortController = null;
@@ -1201,37 +1539,12 @@
         let modalActiveTargetChatId = null; 
         let thinkingInterval = null; 
 
-        // ==========================================
-        // 🌐 INJECTED: LIQUID MENU INTERACTION LOGIC
-        // ==========================================
-        liquidTriggerPill.addEventListener('click', (e) => {
-            e.stopPropagation();
-            liquidSelectorContainer.classList.toggle('open');
-        });
-
-        liquidOptions.forEach(option => {
-            option.addEventListener('click', (e) => {
-                e.stopPropagation();
-                liquidOptions.forEach(opt => opt.classList.remove('active'));
-                option.classList.add('active');
-                
-                currentSelectedModelValue = option.getAttribute('data-value');
-                liquidTriggerPill.innerText = option.innerText;
-                liquidSelectorContainer.classList.remove('open');
-            });
-        });
-
-        // Close dropdown when clicking outside
-        document.addEventListener('click', () => {
-            liquidSelectorContainer.classList.remove('open');
-            document.querySelectorAll('.chat-dropdown').forEach(d => d.classList.remove('show'));
-        });
-
         async function generateDynamicTitle(chatId, userText, aiText) {
             try {
                 const titlePrompt = `Analyze the following conversation and generate a highly specific, descriptive title (2 to 4 words). Focus strictly on the unique subject matter. Do NOT use generic words like "Chat", "Help", "Conversation", "Analysis", or "Assistant". Respond ONLY with the title text itself. No quotes, no punctuation, no markdown.\n\nUser asked: ${userText}\nAI replied: ${aiText}`;
                 
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`, {
+                const titleModel = MODEL_TIERS[MODEL_TIERS.length - 1].textModel;
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${titleModel}:generateContent?key=${GEMINI_API_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contents: [{ parts: [{ text: titlePrompt }] }] })
@@ -1321,6 +1634,10 @@
                 historySection.appendChild(wrapper);
             });
         }
+
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.chat-dropdown').forEach(d => d.classList.remove('show'));
+        });
 
         function closeAppModal() {
             customModalOverlay.classList.remove('show');
@@ -1412,6 +1729,7 @@
             renderActiveChatMessages();
             loadHistoryList();
             
+            // Sync up generating control tracking states globally
             const chat = JSON.parse(localStorage.getItem(id));
             if (chat && chat.isGeneratingInBg) {
                 setGeneratingState(true);
@@ -1436,26 +1754,150 @@
         attachBtn.onclick = () => fileInput.click();
         fileInput.onchange = (e) => handleSelectedFiles(e.target.files);
 
-        window.addEventListener('dragover', (e) => e.preventDefault());
-        window.addEventListener('drop', (e) => e.preventDefault());
+        const dropZoneOverlay = document.getElementById('dropZoneOverlay');
 
-        mainContainer.addEventListener('dragenter', (e) => {
+        // Some browsers leave dataTransfer.files empty depending on exactly
+        // which element the drop lands on; dataTransfer.items is the more
+        // reliable source, so we try both.
+        function extractFilesFromDrop(e) {
+            const dt = e.dataTransfer;
+            // TEMPORARY DEBUG — remove once the drag issue is confirmed fixed.
+            console.log('[Cavdo drop debug] dataTransfer:', dt);
+            console.log('[Cavdo drop debug] types:', dt ? Array.from(dt.types || []) : null);
+            console.log('[Cavdo drop debug] files.length:', dt && dt.files ? dt.files.length : 'no dt.files');
+            console.log('[Cavdo drop debug] items.length:', dt && dt.items ? dt.items.length : 'no dt.items');
+            if (dt && dt.items) {
+                for (let i = 0; i < dt.items.length; i++) {
+                    console.log('[Cavdo drop debug] item', i, 'kind:', dt.items[i].kind, 'type:', dt.items[i].type);
+                }
+            }
+            if (!dt) return [];
+            if (dt.files && dt.files.length > 0) return Array.from(dt.files);
+            if (dt.items && dt.items.length > 0) {
+                const out = [];
+                for (const item of dt.items) {
+                    if (item.kind === 'file') {
+                        const f = item.getAsFile();
+                        if (f) out.push(f);
+                    }
+                }
+                return out;
+            }
+            return [];
+        }
+
+        // Global fallback: always allow drops on the page so the browser
+        // never rejects the drag outright, AND also try to process the
+        // files directly here — this is a redundant safety net in case the
+        // overlay below never activates for some reason (e.g. a browser
+        // that doesn't report 'Files' in dataTransfer.types on dragenter).
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', (e) => {
             e.preventDefault();
-            mainContainer.classList.add('drag-over');
-        });
-        mainContainer.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            if (e.relatedTarget === null || !mainContainer.contains(e.relatedTarget)) {
-                mainContainer.classList.remove('drag-over');
+            dragDepth = 0;
+            dropZoneOverlay.classList.remove('active');
+            if (!activeFileName && !activeFileBase64) {
+                const files = extractFilesFromDrop(e);
+                if (files.length > 0) handleSelectedFiles(files);
             }
         });
-        mainContainer.addEventListener('drop', (e) => {
+
+        // The moment a file drag enters the window, reveal a full-viewport
+        // overlay with pointer-events enabled. Once visible, that overlay
+        // physically sits on top of everything else, so it — and only it —
+        // receives all further dragover/dragleave/drop events for this
+        // drag. No child element (the textarea, buttons, etc.) can ever
+        // intercept or swallow the drop this way.
+        //
+        // IMPORTANT: dragenter/dragleave are NOT balanced 1:1 the way you'd
+        // expect — moving over any nested node (even a text run, like the
+        // emoji + label inside the overlay) fires an extra enter/leave pair.
+        // A plain boolean toggle deactivates the overlay on that spurious
+        // leave, right as the user is about to drop (this is especially
+        // aggressive in Firefox). We use a depth counter instead, so the
+        // overlay only turns off when we've truly left the window.
+        let dragDepth = 0;
+
+        window.addEventListener('dragenter', (e) => {
             e.preventDefault();
-            mainContainer.classList.remove('drag-over');
-            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                handleSelectedFiles(e.dataTransfer.files);
+            dragDepth++;
+            dropZoneOverlay.classList.add('active');
+        });
+
+        window.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dragDepth = Math.max(0, dragDepth - 1);
+            if (dragDepth === 0) dropZoneOverlay.classList.remove('active');
+        });
+
+        dropZoneOverlay.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        });
+
+        dropZoneOverlay.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        });
+
+        dropZoneOverlay.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragDepth = 0;
+            dropZoneOverlay.classList.remove('active');
+            const files = extractFilesFromDrop(e);
+            if (files.length > 0) {
+                handleSelectedFiles(files);
             }
         });
+
+        // Safety nets in case a drag ends without a clean dragleave/drop
+        // (e.g. dropped outside the window, or cancelled).
+        window.addEventListener('dragend', () => { dragDepth = 0; dropZoneOverlay.classList.remove('active'); });
+        window.addEventListener('mouseup', () => { dragDepth = 0; dropZoneOverlay.classList.remove('active'); });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) { dragDepth = 0; dropZoneOverlay.classList.remove('active'); }
+        });
+
+        // Paste-to-attach: if the clipboard contains a file (a copied
+        // image, screenshot, or a file copied from the OS file manager),
+        // attach it the same way a drag-and-drop or the + button would —
+        // works no matter what's focused on the page.
+        document.addEventListener('paste', (e) => {
+            if (!e.clipboardData) return;
+            let files = [];
+            if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+                files = Array.from(e.clipboardData.files);
+            } else if (e.clipboardData.items && e.clipboardData.items.length > 0) {
+                for (const item of e.clipboardData.items) {
+                    if (item.kind === 'file') {
+                        const f = item.getAsFile();
+                        if (f) files.push(f);
+                    }
+                }
+            }
+            if (files.length > 0) {
+                e.preventDefault();
+                handleSelectedFiles(files);
+            }
+        });
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function iconForFile(name, type) {
+            const ext = (name.split('.').pop() || '').toLowerCase();
+            const map = {
+                pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📝',
+                js: '📜', ts: '📜', jsx: '📜', tsx: '📜', py: '🐍',
+                html: '🌐', css: '🎨', json: '🧩', csv: '📊', xlsx: '📊',
+                xls: '📊', zip: '🗜️', rar: '🗜️'
+            };
+            return map[ext] || '📄';
+        }
 
         function handleSelectedFiles(files) {
             const file = files[0];
@@ -1463,21 +1905,40 @@
 
             activeFileName = file.name;
             activeFileType = file.type;
-            previewFileName.innerText = file.name.length > 20 ? file.name.substring(0, 18) + '...' : file.name;
+            previewFileName.innerText = file.name.length > 26 ? file.name.substring(0, 24) + '...' : file.name;
+            previewFileMeta.innerText = 'Reading file…';
             previewTray.style.display = 'flex';
+
+            const isImage = file.type.startsWith('image/');
+
+            if (isImage) {
+                attachmentThumb.style.display = 'block';
+                attachmentIconBox.style.display = 'none';
+            } else {
+                attachmentThumb.style.display = 'none';
+                attachmentIconBox.style.display = 'flex';
+                attachmentIconBox.innerText = iconForFile(file.name, file.type);
+            }
 
             const reader = new FileReader();
             
-            if (file.type.startsWith('image/')) {
+            if (isImage) {
                 reader.onload = function(evt) {
                     activeFileBase64 = evt.target.result.split(',')[1];
                     activeFileTextContent = null;
+                    attachmentThumb.src = evt.target.result;
+                    previewFileMeta.innerText = `Image · ${formatFileSize(file.size)} · attached`;
                 };
                 reader.readAsDataURL(file);
             } else {
                 reader.onload = function(evt) {
                     activeFileTextContent = evt.target.result;
                     activeFileBase64 = null;
+                    const ext = (file.name.split('.').pop() || 'file').toUpperCase();
+                    previewFileMeta.innerText = `${ext} · ${formatFileSize(file.size)} · attached`;
+                };
+                reader.onerror = function() {
+                    previewFileMeta.innerText = 'Could not read file';
                 };
                 reader.readAsText(file);
             }
@@ -1486,6 +1947,7 @@
         function clearAttachmentState() {
             fileInput.value = '';
             previewTray.style.display = 'none';
+            attachmentThumb.src = '';
             activeFileBase64 = null;
             activeFileType = null;
             activeFileName = null;
@@ -1509,6 +1971,48 @@
                 fallbackCopy(textToCopy, btn);
             }
         };
+
+        const CODE_LANG_EXTENSIONS = {
+            javascript: 'js', js: 'js', typescript: 'ts', ts: 'ts',
+            python: 'py', py: 'py', java: 'java', c: 'c',
+            cpp: 'cpp', 'c++': 'cpp', csharp: 'cs', 'c#': 'cs',
+            php: 'php', ruby: 'rb', go: 'go', golang: 'go', rust: 'rs',
+            swift: 'swift', kotlin: 'kt', html: 'html', css: 'css',
+            json: 'json', yaml: 'yml', yml: 'yml', xml: 'xml',
+            sql: 'sql', bash: 'sh', shell: 'sh', sh: 'sh',
+            markdown: 'md', md: 'md', dart: 'dart', r: 'r', lua: 'lua'
+        };
+
+        function getCodeFileExtension(language) {
+            const key = (language || '').toLowerCase().trim();
+            return CODE_LANG_EXTENSIONS[key] || 'txt';
+        }
+
+        window.downloadCodeToFile = function(btn, id, language) {
+            const block = document.getElementById(id);
+            if (!block) return;
+
+            const textToDownload = block.innerText || block.textContent;
+            const ext = getCodeFileExtension(language);
+            const blob = new Blob([textToDownload], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cavdo-snippet-${Date.now()}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            downloadFeedback(btn);
+        };
+
+        function downloadFeedback(btn) {
+            const original = btn.innerHTML;
+            btn.innerHTML = '✓ saved';
+            setTimeout(() => { btn.innerHTML = original; }, 2000);
+        }
 
         function fallbackCopy(text, btn) {
             const textArea = document.createElement("textarea");
@@ -1541,7 +2045,6 @@
             let html = escapeHtml(text);
 
             html = html.replace(/^(?:###|###\s+)(.+)$/gm, '<span class="ai-heading">$1</span>');
-            html = html.replace(/\*\frac{\*(.*?)\*\*}{\*\*}/g, '<strong class="ai-bold">$1</strong>');
             html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="ai-bold">$1</strong>');
 
             const lines = html.split('\n');
@@ -1593,7 +2096,10 @@
                     tray.innerHTML = `
                         <div class="code-tray-header">
                             <div class="code-lang">${escapeHtml(language)}</div>
-                            <button class="code-btn" onclick="window.copyCodeToClipboard(this, '${elementId}')">copy</button>
+                            <div class="code-tray-actions">
+                                <button class="code-btn" onclick="window.downloadCodeToFile(this, '${elementId}', '${escapeHtml(language)}')" title="Download this snippet">⬇ download</button>
+                                <button class="code-btn" onclick="window.copyCodeToClipboard(this, '${elementId}')">copy</button>
+                            </div>
                         </div>
                         <pre><code id="${elementId}"></code></pre>
                     `;
@@ -1671,6 +2177,18 @@
                 msgNode.className = `message ${msg.role}`;
                 
                 if (msg.role === 'user') {
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'copy-msg-btn';
+                    copyBtn.innerHTML = '📋';
+                    copyBtn.title = "Copy message";
+                    copyBtn.onclick = () => {
+                        navigator.clipboard.writeText(msg.text || '').then(() => {
+                            copyBtn.innerHTML = '✅';
+                            setTimeout(() => { copyBtn.innerHTML = '📋'; }, 1200);
+                        });
+                    };
+                    msgNode.appendChild(copyBtn);
+
                     const editBtn = document.createElement('button');
                     editBtn.className = 'edit-msg-btn';
                     editBtn.innerHTML = '✏️';
@@ -1747,8 +2265,10 @@
         function openInlineMessageEditor(msgNode, index, currentText) {
             const textDiv = msgNode.querySelector('.text-container-node');
             const editBtn = msgNode.querySelector('.edit-msg-btn');
+            const copyBtn = msgNode.querySelector('.copy-msg-btn');
             
             if (editBtn) editBtn.style.display = 'none';
+            if (copyBtn) copyBtn.style.display = 'none';
             textDiv.innerHTML = '';
 
             const textarea = document.createElement('textarea');
@@ -1792,6 +2312,7 @@
             if (isGenerating) {
                 if (abortController) abortController.abort();
                 
+                // Save stopped flag state to thread history data
                 if (currentChatId) {
                     const chatData = JSON.parse(localStorage.getItem(currentChatId));
                     if (chatData && chatData.messages.length > 0) {
@@ -1811,6 +2332,7 @@
 
             if (!text && !activeFileBase64 && !activeFileTextContent) return;
 
+            // Track target room thread safely
             const requestContextChatId = currentChatId || `cavdo_chat_${Date.now()}`;
 
             if (!currentChatId) {
@@ -1846,6 +2368,7 @@
             chatData.messages.push(userMsg);
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
             userInput.value = '';
+            autoResizeUserInput();
             clearAttachmentState();
             
             if (currentChatId === requestContextChatId) {
@@ -1854,10 +2377,13 @@
 
             const lowerText = text.toLowerCase();
             const imageKeywords = ['paint', 'draw', 'imagine', 'picture', 'photo', 'pic', 'image', 'img', 'generate an image', 'generate image', 'create image', 'make an image'];
+            const codeKeywords = ['code', 'script', 'program', 'html', 'css', 'javascript', 'python', 'java', 'c++', 'function', 'ui like', 'make a web', 'build a site', 'write a function'];
             
             let selectedMode = 'text';
             if (imageKeywords.some(keyword => lowerText.includes(keyword))) {
                 selectedMode = 'image';
+            } else if (codeKeywords.some(keyword => lowerText.includes(keyword))) {
+                selectedMode = 'code';
             }
 
             const aiMsgIndex = chatData.messages.length;
@@ -1872,6 +2398,7 @@
             setGeneratingState(true);
             abortController = new AbortController();
 
+            // Dynamic background tracking pulse updates
             let internalThinkingInterval = setInterval(() => {
                 const innerChat = JSON.parse(localStorage.getItem(requestContextChatId));
                 if (!innerChat || !innerChat.isGeneratingInBg) {
@@ -1936,58 +2463,57 @@
                     }
 
                 } else {
-                    // ==========================================================================================
-                    // 🔄 CASCADING FALLBACK ROUTER READS DIRECTLY FROM THE NEW INJECTED LIQUID INTERFACE VALUE
-                    // ==========================================================================================
-                    const selectedTier = currentSelectedModelValue;
-                    let primaryQueue = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
+                    let sysInstruction = (selectedMode === 'code') 
+                        ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts."
+                        : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
-                    if (selectedTier === "cavdo-ultimate") {
-                        primaryQueue = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
-                    } else if (selectedTier === "cavdo-lite") {
-                        primaryQueue = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"];
+                    const hasAttachedFile = chatData.messages.some(m => m.fileText);
+                    if (hasAttachedFile) {
+                        sysInstruction += " The conversation history includes one or more file attachments marked '[Context File Attachment: <filename>]' followed by their full content. Remember this content for the rest of the conversation. If the user later asks you to 'edit that file', 'edit the file', or refers to 'that file' without re-uploading it, use the most recently attached file's content as the source of truth and return the complete, fully edited file content in a single markdown code fence, preserving the original structure and format unless told otherwise.";
                     }
 
-                    const sysInstruction = "You are Cavdo AI. Provide optimal responses instantly. Provide structured clean markdown assistance instantly when requested. Never output <think> tags or internal thoughts.";
-                    let responseData = null;
-                    let fetchSuccess = false;
-                    let lastFetchError = null;
+                    // Try the currently selected model tier. If Gemini reports a
+                    // rate limit / quota error, automatically grey that tier out
+                    // and drop down to the next available one, then retry.
+                    let data = null;
+                    const maxAttempts = MODEL_TIERS.length;
 
-                    for (const activeModel of primaryQueue) {
-                        try {
-                            console.log(`[Cavdo Router] Directing payload stream into target: ${activeModel}`);
-                            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${GEMINI_API_KEY}`;
-                            
-                            const response = await fetch(endpoint, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    systemInstruction: { parts: [{ text: sysInstruction }] },
-                                    contents: buildApiPayload(chatData.messages.slice(0, -1))
-                                }),
-                                signal: abortController.signal
-                            });
+                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                        const usedTier = getActiveTier();
+                        const activeModel = (selectedMode === 'code') ? usedTier.codeModel : usedTier.textModel;
+                        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${GEMINI_API_KEY}`;
 
-                            const data = await response.json();
-                            if (data.error) throw new Error(data.error.message || "API structural block response error");
-                            
-                            if (data.candidates?.[0]?.content?.parts) {
-                                responseData = data;
-                                fetchSuccess = true;
-                                break;
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                systemInstruction: { parts: [{ text: sysInstruction }] },
+                                contents: buildApiPayload(chatData.messages.slice(0, -1))
+                            }),
+                            signal: abortController.signal
+                        });
+
+                        data = await response.json().catch(() => ({}));
+
+                        if (isRateLimitResponse(response, data)) {
+                            const nextTier = downgradeAfterLimit();
+                            if (!nextTier) {
+                                throw new Error("All Cavdo model tiers have hit their limit. Please try again later.");
                             }
-                        } catch (err) {
-                            if (err.name === 'AbortError') throw err; 
-                            console.warn(`[Cascading Fallback Warning] Model ${activeModel} failed down execution track. Advancing matrix...`, err);
-                            lastFetchError = err;
+                            const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                            if (switchChat) {
+                                switchChat.messages[aiMsgIndex].text = `⚡ ${usedTier.label} limit reached — switching to ${nextTier.label}, thinking`;
+                                localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
+                            }
+                            continue;
                         }
+
+                        break;
                     }
 
-                    if (!fetchSuccess) {
-                        throw new Error(lastFetchError ? lastFetchError.message : "All sequential engine layers inside the cascading fallback loop matrix failed to return a response token frame.");
-                    }
+                    if (data && data.error) throw new Error(data.error.message || "API Failure");
 
-                    const parts = responseData.candidates?.[0]?.content?.parts || [];
+                    const parts = data?.candidates?.[0]?.content?.parts || [];
                     let aiText = "";
                     for (const part of parts) {
                         if (part.text) aiText += part.text;
@@ -2107,6 +2633,13 @@
                 sendMessage();
             }
         };
+
+        function autoResizeUserInput() {
+            userInput.style.height = 'auto';
+            userInput.style.height = Math.min(userInput.scrollHeight, 160) + 'px';
+        }
+        userInput.addEventListener('input', autoResizeUserInput);
+        autoResizeUserInput();
 
         newChatBtn.onclick = () => {
             toggleInterface(false);

@@ -7,24 +7,9 @@
     
     <script>
         // ==========================================
-        // 🔑 GEMINI KEY (stored encoded to avoid GitHub's
-        // automatic secret scanner, which only recognizes keys
-        // in their exact plain-text format and reports them to
-        // Google for auto-revoke). This does NOT hide the key
-        // from someone deliberately inspecting the page — it
-        // only stops the automated scan-and-kill loop.
-        //
-        // HOW TO SET YOUR KEY:
-        // 1. Get a key from https://aistudio.google.com/apikey
-        // 2. Encode it (run this in any browser console, or
-        //    https://www.base64encode.org):
-        //        btoa("YOUR_REAL_KEY_HERE")
-        // 3. Paste the encoded result below, replacing the
-        //    placeholder string.
+        // 🔑 GEMINI KEY
         // ==========================================
         const GEMINI_API_KEY = atob("QVEuQWI4Uk42SVVYTEpsck9yWmRMRHlTOXZiZVhwQ0QyR2ROZjVKaG9lemFVLUpseklTcFE=");
-
-        // Same idea for Pollinations:
         const POLLINATIONS_API_KEY = atob("UkVQTEFDRV9NRV9XSVRIX1lPVVJfS0VZ");
     </script>
 
@@ -104,14 +89,20 @@
             -webkit-text-fill-color: transparent;
         }
 
+        .sidebar-top-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
         .new-chat-btn {
-            padding: 14px;
+            padding: 9px 14px;
             border: none;
-            border-radius: 16px;
+            border-radius: 14px;
             background: rgba(255, 255, 255, 0.06);
             color: #fff;
             font-weight: 600;
-            font-size: 15px;
+            font-size: 13.5px;
             cursor: pointer;
             transition: all 0.2s ease;
             display: flex;
@@ -125,6 +116,27 @@
             background: rgba(255, 255, 255, 0.12);
             border-color: rgba(47, 208, 92, 0.3);
             transform: translateY(-1px);
+        }
+
+        .search-chat-btn {
+            padding: 9px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.65);
+            font-weight: 600;
+            font-size: 13.5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .search-chat-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
         }
 
         /* Custom Translucent Scrollbar for Sidebar */
@@ -283,6 +295,13 @@
             color: rgba(255, 255, 255, 0.8);
         }
 
+        .user-profile span {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .user-avatar {
             width: 36px;
             height: 36px;
@@ -293,6 +312,351 @@
             justify-content: center;
             font-weight: 700;
             color: #000;
+        }
+
+        .settings-btn {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, transform 0.2s;
+        }
+
+        .settings-btn:hover {
+            background: rgba(47, 208, 92, 0.15);
+            color: #2fd05c;
+            transform: rotate(35deg);
+        }
+
+        /* Settings Modal */
+        .settings-modal-box {
+            max-width: 860px;
+            width: 94%;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            max-height: 82vh;
+            overflow: hidden;
+        }
+
+        @media (max-width: 900px) {
+            .settings-modal-box { max-width: 96%; }
+        }
+
+        .settings-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 24px 16px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .settings-modal-header h3 {
+            margin: 0;
+        }
+
+        .settings-close-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .settings-close-btn:hover {
+            background: rgba(255, 74, 74, 0.15);
+            color: #ff6b6b;
+        }
+
+        .settings-tabs {
+            display: flex;
+            gap: 4px;
+            padding: 14px 24px 0 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .settings-tab-btn {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 14px;
+            font-weight: 600;
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .settings-tab-btn:hover {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .settings-tab-btn.active {
+            color: #2fd05c;
+            border-bottom-color: #2fd05c;
+        }
+
+        .settings-tab-panel {
+            display: none;
+            padding: 20px 24px 24px 24px;
+            overflow-y: auto;
+        }
+
+        .settings-tab-panel.active {
+            display: block;
+        }
+
+        .settings-section-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: rgba(255, 255, 255, 0.4);
+            margin: 18px 0 10px 0;
+        }
+
+        .settings-section-title:first-child {
+            margin-top: 0;
+        }
+
+        .api-key-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .api-key-card-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .api-key-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .api-key-value {
+            font-size: 12px;
+            font-family: 'SFMono-Regular', Consolas, monospace;
+            color: rgba(255, 255, 255, 0.45);
+            margin-top: 4px;
+            letter-spacing: 0.02em;
+        }
+
+        .api-key-check-btn {
+            flex-shrink: 0;
+            padding: 7px 14px;
+            border-radius: 20px;
+            border: 1px solid rgba(47, 208, 92, 0.3);
+            background: rgba(47, 208, 92, 0.1);
+            color: #2fd05c;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .api-key-check-btn:hover:not(:disabled) {
+            background: rgba(47, 208, 92, 0.22);
+        }
+
+        .api-key-check-btn:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .api-key-submodels {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .api-key-submodel-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+        }
+
+        .api-key-submodel-name {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .api-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.25);
+            flex-shrink: 0;
+        }
+
+        .api-status-dot.checking {
+            background: #f5b942;
+            animation: statusPulse 1s infinite ease-in-out;
+        }
+
+        .api-status-dot.ok {
+            background: #2fd05c;
+        }
+
+        .api-status-dot.error {
+            background: #ff4a4a;
+        }
+
+        @keyframes statusPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        .api-status-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .api-status-label.checking { color: #f5b942; }
+        .api-status-label.ok { color: #2fd05c; }
+        .api-status-label.error { color: #ff6b6b; }
+
+        .own-key-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .own-key-row input {
+            flex: 1;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 13px;
+            font-family: 'SFMono-Regular', Consolas, monospace;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .own-key-row input:focus {
+            border-color: rgba(47, 208, 92, 0.5);
+        }
+
+        .own-key-use-btn {
+            flex-shrink: 0;
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            background: #2fd05c;
+            color: #000;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .own-key-use-btn:hover { background: #3ee06c; }
+
+        .own-key-remove-btn {
+            flex-shrink: 0;
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 74, 74, 0.35);
+            background: rgba(255, 74, 74, 0.1);
+            color: #ff6b6b;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .own-key-remove-btn:hover { background: rgba(255, 74, 74, 0.2); }
+
+        .own-key-note {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+
+        .own-key-active-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #2fd05c;
+            background: rgba(47, 208, 92, 0.12);
+            border: 1px solid rgba(47, 208, 92, 0.3);
+            padding: 4px 10px;
+            border-radius: 20px;
+            margin-top: 10px;
+        }
+
+        /* Markdown tables in AI responses */
+        .ai-table-wrapper {
+            overflow-x: auto;
+            margin: 12px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+
+        .ai-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .ai-table th, .ai-table td {
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+            white-space: normal;
+        }
+
+        .ai-table th:last-child, .ai-table td:last-child {
+            border-right: none;
+        }
+
+        .ai-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .ai-table thead th {
+            background: rgba(47, 208, 92, 0.08);
+            color: #2fd05c;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .ai-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.03);
         }
 
         /* Workspace Stage */
@@ -395,23 +759,43 @@
             gap: 24px;
         }
 
+        /* Outer wrapper: keeps the bubble and its action buttons grouped,
+           but the buttons live OUTSIDE the bubble's background/border */
+        .message-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 100%;
+            scroll-margin-top: 24px;
+        }
+
+        .message-group.user {
+            align-self: flex-end;
+            align-items: flex-end;
+            max-width: 85%;
+        }
+
+        .message-group.ai {
+            align-self: flex-start;
+            align-items: flex-start;
+            width: auto;
+            max-width: 95%;
+        }
+
         /* Message Bubbles */
         .message {
             max-width: 100%;
-            padding: 16px 20px;
+            padding: 16px 20px 14px 20px;
             border-radius: 20px;
             line-height: 1.6;
             font-size: 15px;
             animation: fadeIn 0.3s ease-out forwards;
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            scroll-margin-top: 24px;
+            gap: 8px;
         }
 
         .message.user {
-            align-self: flex-end;
-            max-width: 85%;
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: #fff;
@@ -420,43 +804,137 @@
             position: relative;
         }
 
-        .edit-msg-btn {
-            background: none;
-            border: none;
-            color: rgba(255, 255, 255, 0.35);
-            cursor: pointer;
-            font-size: 14px;
-            position: absolute;
-            left: -32px;
-            top: 14px;
-            opacity: 0;
-            transition: opacity 0.2s, color 0.2s;
+        .message.ai {
+            background: rgba(47, 208, 92, 0.04);
+            border: 1px solid rgba(47, 208, 92, 0.1);
+            color: #e0f7e6;
+            border-bottom-left-radius: 4px;
         }
-        .message.user:hover .edit-msg-btn {
+
+        /* Action toolbars below messages (outside the bubble) */
+        .user-actions {
+            display: flex;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .message-group.user:hover .user-actions {
             opacity: 1;
         }
-        .edit-msg-btn:hover {
+
+        .edit-msg-btn, .copy-msg-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .edit-msg-btn:hover, .copy-msg-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(47, 208, 92, 0.3);
             color: #2fd05c;
         }
 
-        .copy-msg-btn {
+        .ai-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            position: relative;
+        }
+
+        .ai-action-btn {
             background: none;
             border: none;
-            color: rgba(255, 255, 255, 0.35);
+            color: rgba(255, 255, 255, 0.45);
             cursor: pointer;
-            font-size: 14px;
-            position: absolute;
-            left: -60px;
-            top: 14px;
-            opacity: 0;
-            transition: opacity 0.2s, color 0.2s;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
         }
-        .message.user:hover .copy-msg-btn {
-            opacity: 1;
+
+        .ai-action-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
         }
-        .copy-msg-btn:hover {
+
+        .ai-action-btn.active.up {
+            background: rgba(47, 208, 92, 0.18);
             color: #2fd05c;
         }
+
+        .ai-action-btn.active.down {
+            background: rgba(240, 82, 82, 0.18);
+            color: #f05252;
+        }
+
+        .ai-action-btn svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .ai-more-dropdown {
+            position: absolute;
+            top: 40px;
+            left: 140px; /* Offset to align with the more button nicely */
+            background: #1e1e1e;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 8px 0;
+            min-width: 230px;
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+        }
+
+        .ai-more-dropdown.show {
+            display: flex;
+            animation: fadeIn 0.15s ease-out forwards;
+        }
+
+        .ai-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 18px;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 13.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            background: none;
+            border: none;
+            text-align: left;
+            width: 100%;
+        }
+
+        .ai-dropdown-item:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+        }
+
+        .ai-dropdown-item.speaking {
+            color: #2fd05c;
+        }
+
+        .ai-dropdown-item svg {
+            width: 18px;
+            height: 18px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
 
         .edit-textarea {
             width: 100%;
@@ -476,17 +954,6 @@
             display: flex;
             justify-content: flex-end;
             gap: 8px;
-        }
-
-        .message.ai {
-            align-self: flex-start;
-            background: rgba(47, 208, 92, 0.04);
-            border: 1px solid rgba(47, 208, 92, 0.1);
-            color: #e0f7e6;
-            border-bottom-left-radius: 4px;
-            width: auto;
-            max-width: 95%;
-            margin-right: auto;
         }
 
         .chat-img-preview {
@@ -746,10 +1213,11 @@
         }
 
         .search-icon {
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 18px;
+            color: rgba(255, 255, 255, 0.5);
             display: flex;
             align-items: center;
+            justify-content: center;
+            padding-bottom: 3px;
             user-select: none;
         }
 
@@ -819,8 +1287,6 @@
             border: none;
             background: #2fd05c;
             color: #000;
-            font-size: 20px;
-            font-weight: bold;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -1016,31 +1482,6 @@
             text-decoration: underline;
         }
 
-        /* Inline Regenerate Trigger styling */
-        .regen-container {
-            margin-top: 8px;
-            display: block;
-        }
-        .regen-btn {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #2fd05c;
-            padding: 8px 14px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .regen-btn:hover {
-            background: rgba(47, 208, 92, 0.1);
-            border-color: rgba(47, 208, 92, 0.3);
-            transform: translateY(-1px);
-        }
-
         /* Modals style */
         .modal-overlay {
             position: fixed;
@@ -1134,6 +1575,77 @@
             background: #ff6b6b;
         }
 
+        .search-modal-box {
+            max-width: 560px;
+            display: flex;
+            flex-direction: column;
+            max-height: 72vh;
+        }
+
+        .search-results-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 20px;
+            min-height: 60px;
+            max-height: 50vh;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+        }
+
+        .search-results-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .search-results-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+        }
+
+        .search-result-item {
+            padding: 12px 14px;
+            border-radius: 12px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid transparent;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .search-result-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(47, 208, 92, 0.25);
+        }
+
+        .search-result-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .search-result-snippet {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.55);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .search-result-snippet mark {
+            background: rgba(47, 208, 92, 0.35);
+            color: #fff;
+            border-radius: 3px;
+        }
+
+        .search-empty-state {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 13px;
+            text-align: center;
+            padding: 20px 0;
+        }
+
         /* Gemini-style Lightbox Image Preview Modal Overlay */
         .image-preview-overlay {
             position: fixed;
@@ -1215,24 +1727,34 @@
             .chat-container { padding: 0 16px; }
             .welcome-box h1 { font-size: 40px; }
             .preview-image-wrapper { max-width: 95%; }
+            .ai-more-dropdown { left: auto; right: 0; }
         }
     </style>
 </head>
 <body>
     <div class="drop-zone-overlay" id="dropZoneOverlay">📥 Drop files anywhere to attach</div>
 
-
     <div class="sidebar">
         <div class="logo">CAVDO</div>
-        <button class="new-chat-btn" id="newChatBtn">
-            <span>+</span> New Chat
-        </button>
+        <div class="sidebar-top-actions">
+            <button class="new-chat-btn" id="newChatBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> 
+                New Chat
+            </button>
+            <button class="search-chat-btn" id="searchChatBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                Search Chats
+            </button>
+        </div>
         <div class="history-section" id="historySection">
             <div class="history-title">Recent Chats</div>
         </div>
         <div class="user-profile">
             <div class="user-avatar">U</div>
             <span>User Account</span>
+            <button class="settings-btn" id="settingsBtn" title="Settings">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
         </div>
     </div>
 
@@ -1261,9 +1783,13 @@
             </div>
 
             <div class="input-bar">
-                <div class="search-icon" id="statusIndicator">🔍</div>
+                <div class="search-icon" id="statusIndicator">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4L12 2z"></path></svg>
+                </div>
 
-                <button class="attach-file-btn" id="attachBtn" title="Upload any file">+</button>
+                <button class="attach-file-btn" id="attachBtn" title="Upload any file">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
                 <input type="file" id="fileInput" style="display: none;">
 
                 <textarea id="userInput" rows="1" placeholder="Ask Cavdo anything..." autocomplete="off"></textarea>
@@ -1277,7 +1803,9 @@
                     <div class="model-dropdown" id="modelDropdown"></div>
                 </div>
 
-                <button class="action-btn" id="actionBtn">↑</button>
+                <button class="action-btn" id="actionBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                </button>
             </div>
         </div>
     </div>
@@ -1302,12 +1830,106 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="searchModalOverlay">
+        <div class="modal-box search-modal-box">
+            <h3>Search Chats</h3>
+            <input type="text" id="searchChatsInput" placeholder="Search your conversations..." autocomplete="off">
+            <div class="search-results-list" id="searchResultsList">
+                <div class="search-empty-state">Type to search across all your chats.</div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" id="searchModalClose">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="settingsModalOverlay">
+        <div class="modal-box settings-modal-box">
+            <div class="settings-modal-header">
+                <h3>Settings</h3>
+                <button class="settings-close-btn" id="settingsCloseBtn" title="Close">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="settings-tabs">
+                <button class="settings-tab-btn active" data-tab="general">General</button>
+                <button class="settings-tab-btn" data-tab="apikeys">API Keys</button>
+            </div>
+
+            <div class="settings-tab-panel active" id="settingsTabGeneral">
+                <div class="settings-section-title">Account</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">User Account</div>
+                            <div class="api-key-value">Local session — nothing is sent to a server except model API calls.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-section-title">About</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Cavdo AI</div>
+                            <div class="api-key-value">Model availability and API key health can be checked in the "API Keys" tab.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-tab-panel" id="settingsTabApiKeys">
+                <div class="settings-section-title">Gemini API</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Gemini API Key</div>
+                            <div class="api-key-value" id="geminiKeyMasked">••••••••</div>
+                            <div id="ownKeyActiveBadge" style="display:none;"><span class="own-key-active-badge">🔑 Using your own key for this session</span></div>
+                        </div>
+                        <button class="api-key-check-btn" id="checkAllGeminiBtn">Check All</button>
+                    </div>
+                    <div class="api-key-submodels" id="geminiModelStatusList"></div>
+
+                    <div class="settings-section-title" style="margin-top:18px;">Use Your Own API Key</div>
+                    <div class="own-key-row">
+                        <input type="password" id="ownGeminiKeyInput" placeholder="Paste your Gemini API key…" autocomplete="off">
+                        <button class="own-key-use-btn" id="useOwnKeyBtn">Use Key</button>
+                        <button class="own-key-remove-btn" id="removeOwnKeyBtn" style="display:none;">Remove</button>
+                    </div>
+                    <div class="own-key-note">This key is only kept in memory for your current session — it's used for this browser tab and gets discarded on refresh/close. It's never saved to disk or sent anywhere except Google's Gemini API.</div>
+                </div>
+
+                <div class="settings-section-title">Image Generation API</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Pollinations API Key</div>
+                            <div class="api-key-value" id="pollinationsKeyMasked">••••••••</div>
+                        </div>
+                        <button class="api-key-check-btn" id="checkPollinationsBtn">Check</button>
+                    </div>
+                    <div class="api-key-submodels">
+                        <div class="api-key-submodel-row">
+                            <div class="api-key-submodel-name">
+                                <span class="api-status-dot" id="pollinationsStatusDot"></span>
+                                Image Generation
+                            </div>
+                            <span class="api-status-label" id="pollinationsStatusLabel">Not checked</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="image-preview-overlay" id="imagePreviewOverlay">
         <div class="preview-window-topbar">
             <div class="preview-window-title" id="previewWindowTitle">Image Preview</div>
             <div class="preview-actions-cluster">
                 <a class="image-download-link" id="previewModalDownloadBtn" href="#" download="cavdo-art.jpg" style="font-size: 14px; background: rgba(47,208,92,0.1); padding: 10px 18px; border-radius: 20px; border: 1px solid rgba(47,208,92,0.25);">📥 Download Image</a>
-                <button class="preview-close-btn" id="previewModalCloseBtn" title="Close Preview">×</button>
+                <button class="preview-close-btn" id="previewModalCloseBtn" title="Close Preview">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </div>
         </div>
         <div class="preview-image-wrapper">
@@ -1317,12 +1939,7 @@
 
     <script>
         // ==========================================
-        // 🧠 MODEL TIERS — highest to lowest.
-        // When the active tier's Gemini quota runs out, Cavdo
-        // automatically drops to the next tier down and greys
-        // out the exhausted option in the model menu.
-        // Swap the textModel/codeModel strings for whichever
-        // real Gemini model IDs you have access to.
+        // 🧠 MODEL TIERS
         // ==========================================
         const MODEL_TIERS = [
             {
@@ -1338,8 +1955,8 @@
                 label: 'Cavdo Speed',
                 desc: 'Balanced & fast',
                 icon: '⚡',
-                textModel: 'gemini-2.5-flash',
-                codeModel: 'gemini-2.5-flash'
+                textModel: 'gemini-3-flash-preview',
+                codeModel: 'gemini-3-flash-preview'
             },
             {
                 key: 'lite',
@@ -1351,12 +1968,47 @@
             }
         ];
 
-        // How long a model stays greyed-out after it hits its limit
-        // before Cavdo automatically re-checks it (ms). Default 24h,
-        // matching typical Gemini free-tier daily quota resets.
         const MODEL_LIMIT_RESET_MS = 24 * 60 * 60 * 1000;
         const EXHAUSTED_STORAGE_KEY = 'cavdo_exhausted_models';
         const ACTIVE_TIER_STORAGE_KEY = 'cavdo_active_model_tier';
+
+        // ------------------------------------------------------------
+        // 🕐 Google resets Gemini API daily quotas at midnight Pacific
+        // Time — not "24h after you got rate-limited". These helpers
+        // compute the *real* next reset instant so the UI doesn't make
+        // you wait longer than Google actually does.
+        // ------------------------------------------------------------
+        function getPacificOffsetHours(atMs) {
+            try {
+                const dtf = new Intl.DateTimeFormat('en-US', {
+                    timeZone: 'America/Los_Angeles',
+                    timeZoneName: 'shortOffset'
+                });
+                const tzPart = dtf.formatToParts(new Date(atMs)).find(p => p.type === 'timeZoneName');
+                const match = tzPart && tzPart.value.match(/GMT([+-]\d+)(?::(\d+))?/);
+                if (!match) return -8;
+                const hours = parseInt(match[1], 10);
+                const mins = match[2] ? parseInt(match[2], 10) : 0;
+                return hours + (hours < 0 ? -mins / 60 : mins / 60);
+            } catch (e) {
+                return -8; // fallback: standard PST offset
+            }
+        }
+
+        function getPacificDateParts(atMs) {
+            const fmt = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/Los_Angeles',
+                year: 'numeric', month: '2-digit', day: '2-digit'
+            });
+            const parts = fmt.formatToParts(new Date(atMs)).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+            return { year: +parts.year, month: +parts.month, day: +parts.day };
+        }
+
+        function getNextPacificMidnightUTC(fromMs) {
+            const { year, month, day } = getPacificDateParts(fromMs);
+            const offsetHours = getPacificOffsetHours(fromMs);
+            return Date.UTC(year, month - 1, day + 1, 0, 0, 0) - offsetHours * 3600000;
+        }
 
         function loadExhaustedMap() {
             try {
@@ -1364,7 +2016,13 @@
                 const now = Date.now();
                 let changed = false;
                 for (const key of Object.keys(raw)) {
-                    if (now - raw[key] > MODEL_LIMIT_RESET_MS) {
+                    const entry = raw[key];
+                    // Backward-compat: earlier versions stored a plain timestamp
+                    // and used a flat 24h window instead of the real Pacific reset.
+                    const resetAt = (entry && typeof entry === 'object')
+                        ? entry.resetAt
+                        : entry + MODEL_LIMIT_RESET_MS;
+                    if (now >= resetAt) {
                         delete raw[key];
                         changed = true;
                     }
@@ -1378,8 +2036,35 @@
 
         function markModelExhausted(tierKey) {
             const map = loadExhaustedMap();
-            map[tierKey] = Date.now();
+            const now = Date.now();
+            map[tierKey] = { markedAt: now, resetAt: getNextPacificMidnightUTC(now) };
             localStorage.setItem(EXHAUSTED_STORAGE_KEY, JSON.stringify(map));
+        }
+
+        function clearModelExhausted(tierKey) {
+            const map = loadExhaustedMap();
+            if (Object.prototype.hasOwnProperty.call(map, tierKey)) {
+                delete map[tierKey];
+                localStorage.setItem(EXHAUSTED_STORAGE_KEY, JSON.stringify(map));
+            }
+        }
+
+        function getModelResetInfo(tierKey) {
+            const map = loadExhaustedMap();
+            const entry = map[tierKey];
+            if (!entry) return null;
+            const resetAt = (typeof entry === 'object') ? entry.resetAt : entry + MODEL_LIMIT_RESET_MS;
+            return { resetAt };
+        }
+
+        function formatTimeRemaining(untilMs) {
+            const diff = untilMs - Date.now();
+            if (diff <= 0) return 'resetting…';
+            const totalMinutes = Math.ceil(diff / 60000);
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            if (hours <= 0) return `resets in ${minutes}m`;
+            return `resets in ${hours}h ${minutes}m`;
         }
 
         function isModelExhausted(tierKey) {
@@ -1392,8 +2077,6 @@
             return idx === -1 ? 0 : idx;
         }
 
-        // Restore last selected tier, falling back to the first
-        // non-exhausted tier available.
         let activeTierIndex = getTierIndexByKey(localStorage.getItem(ACTIVE_TIER_STORAGE_KEY) || 'ultimate');
         if (isModelExhausted(MODEL_TIERS[activeTierIndex].key)) {
             const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key));
@@ -1427,16 +2110,18 @@
             MODEL_TIERS.forEach((tier, index) => {
                 const exhausted = isModelExhausted(tier.key);
                 const isActive = index === activeTierIndex;
+                const resetInfo = exhausted ? getModelResetInfo(tier.key) : null;
+                const resetLabel = resetInfo ? formatTimeRemaining(resetInfo.resetAt) : '';
 
                 const opt = document.createElement('div');
                 opt.className = 'model-option' + (exhausted ? ' disabled' : '') + (isActive ? ' active' : '');
-                opt.title = exhausted ? `${tier.label} — limit reached, resets automatically` : tier.desc;
+                opt.title = exhausted ? `${tier.label} — limit reached, ${resetLabel}` : tier.desc;
 
                 opt.innerHTML = `
                     <div class="model-option-icon">${tier.icon}</div>
                     <div class="model-option-text">
                         <div class="model-option-name">${tier.label}</div>
-                        <div class="model-option-desc">${exhausted ? 'Limit reached — unavailable' : tier.desc}</div>
+                        <div class="model-option-desc">${exhausted ? `Limit reached — ${resetLabel}` : tier.desc}</div>
                     </div>
                     <div class="model-option-check">${isActive ? '✓' : ''}</div>
                 `;
@@ -1480,13 +2165,272 @@
         document.addEventListener('click', (e) => {
             const selector = document.getElementById('modelSelector');
             if (selector && !selector.contains(e.target)) closeModelDropdown();
+            
+            // Close all dropdowns if clicking outside
+            document.querySelectorAll('.chat-dropdown, .ai-more-dropdown').forEach(d => {
+                if(!d.contains(e.target)) d.classList.remove('show');
+            });
         });
 
         renderModelDropdown();
         updateModelSelectorLabel();
 
-        // Detects a Gemini rate-limit / quota-exhausted response so
-        // Cavdo can auto-switch down to the next available model.
+        // ------------------------------------------------------------
+        // 🔎 Startup availability probe — checks each model tier as soon
+        // as the app loads so exhausted/unavailable models are already
+        // greyed out before the user ever sends a message.
+        // ------------------------------------------------------------
+        async function probeModelAvailability(tier) {
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${tier.textModel}:generateContent?key=${getActiveGeminiKey()}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+                        generationConfig: { maxOutputTokens: 1 }
+                    })
+                });
+
+                if (response.ok) {
+                    clearModelExhausted(tier.key); // limit may have already reset — don't make the user wait
+                    return;
+                }
+
+                if (response.status === 429) {
+                    markModelExhausted(tier.key);
+                    return;
+                }
+
+                let data = null;
+                try { data = await response.json(); } catch (e) {}
+                if (isRateLimitResponse(response, data)) {
+                    markModelExhausted(tier.key);
+                    return;
+                }
+                // 404 / model-not-found / not-available-in-region etc. also
+                // counts as "unavailable" for our purposes.
+                const msg = (data && data.error && (data.error.message || data.error.status)) || '';
+                const lowered = String(msg).toLowerCase();
+                if (response.status === 404 || lowered.includes('not found') || lowered.includes('not supported') || lowered.includes('permission')) {
+                    markModelExhausted(tier.key);
+                }
+            } catch (e) {
+                // Network hiccup — don't penalize the model for a transient error.
+            }
+        }
+
+        async function runStartupAvailabilityCheck() {
+            await Promise.all(MODEL_TIERS.map(probeModelAvailability));
+
+            // If the currently active tier turned out to be unavailable,
+            // fall back to the first free one, same as the reactive path.
+            if (isModelExhausted(MODEL_TIERS[activeTierIndex].key)) {
+                const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key));
+                if (firstFree !== -1) setActiveTier(firstFree);
+            }
+
+            renderModelDropdown();
+            updateModelSelectorLabel();
+        }
+
+        runStartupAvailabilityCheck();
+
+        // ------------------------------------------------------------
+        // 🔑 Optional user-supplied Gemini key — session-only, in-memory.
+        // Never written to localStorage; cleared automatically on reload.
+        // ------------------------------------------------------------
+        let sessionGeminiKeyOverride = null;
+
+        function getActiveGeminiKey() {
+            return sessionGeminiKeyOverride && sessionGeminiKeyOverride.trim()
+                ? sessionGeminiKeyOverride.trim()
+                : GEMINI_API_KEY;
+        }
+
+        function refreshOwnKeyUI() {
+            const badge = document.getElementById('ownKeyActiveBadge');
+            const removeBtn = document.getElementById('removeOwnKeyBtn');
+            const useBtn = document.getElementById('useOwnKeyBtn');
+            const input = document.getElementById('ownGeminiKeyInput');
+            const masked = document.getElementById('geminiKeyMasked');
+            const active = !!(sessionGeminiKeyOverride && sessionGeminiKeyOverride.trim());
+
+            if (badge) badge.style.display = active ? 'block' : 'none';
+            if (removeBtn) removeBtn.style.display = active ? 'inline-block' : 'none';
+            if (useBtn) useBtn.textContent = active ? 'Update Key' : 'Use Key';
+            if (masked) masked.textContent = maskApiKey(getActiveGeminiKey());
+            if (input && !active) input.value = '';
+        }
+
+        function useOwnGeminiKey() {
+            const input = document.getElementById('ownGeminiKeyInput');
+            const key = input ? input.value.trim() : '';
+            if (!key) return;
+            sessionGeminiKeyOverride = key;
+            // Reset in-memory check state so the new key gets verified fresh.
+            Object.keys(apiCheckStatus).forEach(k => delete apiCheckStatus[k]);
+            refreshOwnKeyUI();
+            renderGeminiModelStatusList();
+            checkAllGeminiTiers();
+        }
+
+        function removeOwnGeminiKey() {
+            sessionGeminiKeyOverride = null;
+            Object.keys(apiCheckStatus).forEach(k => delete apiCheckStatus[k]);
+            refreshOwnKeyUI();
+            renderGeminiModelStatusList();
+            checkAllGeminiTiers();
+        }
+
+        // ------------------------------------------------------------
+        // ⚙️ Settings modal — General + API Keys tabs
+        // ------------------------------------------------------------
+        function maskApiKey(key) {
+            if (!key || key.length < 6) return '—';
+            if (key.toUpperCase().includes('REPLACE_ME')) return 'Not configured';
+            return `${key.slice(0, 5)}${'•'.repeat(Math.max(4, key.length - 9))}${key.slice(-4)}`;
+        }
+
+        const apiCheckStatus = {}; // in-memory only, per session: { [key]: 'checking' | 'ok' | 'error' }
+
+        function renderGeminiModelStatusList() {
+            const list = document.getElementById('geminiModelStatusList');
+            if (!list) return;
+            list.innerHTML = '';
+            MODEL_TIERS.forEach(tier => {
+                const state = apiCheckStatus[tier.key];
+                const exhausted = isModelExhausted(tier.key);
+                let dotClass = 'checking';
+                let labelText = 'Checking…';
+                if (state === 'ok') { dotClass = 'ok'; labelText = 'Working'; }
+                else if (state === 'error') {
+                    dotClass = 'error';
+                    const resetInfo = exhausted ? getModelResetInfo(tier.key) : null;
+                    labelText = resetInfo ? formatTimeRemaining(resetInfo.resetAt) : 'Unavailable';
+                }
+                else if (!state) {
+                    dotClass = exhausted ? 'error' : '';
+                    const resetInfo = exhausted ? getModelResetInfo(tier.key) : null;
+                    labelText = exhausted ? (resetInfo ? formatTimeRemaining(resetInfo.resetAt) : 'Unavailable') : 'Not checked';
+                }
+
+                const row = document.createElement('div');
+                row.className = 'api-key-submodel-row';
+                row.innerHTML = `
+                    <div class="api-key-submodel-name">
+                        <span class="api-status-dot ${dotClass}"></span>
+                        ${tier.icon} ${tier.label}
+                    </div>
+                    <span class="api-status-label ${dotClass}">${labelText}</span>
+                `;
+                list.appendChild(row);
+            });
+        }
+
+        async function checkGeminiTier(tier) {
+            apiCheckStatus[tier.key] = 'checking';
+            renderGeminiModelStatusList();
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${tier.textModel}:generateContent?key=${getActiveGeminiKey()}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+                        generationConfig: { maxOutputTokens: 1 }
+                    })
+                });
+
+                let data = null;
+                try { data = await response.json(); } catch (e) {}
+
+                if (response.ok) {
+                    apiCheckStatus[tier.key] = 'ok';
+                    clearModelExhausted(tier.key); // don't keep it greyed out if it's actually working again
+                } else if (isRateLimitResponse(response, data)) {
+                    apiCheckStatus[tier.key] = 'error';
+                    markModelExhausted(tier.key);
+                } else {
+                    apiCheckStatus[tier.key] = 'error';
+                }
+            } catch (e) {
+                apiCheckStatus[tier.key] = 'error';
+            }
+            renderGeminiModelStatusList();
+            renderModelDropdown();
+        }
+
+        async function checkAllGeminiTiers() {
+            const btn = document.getElementById('checkAllGeminiBtn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+            await Promise.all(MODEL_TIERS.map(checkGeminiTier));
+            if (btn) { btn.disabled = false; btn.textContent = 'Check All'; }
+        }
+
+        async function checkPollinationsKey() {
+            const dot = document.getElementById('pollinationsStatusDot');
+            const label = document.getElementById('pollinationsStatusLabel');
+            const btn = document.getElementById('checkPollinationsBtn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+            if (dot) dot.className = 'api-status-dot checking';
+            if (label) { label.className = 'api-status-label checking'; label.textContent = 'Checking…'; }
+
+            try {
+                const endpoint = `https://image.pollinations.ai/prompt/${encodeURIComponent('test')}?width=64&height=64&nologo=true`;
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    headers: POLLINATIONS_API_KEY && !POLLINATIONS_API_KEY.toUpperCase().includes('REPLACE_ME')
+                        ? { 'Authorization': `Bearer ${POLLINATIONS_API_KEY}` }
+                        : {}
+                });
+                if (response.ok) {
+                    if (dot) dot.className = 'api-status-dot ok';
+                    if (label) { label.className = 'api-status-label ok'; label.textContent = 'Working'; }
+                } else {
+                    if (dot) dot.className = 'api-status-dot error';
+                    if (label) { label.className = 'api-status-label error'; label.textContent = `Unavailable (${response.status})`; }
+                }
+            } catch (e) {
+                if (dot) dot.className = 'api-status-dot error';
+                if (label) { label.className = 'api-status-label error'; label.textContent = 'Unavailable'; }
+            }
+
+            if (btn) { btn.disabled = false; btn.textContent = 'Check'; }
+        }
+
+        function openSettingsModal() {
+            refreshOwnKeyUI();
+            document.getElementById('pollinationsKeyMasked').textContent = maskApiKey(POLLINATIONS_API_KEY);
+            renderGeminiModelStatusList();
+            document.getElementById('settingsModalOverlay').classList.add('show');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModalOverlay').classList.remove('show');
+        }
+
+        document.getElementById('settingsBtn').onclick = openSettingsModal;
+        document.getElementById('settingsCloseBtn').onclick = closeSettingsModal;
+        document.getElementById('settingsModalOverlay').addEventListener('click', (e) => {
+            if (e.target.id === 'settingsModalOverlay') closeSettingsModal();
+        });
+
+        document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.settings-tab-panel').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab === 'general' ? 'settingsTabGeneral' : 'settingsTabApiKeys').classList.add('active');
+            });
+        });
+
+        document.getElementById('checkAllGeminiBtn').onclick = checkAllGeminiTiers;
+        document.getElementById('checkPollinationsBtn').onclick = checkPollinationsKey;
+        document.getElementById('useOwnKeyBtn').onclick = useOwnGeminiKey;
+        document.getElementById('removeOwnKeyBtn').onclick = removeOwnGeminiKey;
+        document.getElementById('ownGeminiKeyInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') useOwnGeminiKey();
+        });
+
         function isRateLimitResponse(response, data) {
             if (response && response.status === 429) return true;
             const msg = (data && data.error && (data.error.message || data.error.status)) || '';
@@ -1494,9 +2438,6 @@
             return lowered.includes('quota') || lowered.includes('rate limit') || lowered.includes('resource_exhausted') || lowered.includes('resource exhausted');
         }
 
-        // Switches to the next lower model tier after the current one
-        // hits its limit. Returns the new tier, or null if every tier
-        // is exhausted.
         function downgradeAfterLimit() {
             markModelExhausted(MODEL_TIERS[activeTierIndex].key);
             renderModelDropdown();
@@ -1529,9 +2470,13 @@
         const customModalOverlay = document.getElementById('customModalOverlay');
         const renameModalContent = document.getElementById('renameModalContent');
         const deleteModalContent = document.getElementById('deleteModalContent');
+        const searchChatBtn = document.getElementById('searchChatBtn');
+        const searchModalOverlay = document.getElementById('searchModalOverlay');
+        const searchChatsInput = document.getElementById('searchChatsInput');
+        const searchResultsList = document.getElementById('searchResultsList');
+        const searchModalClose = document.getElementById('searchModalClose');
         const modalRenameInput = document.getElementById('modalRenameInput');
 
-        // Lightbox element selectors
         const imagePreviewOverlay = document.getElementById('imagePreviewOverlay');
         const previewModalImage = document.getElementById('previewModalImage');
         const previewWindowTitle = document.getElementById('previewWindowTitle');
@@ -1555,7 +2500,7 @@
                 const titlePrompt = `Analyze the following conversation and generate a highly specific, descriptive title (2 to 4 words). Focus strictly on the unique subject matter. Do NOT use generic words like "Chat", "Help", "Conversation", "Analysis", or "Assistant". Respond ONLY with the title text itself. No quotes, no punctuation, no markdown.\n\nUser asked: ${userText}\nAI replied: ${aiText}`;
                 
                 const titleModel = MODEL_TIERS[MODEL_TIERS.length - 1].textModel;
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${titleModel}:generateContent?key=${GEMINI_API_KEY}`, {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${titleModel}:generateContent?key=${getActiveGeminiKey()}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contents: [{ parts: [{ text: titlePrompt }] }] })
@@ -1589,8 +2534,10 @@
                 
                 if (chatA.pinned && !chatB.pinned) return -1;
                 if (!chatA.pinned && chatB.pinned) return 1;
-                
-                return b.split('_')[2] - a.split('_')[2];
+
+                const timeA = chatA.updatedAt || parseInt(a.split('_')[2], 10) || 0;
+                const timeB = chatB.updatedAt || parseInt(b.split('_')[2], 10) || 0;
+                return timeB - timeA;
             });
 
             keys.forEach(key => {
@@ -1601,7 +2548,7 @@
 
                 const div = document.createElement('div');
                 div.className = 'history-item';
-                div.innerText = (chat.pinned ? '📌 ' : '') + (chat.title || "Untitled Conversation");
+                div.innerText = (chat.pinned ? '📌 ' : '') + (chat.isBranch ? '• Branched ' : '') + (chat.title || "Untitled Conversation");
                 div.onclick = () => loadActiveChat(key);
                 
                 const optionsBtn = document.createElement('button');
@@ -1645,10 +2592,6 @@
                 historySection.appendChild(wrapper);
             });
         }
-
-        document.addEventListener('click', () => {
-            document.querySelectorAll('.chat-dropdown').forEach(d => d.classList.remove('show'));
-        });
 
         function closeAppModal() {
             customModalOverlay.classList.remove('show');
@@ -1737,28 +2680,31 @@
         function loadActiveChat(id) {
             currentChatId = id;
             toggleInterface(true);
+
+            const chat = JSON.parse(localStorage.getItem(id));
+            isGenerating = !!(chat && chat.isGeneratingInBg);
+
             renderActiveChatMessages();
             loadHistoryList();
-            
-            // Sync up generating control tracking states globally
-            const chat = JSON.parse(localStorage.getItem(id));
-            if (chat && chat.isGeneratingInBg) {
-                setGeneratingState(true);
-            } else {
-                setGeneratingState(false);
-            }
+            setGeneratingState(isGenerating);
         }
+
+        // SVG definitions for action state icons
+        const sendIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>';
+        const stopIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>';
+        const sparkleIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4L12 2z"></path></svg>';
+        const dotsIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="12" r="2"/></svg>';
 
         function setGeneratingState(generating) {
             isGenerating = generating;
             if (generating) {
-                actionBtn.innerHTML = '■'; 
+                actionBtn.innerHTML = stopIcon; 
                 actionBtn.classList.add('stop-state');
-                statusIndicator.innerHTML = '⚡';
+                statusIndicator.innerHTML = dotsIcon;
             } else {
-                actionBtn.innerHTML = '↑'; 
+                actionBtn.innerHTML = sendIcon; 
                 actionBtn.classList.remove('stop-state');
-                statusIndicator.innerHTML = '🔍';
+                statusIndicator.innerHTML = sparkleIcon;
             }
         }
 
@@ -1767,9 +2713,6 @@
 
         const dropZoneOverlay = document.getElementById('dropZoneOverlay');
 
-        // Some browsers leave dataTransfer.files empty depending on exactly
-        // which element the drop lands on; dataTransfer.items is the more
-        // reliable source, so we try both.
         function extractFilesFromDrop(e) {
             const dt = e.dataTransfer;
             if (!dt) return [];
@@ -1787,11 +2730,6 @@
             return [];
         }
 
-        // Global fallback: always allow drops on the page so the browser
-        // never rejects the drag outright, AND also try to process the
-        // files directly here — this is a redundant safety net in case the
-        // overlay below never activates for some reason (e.g. a browser
-        // that doesn't report 'Files' in dataTransfer.types on dragenter).
         window.addEventListener('dragover', (e) => e.preventDefault());
         window.addEventListener('drop', (e) => {
             e.preventDefault();
@@ -1803,20 +2741,6 @@
             }
         });
 
-        // The moment a file drag enters the window, reveal a full-viewport
-        // overlay with pointer-events enabled. Once visible, that overlay
-        // physically sits on top of everything else, so it — and only it —
-        // receives all further dragover/dragleave/drop events for this
-        // drag. No child element (the textarea, buttons, etc.) can ever
-        // intercept or swallow the drop this way.
-        //
-        // IMPORTANT: dragenter/dragleave are NOT balanced 1:1 the way you'd
-        // expect — moving over any nested node (even a text run, like the
-        // emoji + label inside the overlay) fires an extra enter/leave pair.
-        // A plain boolean toggle deactivates the overlay on that spurious
-        // leave, right as the user is about to drop (this is especially
-        // aggressive in Firefox). We use a depth counter instead, so the
-        // overlay only turns off when we've truly left the window.
         let dragDepth = 0;
 
         window.addEventListener('dragenter', (e) => {
@@ -1852,18 +2776,12 @@
             }
         });
 
-        // Safety nets in case a drag ends without a clean dragleave/drop
-        // (e.g. dropped outside the window, or cancelled).
         window.addEventListener('dragend', () => { dragDepth = 0; dropZoneOverlay.classList.remove('active'); });
         window.addEventListener('mouseup', () => { dragDepth = 0; dropZoneOverlay.classList.remove('active'); });
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) { dragDepth = 0; dropZoneOverlay.classList.remove('active'); }
         });
 
-        // Paste-to-attach: if the clipboard contains a file (a copied
-        // image, screenshot, or a file copied from the OS file manager),
-        // attach it the same way a drag-and-drop or the + button would —
-        // works no matter what's focused on the page.
         document.addEventListener('paste', (e) => {
             if (!e.clipboardData) return;
             let files = [];
@@ -2052,8 +2970,53 @@
             let insideList = false;
             let finalOutput = [];
 
-            lines.forEach(line => {
-                let cleanLine = line.trim();
+            function parseTableRow(line) {
+                return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+            }
+
+            function isTableSeparatorRow(line) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('|') && !trimmed.includes('|')) return false;
+                const cells = parseTableRow(trimmed);
+                return cells.length > 0 && cells.every(c => /^:?-{2,}:?$/.test(c));
+            }
+
+            function isTableRow(line) {
+                const trimmed = line.trim();
+                return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 1;
+            }
+
+            let i = 0;
+            while (i < lines.length) {
+                const line = lines[i];
+                const cleanLine = line.trim();
+
+                // --- Markdown table detection ---
+                if (isTableRow(line) && lines[i + 1] !== undefined && isTableSeparatorRow(lines[i + 1])) {
+                    if (insideList) {
+                        finalOutput.push('</ul>');
+                        insideList = false;
+                    }
+
+                    const headerCells = parseTableRow(line);
+                    let tableHtml = '<div class="ai-table-wrapper"><table class="ai-table"><thead><tr>';
+                    tableHtml += headerCells.map(c => `<th>${c}</th>`).join('');
+                    tableHtml += '</tr></thead><tbody>';
+
+                    i += 2; // skip header row + separator row
+
+                    while (i < lines.length && isTableRow(lines[i])) {
+                        const rowCells = parseTableRow(lines[i]);
+                        tableHtml += '<tr>' + rowCells.map(c => `<td>${c}</td>`).join('') + '</tr>';
+                        i++;
+                    }
+
+                    tableHtml += '</tbody></table></div>';
+                    finalOutput.push(tableHtml);
+                    continue;
+                }
+
+                // --- List detection (existing behavior) ---
                 if (cleanLine.startsWith('* ') || cleanLine.startsWith('- ')) {
                     let content = cleanLine.substring(2);
                     if (!insideList) {
@@ -2068,7 +3031,8 @@
                     }
                     finalOutput.push(line);
                 }
-            });
+                i++;
+            }
 
             if (insideList) {
                 finalOutput.push('</ul>');
@@ -2115,27 +3079,59 @@
                     }
                 }
             });
-
-            if (isStopped && originalPrompt) {
-                const regenBox = document.createElement('div');
-                regenBox.className = 'regen-container';
-                
-                const regenBtn = document.createElement('button');
-                regenBtn.className = 'regen-btn';
-                regenBtn.innerHTML = '↩️ Regenerate';
-                
-                let cleanPrompt = originalPrompt.replace(/'/g, "\\'");
-                regenBtn.setAttribute('onclick', `triggerRegenerate('${cleanPrompt}')`);
-                
-                regenBox.appendChild(regenBtn);
-                targetElement.appendChild(regenBox);
-            }
         }
 
         window.triggerRegenerate = function(promptText) {
             userInput.value = promptText;
             sendMessage();
         };
+
+        function speakMessageText(rawText, btnEl) {
+            if (!('speechSynthesis' in window)) {
+                alert("Sorry, this browser doesn't support text-to-speech.");
+                return;
+            }
+            const cleanText = rawText.replace(/```[\s\S]*?```/g, ' code block omitted ').replace(/[*_#`>]/g, '');
+
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+                if (btnEl) btnEl.innerHTML = btnEl.innerHTML.replace('Stop', 'Listen');
+                return;
+            }
+
+            const utter = new SpeechSynthesisUtterance(cleanText);
+            utter.rate = 1;
+            utter.onend = () => {
+                if (btnEl) btnEl.classList.remove('speaking');
+            };
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utter);
+            if (btnEl) btnEl.classList.add('speaking');
+        }
+
+        function branchChatFromMessage(uptoIndex) {
+            if (!currentChatId) return;
+            const sourceChat = JSON.parse(localStorage.getItem(currentChatId));
+            if (!sourceChat) return;
+
+            const branchedMessages = JSON.parse(JSON.stringify(sourceChat.messages.slice(0, uptoIndex + 1)));
+            const newId = `cavdo_chat_${Date.now()}`;
+            const newChat = {
+                title: sourceChat.title || 'Chat',
+                messages: branchedMessages,
+                pinned: false,
+                isGeneratingInBg: false,
+                isBranch: true,
+                updatedAt: Date.now()
+            };
+            localStorage.setItem(newId, JSON.stringify(newChat));
+
+            currentChatId = newId;
+            toggleInterface(true);
+            isGenerating = false;
+            renderActiveChatMessages();
+            loadHistoryList();
+        }
 
         function escapeHtml(text) {
             return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -2175,29 +3171,11 @@
 
             chat.messages.forEach((msg, index) => {
                 const msgNode = document.createElement('div');
-                msgNode.className = `message ${msg.role}`;
+                msgNode.className = `message-group ${msg.role}`;
+
+                const bubble = document.createElement('div');
+                bubble.className = `message ${msg.role}`;
                 
-                if (msg.role === 'user') {
-                    const copyBtn = document.createElement('button');
-                    copyBtn.className = 'copy-msg-btn';
-                    copyBtn.innerHTML = '📋';
-                    copyBtn.title = "Copy message";
-                    copyBtn.onclick = () => {
-                        navigator.clipboard.writeText(msg.text || '').then(() => {
-                            copyBtn.innerHTML = '✅';
-                            setTimeout(() => { copyBtn.innerHTML = '📋'; }, 1200);
-                        });
-                    };
-                    msgNode.appendChild(copyBtn);
-
-                    const editBtn = document.createElement('button');
-                    editBtn.className = 'edit-msg-btn';
-                    editBtn.innerHTML = '✏️';
-                    editBtn.title = "Edit message";
-                    editBtn.onclick = () => openInlineMessageEditor(msgNode, index, msg.text);
-                    msgNode.appendChild(editBtn);
-                }
-
                 if (msg.imgData) {
                     const img = document.createElement('img');
                     img.className = 'chat-img-preview';
@@ -2205,12 +3183,12 @@
                     img.src = srcStr;
                     img.title = "Click to enlarge";
                     img.onclick = () => window.openImageLightbox(srcStr, msg.text || "Uploaded Attachment");
-                    msgNode.appendChild(img);
+                    bubble.appendChild(img);
                 } else if (msg.fileName) {
                     const fileTag = document.createElement('div');
                     fileTag.className = 'file-attachment-tag';
-                    fileTag.innerHTML = `📄 <span>${escapeHtml(msg.fileName)}</span>`;
-                    msgNode.appendChild(fileTag);
+                    fileTag.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> <span>${escapeHtml(msg.fileName)}</span>`;
+                    bubble.appendChild(fileTag);
                 }
 
                 const textDiv = document.createElement('div');
@@ -2226,7 +3204,147 @@
                     textDiv.innerText = msg.text;
                 }
                 
-                msgNode.appendChild(textDiv);
+                bubble.appendChild(textDiv);
+                msgNode.appendChild(bubble);
+                
+                // Add user actions (copy/edit) UNDER user message
+                if (msg.role === 'user') {
+                    const copySvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+                    const checkSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2fd05c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                    const editSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>';
+
+                    const userActionsBar = document.createElement('div');
+                    userActionsBar.className = 'user-actions';
+
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'edit-msg-btn';
+                    editBtn.innerHTML = editSvg;
+                    editBtn.title = "Edit message";
+                    editBtn.onclick = () => openInlineMessageEditor(msgNode, index, msg.text);
+                    
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'copy-msg-btn';
+                    copyBtn.innerHTML = copySvg;
+                    copyBtn.title = "Copy message";
+                    copyBtn.onclick = () => {
+                        navigator.clipboard.writeText(msg.text || '').then(() => {
+                            copyBtn.innerHTML = checkSvg;
+                            setTimeout(() => { copyBtn.innerHTML = copySvg; }, 1200);
+                        });
+                    };
+
+                    userActionsBar.appendChild(copyBtn);
+                    userActionsBar.appendChild(editBtn);
+                    msgNode.appendChild(userActionsBar);
+                }
+
+                // Add AI Action toolbar UNDER AI message
+                // Only render the bar if the message has finished generating
+                const isCurrentlyGenerating = isGenerating && index === chat.messages.length - 1;
+                
+                if (msg.role === 'ai' && !isCurrentlyGenerating) {
+                    const aiActionsBar = document.createElement('div');
+                    aiActionsBar.className = 'ai-actions';
+
+                    const thumbUpBtn = document.createElement('button');
+                    thumbUpBtn.className = 'ai-action-btn' + (msg.feedback === 'up' ? ' active up' : '');
+                    thumbUpBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>';
+                    thumbUpBtn.title = 'Good response';
+
+                    const thumbDownBtn = document.createElement('button');
+                    thumbDownBtn.className = 'ai-action-btn' + (msg.feedback === 'down' ? ' active down' : '');
+                    thumbDownBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2"></path></svg>';
+                    thumbDownBtn.title = 'Bad response';
+
+                    thumbUpBtn.onclick = () => {
+                        const liveChat = JSON.parse(localStorage.getItem(currentChatId));
+                        if (!liveChat) return;
+                        const target = liveChat.messages[index];
+                        target.feedback = (target.feedback === 'up') ? null : 'up';
+                        localStorage.setItem(currentChatId, JSON.stringify(liveChat));
+                        thumbUpBtn.classList.toggle('active', target.feedback === 'up');
+                        thumbUpBtn.classList.toggle('up', target.feedback === 'up');
+                        thumbDownBtn.classList.remove('active', 'down');
+                    };
+
+                    thumbDownBtn.onclick = () => {
+                        const liveChat = JSON.parse(localStorage.getItem(currentChatId));
+                        if (!liveChat) return;
+                        const target = liveChat.messages[index];
+                        target.feedback = (target.feedback === 'down') ? null : 'down';
+                        localStorage.setItem(currentChatId, JSON.stringify(liveChat));
+                        thumbDownBtn.classList.toggle('active', target.feedback === 'down');
+                        thumbDownBtn.classList.toggle('down', target.feedback === 'down');
+                        thumbUpBtn.classList.remove('active', 'up');
+                    };
+
+                    const regenBtn = document.createElement('button');
+                    regenBtn.className = 'ai-action-btn';
+                    regenBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>';
+                    regenBtn.title = 'Regenerate';
+                    regenBtn.onclick = () => {
+                        let promptToUse = msg.stoppedPrompt || '';
+                        if (!promptToUse && index > 0 && chat.messages[index-1].role === 'user') {
+                            promptToUse = chat.messages[index-1].text;
+                        }
+                        if (promptToUse) triggerRegenerate(promptToUse.replace(/'/g, "\\'"));
+                    };
+
+                    const copyAiBtn = document.createElement('button');
+                    copyAiBtn.className = 'ai-action-btn';
+                    copyAiBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+                    copyAiBtn.title = 'Copy';
+                    copyAiBtn.onclick = () => {
+                        navigator.clipboard.writeText(msg.text || '').then(() => {
+                            copyAiBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#2fd05c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                            setTimeout(() => {
+                                copyAiBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+                            }, 1200);
+                        });
+                    };
+
+                    const moreBtn = document.createElement('button');
+                    moreBtn.className = 'ai-action-btn';
+                    moreBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>';
+                    moreBtn.title = 'More';
+
+                    const moreMenu = document.createElement('div');
+                    moreMenu.className = 'ai-more-dropdown';
+                    moreMenu.innerHTML = `
+                        <button class="ai-dropdown-item" data-action="branch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21v-6H3M21 3l-7 7M3 21l7-7"/></svg> Branch in new chat</button>
+                        <button class="ai-dropdown-item" data-action="listen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg> Listen</button>
+                    `;
+
+                    moreMenu.querySelector('[data-action="branch"]').onclick = (e) => {
+                        e.stopPropagation();
+                        moreMenu.classList.remove('show');
+                        branchChatFromMessage(index);
+                    };
+
+                    moreMenu.querySelector('[data-action="listen"]').onclick = (e) => {
+                        e.stopPropagation();
+                        moreMenu.classList.remove('show');
+                        speakMessageText(msg.text || '', moreMenu.querySelector('[data-action="listen"]'));
+                    };
+
+                    moreBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        document.querySelectorAll('.ai-more-dropdown').forEach(d => {
+                            if (d !== moreMenu) d.classList.remove('show');
+                        });
+                        moreMenu.classList.toggle('show');
+                    };
+
+                    aiActionsBar.appendChild(thumbUpBtn);
+                    aiActionsBar.appendChild(thumbDownBtn);
+                    aiActionsBar.appendChild(regenBtn);
+                    aiActionsBar.appendChild(copyAiBtn);
+                    aiActionsBar.appendChild(moreBtn);
+                    aiActionsBar.appendChild(moreMenu);
+
+                    msgNode.appendChild(aiActionsBar);
+                }
+
                 chatWrapper.appendChild(msgNode);
             });
 
@@ -2254,7 +3372,7 @@
             
             const dl = document.createElement('a');
             dl.className = 'image-download-link';
-            dl.innerHTML = '📥 Download JPG';
+            dl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download JPG';
             dl.href = img.src;
             dl.download = `cavdo-art-${Date.now()}.jpg`;
             
@@ -2265,11 +3383,9 @@
 
         function openInlineMessageEditor(msgNode, index, currentText) {
             const textDiv = msgNode.querySelector('.text-container-node');
-            const editBtn = msgNode.querySelector('.edit-msg-btn');
-            const copyBtn = msgNode.querySelector('.copy-msg-btn');
+            const actionsBar = msgNode.querySelector('.user-actions');
             
-            if (editBtn) editBtn.style.display = 'none';
-            if (copyBtn) copyBtn.style.display = 'none';
+            if (actionsBar) actionsBar.style.display = 'none';
             textDiv.innerHTML = '';
 
             const textarea = document.createElement('textarea');
@@ -2313,7 +3429,6 @@
             if (isGenerating) {
                 if (abortController) abortController.abort();
                 
-                // Save stopped flag state to thread history data
                 if (currentChatId) {
                     const chatData = JSON.parse(localStorage.getItem(currentChatId));
                     if (chatData && chatData.messages.length > 0) {
@@ -2333,7 +3448,6 @@
 
             if (!text && !activeFileBase64 && !activeFileTextContent) return;
 
-            // Track target room thread safely
             const requestContextChatId = currentChatId || `cavdo_chat_${Date.now()}`;
 
             if (!currentChatId) {
@@ -2342,7 +3456,8 @@
                     title: text ? (text.substring(0, 24) + "...") : "AI Task",
                     messages: [],
                     pinned: false,
-                    isGeneratingInBg: true
+                    isGeneratingInBg: true,
+                    updatedAt: Date.now()
                 };
                 localStorage.setItem(currentChatId, JSON.stringify(newChat));
                 toggleInterface(true);
@@ -2367,10 +3482,12 @@
             }
 
             chatData.messages.push(userMsg);
+            chatData.updatedAt = Date.now();
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
             userInput.value = '';
             autoResizeUserInput();
             clearAttachmentState();
+            loadHistoryList();
             
             if (currentChatId === requestContextChatId) {
                 renderActiveChatMessages();
@@ -2388,10 +3505,12 @@
             }
 
             const aiMsgIndex = chatData.messages.length;
-            const aiMsg = { role: 'ai', text: (selectedMode === 'image') ? '🎨 Painting your masterpiece...' : '⚡ Thinking' };
+            
+            const aiMsg = { role: 'ai', text: (selectedMode === 'image') ? '✨ Painting your masterpiece...' : '✨ Thinking' };
             chatData.messages.push(aiMsg);
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
 
+            isGenerating = true;
             if (currentChatId === requestContextChatId) {
                 renderActiveChatMessages();
             }
@@ -2399,7 +3518,6 @@
             setGeneratingState(true);
             abortController = new AbortController();
 
-            // Dynamic background tracking pulse updates
             let internalThinkingInterval = setInterval(() => {
                 const innerChat = JSON.parse(localStorage.getItem(requestContextChatId));
                 if (!innerChat || !innerChat.isGeneratingInBg) {
@@ -2408,11 +3526,11 @@
                 }
                 if (currentChatId === requestContextChatId) {
                     const targetNode = chatWrapper.lastElementChild?.querySelector('.text-container-node');
-                    if (targetNode && innerChat.messages[aiMsgIndex].text.startsWith('⚡ Thinking')) {
+                    if (targetNode && innerChat.messages[aiMsgIndex].text.startsWith('✨ Thinking')) {
                         let textVal = targetNode.innerText;
-                        let dots = textVal.replace('⚡ Thinking', '');
+                        let dots = textVal.replace('✨ Thinking', '');
                         let nextDots = '.'.repeat((dots.length + 1) % 4);
-                        targetNode.innerText = '⚡ Thinking' + nextDots;
+                        targetNode.innerText = '✨ Thinking' + nextDots;
                     }
                 }
             }, 200);
@@ -2456,6 +3574,7 @@
                     localStorage.setItem(requestContextChatId, JSON.stringify(saveChat));
                     
                     if (currentChatId === requestContextChatId) {
+                        isGenerating = false;
                         renderActiveChatMessages();
                         const lastMessageNode = chatWrapper.lastElementChild;
                         if (lastMessageNode) {
@@ -2473,16 +3592,13 @@
                         sysInstruction += " The conversation history includes one or more file attachments marked '[Context File Attachment: <filename>]' followed by their full content. Remember this content for the rest of the conversation. If the user later asks you to 'edit that file', 'edit the file', or refers to 'that file' without re-uploading it, use the most recently attached file's content as the source of truth and return the complete, fully edited file content in a single markdown code fence, preserving the original structure and format unless told otherwise.";
                     }
 
-                    // Try the currently selected model tier. If Gemini reports a
-                    // rate limit / quota error, automatically grey that tier out
-                    // and drop down to the next available one, then retry.
                     let data = null;
                     const maxAttempts = MODEL_TIERS.length;
 
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
                         const usedTier = getActiveTier();
                         const activeModel = (selectedMode === 'code') ? usedTier.codeModel : usedTier.textModel;
-                        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${GEMINI_API_KEY}`;
+                        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${getActiveGeminiKey()}`;
 
                         const response = await fetch(endpoint, {
                             method: 'POST',
@@ -2503,7 +3619,7 @@
                             }
                             const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
                             if (switchChat) {
-                                switchChat.messages[aiMsgIndex].text = `⚡ ${usedTier.label} limit reached — switching to ${nextTier.label}, thinking`;
+                                switchChat.messages[aiMsgIndex].text = `✨ ${usedTier.label} limit reached — switching to ${nextTier.label}, thinking`;
                                 localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
                             }
                             continue;
@@ -2557,10 +3673,12 @@
                     }
 
                     if (currentChatId === requestContextChatId) {
+                        // Mark generation finished BEFORE re-rendering, otherwise this
+                        // last message still gets skipped and never gets its toolbar.
+                        isGenerating = false;
+                        renderActiveChatMessages();
                         const lastMessageNode = chatWrapper.lastElementChild;
-                        const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
-                        if (textDiv) {
-                            renderAIContent(textDiv, fullText, false, text);
+                        if (lastMessageNode) {
                             setTimeout(() => {
                                 lastMessageNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }, 40);
@@ -2645,6 +3763,95 @@
         newChatBtn.onclick = () => {
             toggleInterface(false);
         };
+
+        function escapeHtmlForSearch(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        function highlightMatch(snippet, query) {
+            const safeSnippet = escapeHtmlForSearch(snippet);
+            const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return safeSnippet.replace(new RegExp(`(${safeQuery})`, 'ig'), '<mark>$1</mark>');
+        }
+
+        function performChatSearch(query) {
+            const trimmedQuery = query.trim();
+            searchResultsList.innerHTML = '';
+
+            if (!trimmedQuery) {
+                searchResultsList.innerHTML = '<div class="search-empty-state">Type to search across all your chats.</div>';
+                return;
+            }
+
+            const lowerQuery = trimmedQuery.toLowerCase();
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('cavdo_chat_'));
+            const matches = [];
+
+            keys.forEach(key => {
+                const chat = JSON.parse(localStorage.getItem(key));
+                if (!chat || !chat.messages) return;
+
+                for (let i = 0; i < chat.messages.length; i++) {
+                    const msgText = chat.messages[i].text || '';
+                    const idx = msgText.toLowerCase().indexOf(lowerQuery);
+                    if (idx !== -1) {
+                        const snippetStart = Math.max(0, idx - 30);
+                        const snippet = (snippetStart > 0 ? '...' : '') + msgText.substring(snippetStart, idx + lowerQuery.length + 40);
+                        matches.push({
+                            chatId: key,
+                            messageIndex: i,
+                            title: chat.title || 'Untitled Conversation',
+                            snippet: snippet,
+                            time: chat.updatedAt || parseInt(key.split('_')[2], 10) || 0
+                        });
+                        break; // one hit per chat is enough for the list
+                    }
+                }
+            });
+
+            matches.sort((a, b) => b.time - a.time);
+
+            if (matches.length === 0) {
+                searchResultsList.innerHTML = '<div class="search-empty-state">No chats found for that search.</div>';
+                return;
+            }
+
+            matches.forEach(match => {
+                const item = document.createElement('div');
+                item.className = 'search-result-item';
+                item.innerHTML = `
+                    <div class="search-result-title">${escapeHtmlForSearch(match.title)}</div>
+                    <div class="search-result-snippet">${highlightMatch(match.snippet, trimmedQuery)}</div>
+                `;
+                item.onclick = () => {
+                    loadActiveChat(match.chatId);
+                    closeSearchModal();
+                    setTimeout(() => {
+                        const targetNode = chatWrapper.children[match.messageIndex];
+                        if (targetNode) targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 80);
+                };
+                searchResultsList.appendChild(item);
+            });
+        }
+
+        function openSearchModal() {
+            searchModalOverlay.classList.add('show');
+            searchChatsInput.value = '';
+            searchResultsList.innerHTML = '<div class="search-empty-state">Type to search across all your chats.</div>';
+            setTimeout(() => searchChatsInput.focus(), 50);
+        }
+
+        function closeSearchModal() {
+            searchModalOverlay.classList.remove('show');
+        }
+
+        searchChatBtn.onclick = openSearchModal;
+        searchModalClose.onclick = closeSearchModal;
+        searchModalOverlay.onclick = (e) => {
+            if (e.target === searchModalOverlay) closeSearchModal();
+        };
+        searchChatsInput.addEventListener('input', () => performChatSearch(searchChatsInput.value));
 
         loadHistoryList();
     </script>

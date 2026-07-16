@@ -124,6 +124,12 @@
             letter-spacing: -0.5px;
         }
 
+        .logo-brand-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .logo-mark {
             width: 34px;
             height: 34px;
@@ -2408,15 +2414,41 @@
         .sidebar .logo {
             justify-content: space-between;
         }
-        .sidebar.collapsed {
-            width: 0 !important;
-            min-width: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            opacity: 0;
-            overflow: hidden;
-            pointer-events: none;
+        @media (min-width: 901px) {
+            .sidebar.collapsed {
+                width: 72px !important;
+                min-width: 72px !important;
+                padding: 20px 12px !important;
+                align-items: center;
+                opacity: 1;
+                overflow: visible;
+                pointer-events: auto;
+            }
+            .sidebar.collapsed .logo { flex-direction: column; justify-content: center; width: 100%; gap: 14px; }
+            .sidebar.collapsed .logo-text { display: none !important; }
+            .sidebar.collapsed .sidebar-top-actions { align-items: center; width: 100%; }
+            .sidebar.collapsed .new-chat-btn,
+            .sidebar.collapsed .search-chat-btn {
+                width: 38px;
+                height: 38px;
+                padding: 0;
+                border-radius: 12px;
+            }
+            .sidebar.collapsed .btn-label { display: none; }
+            .sidebar.collapsed .history-section { display: none; }
+            .sidebar.collapsed .user-profile {
+                flex-direction: column;
+                width: 100%;
+                gap: 14px;
+                margin-top: auto;
+                padding-top: 15px;
+                border-top: none;
+            }
+            .sidebar.collapsed .settings-btn { order: 1; }
+            .sidebar.collapsed .user-avatar { order: 2; }
+            /* Once the rail itself can toggle the sidebar, the floating fab is
+               only needed for the mobile slide-in drawer, not on desktop. */
+            .show-sidebar-fab { display: none !important; }
         }
         .show-sidebar-fab {
             position: absolute;
@@ -2737,7 +2769,7 @@
 
     <div class="sidebar" id="appSidebar">
         <div class="logo">
-            <div style="display:flex;align-items:center;gap:10px;">
+            <div class="logo-brand-wrap">
                 <img class="logo-mark" src="" id="sidebarLogoMark" alt="Cavdo AI logo">
                 <span class="logo-text">CAVDO</span>
             </div>
@@ -2746,17 +2778,17 @@
             </button>
         </div>
         <div class="sidebar-top-actions">
-            <button class="new-chat-btn" id="newChatBtn">
+            <button class="new-chat-btn" id="newChatBtn" title="New Chat">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> 
-                New Chat
+                <span class="btn-label">New Chat</span>
             </button>
-            <button class="search-chat-btn" id="searchChatBtn">
+            <button class="search-chat-btn" id="searchChatBtn" title="Search Chats">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                Search Chats
+                <span class="btn-label">Search Chats</span>
             </button>
-            <button class="search-chat-btn" id="myImagesBtn">
+            <button class="search-chat-btn" id="myImagesBtn" title="My Images">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                My Images
+                <span class="btn-label">My Images</span>
             </button>
         </div>
         <div class="history-section" id="historySection">
@@ -2764,7 +2796,7 @@
         </div>
         <div class="user-profile">
             <div class="user-avatar">U</div>
-            <span>User Account</span>
+            <span class="btn-label">User Account</span>
             <button class="settings-btn" id="settingsBtn" title="Settings">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </button>
@@ -7219,6 +7251,7 @@
             function setCollapsed(collapsed) {
                 appSidebar.classList.toggle('collapsed', collapsed);
                 showBtn.classList.toggle('visible', collapsed);
+                hideBtn.title = collapsed ? 'Show sidebar' : 'Hide sidebar';
                 try { localStorage.setItem('cavdoSidebarCollapsed', collapsed ? '1' : '0'); } catch (e) {}
             }
 
@@ -7239,7 +7272,10 @@
                 backdrop.classList.remove('show');
             }
 
-            hideBtn.onclick = () => { mobileQuery.matches ? closeMobile() : setCollapsed(true); };
+            hideBtn.onclick = () => {
+                if (mobileQuery.matches) { closeMobile(); return; }
+                setCollapsed(!appSidebar.classList.contains('collapsed'));
+            };
             showBtn.onclick = () => { mobileQuery.matches ? openMobile() : setCollapsed(false); };
             backdrop.onclick = closeMobile;
 

@@ -2199,7 +2199,42 @@
         }
 
         @media (max-width: 900px) {
-            .sidebar { display: none; }
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 100vh;
+                width: 280px;
+                max-width: 82vw;
+                margin: 0;
+                border-radius: 0 24px 24px 0;
+                z-index: 1200;
+                transform: translateX(-100%);
+                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .sidebar.mobile-open {
+                transform: translateX(0);
+                box-shadow: 20px 0 60px rgba(0, 0, 0, 0.5);
+            }
+            .sidebar.collapsed {
+                width: 280px !important;
+                min-width: 280px !important;
+                margin: 0 !important;
+                padding: 24px !important;
+                border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                opacity: 1 !important;
+                overflow: visible !important;
+                pointer-events: auto !important;
+            }
+            .sidebar-mobile-backdrop {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 1150;
+            }
+            .sidebar-mobile-backdrop.show { display: block; }
+            .show-sidebar-fab { display: flex !important; }
             .search-area { max-width: 100%; bottom: 20px; left: 50%; transform: translateX(-50%); }
             .chat-container { padding: 0 16px; }
             .welcome-box h1 { font-size: 40px; }
@@ -5753,7 +5788,7 @@
             {
                 key: 'pollinations',
                 label: 'Pollinations',
-                buildUrl: (prompt) => `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&model=flux&nologo=true`
+                buildUrl: (prompt, seed) => `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`
             }
         ];
 
@@ -5801,13 +5836,13 @@
             });
         }
 
-        async function fetchFromImageTier(tier, prompt) {
+        async function fetchFromImageTier(tier, prompt, seed) {
             const genUrl = typeof tier.buildUrl === 'function'
-                ? tier.buildUrl(prompt)
-                : `${tier.url}?prompt=${encodeURIComponent(prompt)}`;
+                ? tier.buildUrl(prompt, seed)
+                : `${tier.url}?prompt=${encodeURIComponent(prompt)}&seed=${seed}`;
             let imgRes;
             try {
-                imgRes = await fetch(genUrl, { signal: AbortSignal.timeout(IMAGE_API_TIMEOUT_MS) });
+                imgRes = await fetch(genUrl, { signal: AbortSignal.timeout(IMAGE_API_TIMEOUT_MS), cache: 'no-store' });
             } catch (netErr) {
                 const isTimeout = netErr && (netErr.name === 'TimeoutError' || netErr.name === 'AbortError');
                 throw new Error(isTimeout ? `${tier.label} timed out.` : `Could not reach ${tier.label} (network error).`);
@@ -5838,11 +5873,15 @@
                 ...IMAGE_API_TIERS.filter(t => !isImageApiCoolingDown(t.key)),
                 ...IMAGE_API_TIERS.filter(t => isImageApiCoolingDown(t.key)) // still try as a last resort even if cooling down
             ];
+            // A fresh random seed each call means re-sending the exact same
+            // prompt (e.g. clicking "Vary" on an existing image) still gets
+            // a genuinely new image instead of an identical cached result.
+            const seed = Math.floor(Math.random() * 1e9);
 
             let lastErr = null;
             for (const tier of orderedTiers) {
                 try {
-                    return await fetchFromImageTier(tier, prompt);
+                    return await fetchFromImageTier(tier, prompt, seed);
                 } catch (err) {
                     lastErr = err;
                     const looksRateLimited = err.status === 429 || err.status === 503 || (err.status >= 500 && err.status < 600) || /timed out|network error/i.test(err.message);
@@ -6589,9 +6628,14 @@
                         } catch (searchErr) {
                             console.error('Related image search failed:', searchErr);
                         }
+                        // Keep the real error (HTTP codes, provider quota text, etc.)
+                        // in the console for debugging, but never show that raw
+                        // technical detail to the user — just a plain, friendly
+                        // explanation regardless of what actually failed.
+                        if (genError) console.error('Image generation failed:', genError);
                         const declineText = foundImages.length
-                            ? `I couldn't generate a new image right now (${genError ? genError.message : 'generation failed'}), but here are some real images from the web matching "${finalPrompt}":`
-                            : `I couldn't generate a new image right now (${genError ? genError.message : 'generation failed'}), and couldn't find matching images either — want to try again?`;
+                            ? `Our servers are a little busy right now, so I couldn't generate a new image — but here are some real images from the web matching "${finalPrompt}":`
+                            : `Our servers are a little busy right now, so I couldn't generate a new image, and I couldn't find matching images from the web either — want to try again in a moment?`;
                         updatedChat.messages[aiMsgIndex].text = declineText;
                         updatedChat.messages[aiMsgIndex].isThinking = false;
                         updatedChat.messages[aiMsgIndex].relatedImages = foundImages;
@@ -6615,6 +6659,9 @@
                     sysInstruction += " Every fenced code block you output automatically becomes a real downloadable file in the UI (with copy and download buttons), so always wrap generated documents, scripts, or data in a markdown code fence with an accurate language tag right after the opening ``` (e.g. ```python, ```html, ```json, etc). Only use ```pdf, ```docx, or ```pptx when the user has explicitly asked for that document type (e.g. 'make a PDF for X', 'give me this as a Word doc', 'make a presentation/slides about Y') — each renders as a single 'ready to download' line that turns the content into a real .pdf, .docx, or .pptx file when clicked, with proper headings, bold text, bullet lists and tables (not literal ** or # symbols). Inside a ```pdf or ```docx block, write normal markdown: use '# Title', '## Heading', '**bold**', '*italic*', '- bullet' or '1. numbered' lists, and pipe tables — these render as real formatted headings/bold/lists/tables in the exported file. Inside a ```pptx block, start each slide with a '# ' or '## ' heading (the slide title) followed by '- ' bullet lines for that slide's content, separating slides with '---' if you need a divider without a new heading. Do not use ```pdf/```docx/```pptx for ordinary code or text the user didn't ask to receive as a document. Default to plain prose or a plain ```markdown fence for normal answers, explanations, summaries, lists, and reports — do NOT proactively offer or create a pdf/docx/pptx 'just in case' it's useful, and do not create one because the content is long or looks like a report; wait for the user to actually ask. For example, if the user asks 'write me a report on X' with no mention of a file format, answer in plain markdown, not a ```pdf or ```docx block — only switch to one of those if they follow up with something like 'make that a PDF' or 'as a Word doc'.";
 
                     sysInstruction += " ZIP requests: whenever the user asks you to zip, bundle, combine, package, or 'compress' files — whether those are files they just uploaded as attachments, files/code you generated earlier in this conversation, or brand new files you're writing now — respond with a SINGLE ```zip fenced code block containing a JSON array manifest: [{\"name\": \"path/file.ext\", \"content\": \"...full file content...\"}, ...]. Include the COMPLETE, exact content of every file being zipped (never truncate, summarize, or use placeholders like '...'). If the user says something like 'zip these two files' after uploading two attachments, reuse each attachment's full content verbatim as its own entry. If the user says 'zip that code' or 'zip what you just made' referring to something earlier in the conversation, pull the exact content of that earlier code block/file and put it in the manifest. Give each entry a sensible filename with extension. Do not wrap the zip block in any other code fence or explanation text around the JSON. Separately: when an ordinary (non-zip) reply contains multiple generated files/snippets, the UI automatically also offers a combined ZIP download for all of them — no action needed from you for that case.";
+
+                    sysInstruction += " Math and calculations: you can and should solve ANY math question fully — arithmetic, algebra, geometry, trigonometry, calculus, statistics, word problems, unit conversions, etc. Always show clear step-by-step working before the final answer, and double-check every calculation before giving it. This app has NO LaTeX or MathJax renderer, so never use LaTeX/TeX math syntax or dollar-sign math delimiters, and never use backslash commands such as frac, sqrt, or times — that would show up as broken raw text instead of a formula. Instead write math in plain text using real Unicode characters: superscripts like x², x³, xⁿ; roots like √x or ³√x; and symbols like π, ×, ÷, ±, ≈, ≠, ≤, ≥, °, ∞, Σ, Δ where natural. Write fractions as 'a/b' with a short explanation instead of a stacked fraction command. Use plain markdown (headings, bold, numbered steps) to structure the solution, exactly like the rest of your answers.";
+
 
                     const hasAttachedFile = chatData.messages.some(m => m.fileText || (Array.isArray(m.files) && m.files.some(f => f.textContent)));
                     if (hasAttachedFile) {
@@ -6750,16 +6797,10 @@
                         // it with a generic failure banner.
                         const alreadyHasRealContent = existingMsg.isThinking === false && (existingMsg.text || '').trim().length > 0;
                         if (!alreadyHasRealContent) {
-                            const isLimitMsg = /limit/i.test(err.message || '');
                             const isQuotaMsg = err.name === 'QuotaExceededError' || /quota/i.test(err.message || '');
-                            const isAccessDeniedMsg = /denied access/i.test(err.message || '');
-                            existingMsg.text = isAccessDeniedMsg
-                                ? `⚠️ ${err.message}`
-                                : isLimitMsg
-                                    ? `⚠️ ${err.message}`
-                                    : isQuotaMsg
-                                        ? `⚠️ Your browser's local storage is full. Open "My Images" and delete a few older generated images, then try again.`
-                                        : `⚠️ Something went wrong while generating that response. Please try again in a moment.`;
+                            existingMsg.text = isQuotaMsg
+                                ? `⚠️ Your browser's local storage is full. Open "My Images" and delete a few older generated images, then try again.`
+                                : `⚠️ Our servers are a little busy right now. Please try again in a moment.`;
                         }
                         existingMsg.isThinking = false;
                         errChat.isGeneratingInBg = false;
@@ -6820,7 +6861,11 @@
         actionBtn.onclick = () => sendMessage();
         
         userInput.onkeydown = (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            // e.isComposing / keyCode 229 means the user is still mid-composition
+            // in an IME or on-screen symbol picker (used for things like ², √, π,
+            // accented letters, etc.) — Enter here confirms the character, it
+            // should NOT be treated as "send message".
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
                 e.preventDefault();
                 sendMessage();
             }
@@ -7139,8 +7184,38 @@
                 try { localStorage.setItem('cavdoSidebarCollapsed', collapsed ? '1' : '0'); } catch (e) {}
             }
 
-            hideBtn.onclick = () => setCollapsed(true);
-            showBtn.onclick = () => setCollapsed(false);
+            // On narrow (mobile) widths the sidebar becomes a slide-in drawer
+            // over a backdrop, kept separate from the desktop collapsed/fab
+            // state above so switching between the two never fights itself.
+            const mobileQuery = window.matchMedia('(max-width: 900px)');
+            const backdrop = document.createElement('div');
+            backdrop.className = 'sidebar-mobile-backdrop';
+            document.body.appendChild(backdrop);
+
+            function openMobile() {
+                appSidebar.classList.add('mobile-open');
+                backdrop.classList.add('show');
+            }
+            function closeMobile() {
+                appSidebar.classList.remove('mobile-open');
+                backdrop.classList.remove('show');
+            }
+
+            hideBtn.onclick = () => { mobileQuery.matches ? closeMobile() : setCollapsed(true); };
+            showBtn.onclick = () => { mobileQuery.matches ? openMobile() : setCollapsed(false); };
+            backdrop.onclick = closeMobile;
+
+            // Close the drawer after picking a chat/action, but not for the
+            // toggle itself or a chat's own rename/delete menu.
+            appSidebar.addEventListener('click', (e) => {
+                if (!mobileQuery.matches) return;
+                if (e.target.closest('.sidebar-toggle-btn, .chat-options-btn, .chat-dropdown')) return;
+                closeMobile();
+            });
+
+            if (typeof mobileQuery.addEventListener === 'function') {
+                mobileQuery.addEventListener('change', (e) => { if (!e.matches) closeMobile(); });
+            }
 
             let initiallyCollapsed = false;
             try { initiallyCollapsed = localStorage.getItem('cavdoSidebarCollapsed') === '1'; } catch (e) {}

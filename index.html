@@ -1909,6 +1909,20 @@
             max-width: 400px;
             box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
             animation: modalPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            /* Never let a modal grow taller than the viewport (accounts for
+               mobile URL bar / gesture-nav safe areas) — instead the modal
+               itself scrolls internally so every control stays reachable. */
+            max-height: calc(var(--app-vh) - var(--safe-top) - var(--safe-bottom) - 32px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.15) transparent;
+        }
+        .modal-box::-webkit-scrollbar { width: 6px; }
+        .modal-box::-webkit-scrollbar-track { background: transparent; }
+        .modal-box::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.15);
+            border-radius: 20px;
         }
         @keyframes modalPop {
             from { transform: scale(0.92); opacity: 0; }
@@ -1916,6 +1930,27 @@
         }
         .gallery-modal-box, .editor-modal-box {
             max-width: 720px;
+        }
+        @media (max-width: 600px) {
+            .modal-box {
+                width: 94%;
+                padding: 18px;
+                max-height: calc(var(--app-vh) - var(--safe-top) - var(--safe-bottom) - 24px);
+            }
+            .image-editor-layout {
+                flex-direction: column;
+            }
+            .image-editor-canvas-wrap canvas {
+                max-height: 220px;
+            }
+            .modal-actions {
+                position: sticky;
+                bottom: -18px;
+                margin: 12px -18px -18px -18px;
+                padding: 12px 18px calc(12px + var(--safe-bottom));
+                background: rgba(22, 31, 24, 0.98);
+                border-top: 1px solid rgba(255,255,255,0.08);
+            }
         }
         .image-gallery-grid {
             display: grid;

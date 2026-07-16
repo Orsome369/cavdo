@@ -2259,7 +2259,15 @@
             .sidebar-mobile-backdrop.show { display: block; }
             .show-sidebar-fab { display: flex !important; }
             .mobile-new-chat-fab { display: flex !important; }
-            .search-area { max-width: 100%; bottom: calc(10px + var(--safe-bottom)); left: 50%; transform: translateX(-50%); }
+            .search-area {
+                max-width: 100%;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                transform: none;
+                padding: 14px 16px calc(14px + var(--safe-bottom)) 16px;
+                background: linear-gradient(to top, #050705 0%, rgba(5, 7, 5, 0.92) 55%, rgba(5, 7, 5, 0) 100%);
+            }
             .input-bar { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35); }
             .chat-container { padding: 0 16px; }
             .welcome-box h1 { font-size: 40px; }

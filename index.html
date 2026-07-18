@@ -679,6 +679,326 @@
             transition: background 0.2s;
         }
 
+        /* Plan & Usage (free-tier limits) */
+        .plan-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.7);
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .upgrade-plan-btn {
+            flex-shrink: 0;
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 200, 60, 0.35);
+            background: linear-gradient(135deg, rgba(255,200,60,0.18), rgba(255,140,60,0.12));
+            color: #ffcc4d;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+        }
+
+        .upgrade-plan-btn:hover {
+            background: linear-gradient(135deg, rgba(255,200,60,0.3), rgba(255,140,60,0.2));
+            transform: translateY(-1px);
+        }
+
+        .usage-tier-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            margin-top: 8px;
+        }
+
+        .usage-tier-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+
+        .usage-tier-name {
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.85);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .usage-tier-count {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            font-family: 'SFMono-Regular', Consolas, monospace;
+        }
+
+        .usage-tier-bar-track {
+            width: 100%;
+            height: 5px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .usage-tier-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: #2fd05c;
+            transition: width 0.3s;
+        }
+
+        .usage-tier-bar-fill.warn { background: #f5b942; }
+        .usage-tier-bar-fill.locked { background: #ff6b6b; }
+
+        .usage-tier-lock-note {
+            font-size: 11.5px;
+            color: #ff8a8a;
+            font-weight: 600;
+        }
+
+        /* Plans page (full page, not a modal) */
+        /* Plans modal (same pattern as the Settings modal, just bigger) */
+        .modal-box.plans-modal-box {
+            max-width: 1560px;
+            width: 96%;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            max-height: 92vh;
+            overflow: hidden;
+        }
+
+        @media (max-width: 1620px) {
+            .modal-box.plans-modal-box { max-width: 96%; }
+        }
+
+        .plans-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 24px 16px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .plans-modal-header h3 { margin: 0; }
+
+        .plans-modal-body {
+            padding: 16px 24px 22px;
+            overflow-y: auto;
+        }
+
+        .plans-page-subtitle {
+            font-size: 12px;
+            color: rgba(255,255,255,0.5);
+            margin: 0 0 14px;
+        }
+
+        @media (max-width: 600px) {
+            .plans-modal-header { padding: 16px 16px 14px; }
+            .plans-modal-body { padding: 14px 16px 18px; }
+        }
+
+        .plan-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(190px, 1fr));
+            gap: 14px;
+        }
+
+        @media (max-width: 620px) {
+            .plan-cards-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 400px) {
+            .plan-cards-grid { grid-template-columns: 1fr; }
+        }
+
+        .plan-card {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 16px 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.03);
+            position: relative;
+        }
+
+        .plan-card.current {
+            border-color: rgba(47,208,92,0.5);
+            background: rgba(47,208,92,0.07);
+        }
+
+        .plan-card.highlight {
+            border-color: rgba(255,200,60,0.45);
+        }
+
+        .plan-card-current-badge {
+            position: absolute;
+            top: -9px;
+            right: 11px;
+            background: #2fd05c;
+            color: #000;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 20px;
+            letter-spacing: 0.03em;
+        }
+
+        .plan-card-name {
+            font-size: 14.5px;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .plan-card-price {
+            font-size: 21px;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .plan-card-price span {
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(255,255,255,0.45);
+        }
+
+        .plan-card-features {
+            list-style: none;
+            padding: 0;
+            margin: 2px 0 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+        }
+
+        .plan-card-features li {
+            font-size: 12px;
+            color: rgba(255,255,255,0.75);
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            line-height: 1.3;
+        }
+
+        .plan-card-features li::before {
+            content: "✓";
+            color: #2fd05c;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .plan-card-features li.excluded {
+            color: rgba(255,255,255,0.35);
+        }
+
+        .plan-card-features li.excluded::before {
+            content: "✕";
+            color: #ff5f5f;
+        }
+
+        .plan-choose-btn {
+            margin-top: 4px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            border: none;
+            background: #2fd05c;
+            color: #000;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .plan-choose-btn:hover:not(:disabled) { background: #3ee06c; }
+
+        .plan-choose-btn:disabled {
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.4);
+            cursor: default;
+        }
+
+        /* QR payment modal */
+        .qr-payment-box { max-width: 380px; text-align: center; }
+
+        .qr-payment-plan-name {
+            font-size: 16px;
+            font-weight: 800;
+            color: #fff;
+            margin-top: 4px;
+        }
+
+        .qr-payment-amount {
+            font-size: 28px;
+            font-weight: 800;
+            color: #2fd05c;
+            margin: 4px 0 14px;
+        }
+
+        .qr-payment-image-wrap {
+            background: #fff;
+            border-radius: 14px;
+            padding: 14px;
+            display: inline-block;
+            margin-bottom: 14px;
+        }
+
+        .qr-payment-image-wrap img {
+            display: block;
+            width: 200px;
+            height: 200px;
+        }
+
+        .qr-payment-note {
+            font-size: 12px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .qr-payment-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .qr-confirm-btn {
+            flex: 1;
+            padding: 11px;
+            border-radius: 12px;
+            border: none;
+            background: #2fd05c;
+            color: #000;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .qr-confirm-btn:hover { background: #3ee06c; }
+
+        .qr-cancel-btn {
+            flex: 1;
+            padding: 11px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
         .own-key-remove-btn:hover { background: rgba(255, 74, 74, 0.2); }
 
         .own-key-note {
@@ -2543,6 +2863,41 @@
             background: rgba(255, 255, 255, 0.14);
         }
 
+        .global-upgrade-btn {
+            position: absolute;
+            top: calc(20px + var(--safe-top));
+            right: calc(20px + var(--safe-right));
+            z-index: 60;
+            padding: 8px 18px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 200, 60, 0.35);
+            background: linear-gradient(135deg, rgba(255,200,60,0.18), rgba(255,140,60,0.12));
+            color: #ffcc4d;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            transition: background 0.2s, transform 0.15s;
+        }
+
+        .global-upgrade-btn:hover {
+            background: linear-gradient(135deg, rgba(255,200,60,0.3), rgba(255,140,60,0.2));
+            transform: translateY(-1px);
+        }
+
+        @media (max-width: 900px) {
+            .global-upgrade-btn {
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%);
+                top: calc(24px + var(--safe-top));
+            }
+            .global-upgrade-btn:hover {
+                transform: translateX(-50%) translateY(-1px);
+            }
+        }
+
         /* ---- Grayed-out "thinking" status text ---- */
         .thinking-status-text {
             color: rgba(255, 255, 255, 0.45);
@@ -2878,6 +3233,7 @@
         <button class="mobile-new-chat-fab" id="mobileNewChatBtn" title="New Chat" type="button">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
+        <button class="global-upgrade-btn" id="upgradePlanBtn" title="Upgrade your plan" type="button">⭐ Upgrade</button>
         <div class="welcome-box" id="welcomeBox">
             <img class="welcome-logo-mark" src="" id="welcomeLogoMark" alt="Cavdo AI logo">
             <div class="badge">✨ Ready to help</div>
@@ -3045,6 +3401,18 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="settings-section-title">Plan &amp; Usage</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name"><span id="currentPlanNameLabel">Free Plan</span><span class="plan-badge" id="planBadge">FREE</span></div>
+                            <div class="api-key-value">Message limits reset automatically. Use the Upgrade button in the top corner to see plans.</div>
+                        </div>
+                    </div>
+                    <div id="freeUsageList"></div>
+                </div>
+
                 <div class="settings-section-title">About</div>
                 <div class="api-key-card">
                     <div class="api-key-card-top">
@@ -3078,6 +3446,69 @@
                     </div>
                     <div class="own-key-note">This key is only kept in memory for your current session — it's used for this browser tab and gets discarded on refresh/close. It's never saved to disk or sent anywhere except Google's Gemini API.</div>
                 </div>
+
+                <div class="api-key-card" style="margin-top:16px;">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Hugging Face Token (Song Generation)</div>
+                            <div class="api-key-value" id="hfTokenMasked">Not set — song generation will be heavily rate-limited</div>
+                        </div>
+                    </div>
+                    <div class="settings-section-title" style="margin-top:18px;">Add Your Free Token</div>
+                    <div class="own-key-row">
+                        <input type="password" id="hfTokenInput" placeholder="Paste your Hugging Face access token…" autocomplete="off">
+                        <button class="own-key-use-btn" id="useHfTokenBtn">Save</button>
+                        <button class="own-key-remove-btn" id="removeHfTokenBtn" style="display:none;">Remove</button>
+                    </div>
+                    <div class="own-key-note">Song generation calls Hugging Face's free Inference API. Anonymous requests are heavily rate-limited — get a free token at huggingface.co/settings/tokens (no cost) and paste it here for reliable generations. Stored only in this browser's local storage.</div>
+                </div>
+
+                <div class="api-key-card" style="margin-top:16px;">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">ElevenLabs API Key (Song Generation)</div>
+                            <div class="api-key-value" id="elevenLabsKeyMasked">Not set — using built-in key</div>
+                        </div>
+                    </div>
+                    <div class="settings-section-title" style="margin-top:18px;">Use Your Own API Key</div>
+                    <div class="own-key-row">
+                        <input type="password" id="elevenLabsKeyInput" placeholder="Paste your ElevenLabs API key…" autocomplete="off">
+                        <button class="own-key-use-btn" id="useElevenLabsKeyBtn">Save</button>
+                        <button class="own-key-remove-btn" id="removeElevenLabsKeyBtn" style="display:none;">Remove</button>
+                    </div>
+                    <div class="own-key-note">Song generation with lyrics/vocals uses ElevenLabs' Music API. This key is only kept in this browser's local storage and sent only to ElevenLabs — never to Cavdo's own servers.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="plansModalOverlay">
+        <div class="modal-box plans-modal-box">
+            <div class="plans-modal-header">
+                <h3>Choose Your Plan</h3>
+                <button class="settings-close-btn" id="plansCloseBtn" title="Close">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="plans-modal-body">
+                <p class="plans-page-subtitle">Scan the QR code to subscribe, and unlock more messages the moment your payment is confirmed.</p>
+                <div class="plan-cards-grid" id="planCardsGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="qrPaymentModalOverlay">
+        <div class="modal-box qr-payment-box">
+            <h3>Scan &amp; Pay</h3>
+            <div class="qr-payment-plan-name" id="qrPlanName">Lite Plan</div>
+            <div class="qr-payment-amount" id="qrPlanAmount">₹100</div>
+            <div class="qr-payment-image-wrap">
+                <img src="" id="qrPaymentImage" alt="Payment QR code">
+            </div>
+            <div class="qr-payment-note">Scan this code with any UPI app and complete the payment. Once you've paid, tap "I've Paid" below to activate your plan.</div>
+            <div class="qr-payment-actions">
+                <button class="qr-cancel-btn" id="qrCancelBtn" type="button">Cancel</button>
+                <button class="qr-confirm-btn" id="qrConfirmBtn" type="button">✅ I've Paid</button>
             </div>
         </div>
     </div>
@@ -3325,8 +3756,8 @@
         }
 
         let activeTierIndex = getTierIndexByKey(localStorage.getItem(ACTIVE_TIER_STORAGE_KEY) || 'ultimate');
-        if (isModelExhausted(MODEL_TIERS[activeTierIndex].key)) {
-            const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key));
+        if (isModelExhausted(MODEL_TIERS[activeTierIndex].key) || isFreeTierLocked(MODEL_TIERS[activeTierIndex].key)) {
+            const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key) && !isFreeTierLocked(t.key));
             activeTierIndex = firstFree === -1 ? activeTierIndex : firstFree;
         }
 
@@ -3349,26 +3780,443 @@
             if (dotEl) dotEl.style.background = tier.key === 'lite' ? '#8fd0a0' : (tier.key === 'speed' ? '#2fd05c' : '#2fe0c0');
         }
 
+        // ==========================================
+        // 🆓 FREE-TIER MESSAGE LIMITS
+        // ==========================================
+        // Independent of the real API quota/exhaustion system above — this
+        // enforces an artificial "free plan" cap on how many messages a
+        // user can send per model tier before being locked out for a
+        // cooldown period. Paid plans use a flat per-model limit instead
+        // (see PLAN_LIST below).
+        const FREE_TIER_LIMITS = { ultimate: 5, speed: 6, lite: 20 };
+        const FREE_TIER_LOCK_HOURS = { ultimate: 6, speed: 5, lite: 2 };
+        const FREE_USAGE_STORAGE_KEY = 'cavdo_free_tier_usage';
+        const FREE_LOCK_STORAGE_KEY = 'cavdo_free_tier_lock';
+        const FREE_ULTIMATE_ROTATED_KEY = 'cavdo_free_ultimate_rotated';
+
+        function loadFreeUsageMap() {
+            try { return JSON.parse(localStorage.getItem(FREE_USAGE_STORAGE_KEY)) || {}; }
+            catch (e) { return {}; }
+        }
+
+        function saveFreeUsageMap(map) {
+            localStorage.setItem(FREE_USAGE_STORAGE_KEY, JSON.stringify(map));
+        }
+
+        function getFreeUsageCount(tierKey) {
+            return loadFreeUsageMap()[tierKey] || 0;
+        }
+
+        function incrementFreeUsageCount(tierKey) {
+            const map = loadFreeUsageMap();
+            map[tierKey] = (map[tierKey] || 0) + 1;
+            saveFreeUsageMap(map);
+            return map[tierKey];
+        }
+
+        function resetFreeUsageCount(tierKey) {
+            const map = loadFreeUsageMap();
+            map[tierKey] = 0;
+            saveFreeUsageMap(map);
+        }
+
+        function loadFreeLockMap() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(FREE_LOCK_STORAGE_KEY)) || {};
+                const now = Date.now();
+                let changed = false;
+                for (const key of Object.keys(raw)) {
+                    if (now >= raw[key]) { delete raw[key]; changed = true; }
+                }
+                if (changed) localStorage.setItem(FREE_LOCK_STORAGE_KEY, JSON.stringify(raw));
+                return raw;
+            } catch (e) { return {}; }
+        }
+
+        function isFreeTierLocked(tierKey) {
+            const map = loadFreeLockMap();
+            return Object.prototype.hasOwnProperty.call(map, tierKey);
+        }
+
+        function getFreeTierLockResetAt(tierKey) {
+            const map = loadFreeLockMap();
+            return Object.prototype.hasOwnProperty.call(map, tierKey) ? map[tierKey] : null;
+        }
+
+        function lockFreeTier(tierKey) {
+            const map = loadFreeLockMap();
+            const hours = FREE_TIER_LOCK_HOURS[tierKey] || 6;
+            map[tierKey] = Date.now() + hours * 3600000;
+            localStorage.setItem(FREE_LOCK_STORAGE_KEY, JSON.stringify(map));
+            resetFreeUsageCount(tierKey);
+            if (tierKey === 'ultimate') localStorage.removeItem(FREE_ULTIMATE_ROTATED_KEY);
+        }
+
+        // ==========================================
+        // 💳 PAID PLANS + QR PAYMENT
+        // ==========================================
+        // Three paid plans on top of the free plan above. Each paid plan
+        // grants the SAME flat message limit across all three models (unlike
+        // the free plan, which has a different cap per model), plus a
+        // number of image generations included. Payment is confirmed via a
+        // QR code the user scans and pays through their own UPI app — there
+        // is no backend here to verify the payment automatically, so the
+        // "I've Paid" button is a manual confirmation. Wiring this to a real
+        // payment gateway (Razorpay/UPI intent + webhook) so activation is
+        // automatic instead of self-reported is a follow-up step.
+        const PLAN_LIST = [
+            {
+                key: 'free', label: 'Free', priceLabel: 'Free', price: 0,
+                messageLimit: null, generationLimit: null, songGenerationLimit: 1,
+                features: ['Smaller chats', 'One 30-sec song generation per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: false }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }, { text: 'Video Generation', included: false }]
+            },
+            {
+                key: 'plan_lite', label: 'Lite Plan', priceLabel: '₹100', price: 100,
+                messageLimit: 26, generationLimit: 2, songGenerationLimit: 2,
+                features: ['Longer chats', 'Two 30-sec song generations per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }, { text: 'Video Generation', included: false }]
+            },
+            {
+                key: 'plan_speed', label: 'Speed Plan', priceLabel: '₹200', price: 200,
+                messageLimit: 40, generationLimit: 5, songGenerationLimit: 3,
+                features: ['Even longer chats', 'Three 30-sec song generations per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: false }, { text: 'Video Generation', included: false }]
+            },
+            {
+                key: 'plan_ultimate', label: 'Ultimate Plan', priceLabel: '₹500', price: 500,
+                messageLimit: 80, generationLimit: 10, songGenerationLimit: 5,
+                features: ['Very long chats', 'Five 30-sec song generations per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: true }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: true }, { text: 'Video Generation', included: true }]
+            }
+        ];
+
+        const ACTIVE_PLAN_STORAGE_KEY = 'cavdo_active_plan';
+        const GENERATION_USAGE_STORAGE_KEY = 'cavdo_generation_usage';
+
+        function getActivePlanKey() {
+            return localStorage.getItem(ACTIVE_PLAN_STORAGE_KEY) || 'free';
+        }
+
+        function getActivePlan() {
+            return PLAN_LIST.find(p => p.key === getActivePlanKey()) || PLAN_LIST[0];
+        }
+
+        // The limit used by the message-gating logic — the free plan has a
+        // different cap per model tier, paid plans use one flat number for
+        // every tier.
+        function getMessageLimitForTier(tierKey) {
+            const plan = getActivePlan();
+            if (plan.key === 'free') return FREE_TIER_LIMITS[tierKey];
+            return plan.messageLimit;
+        }
+
+        function getGenerationLimit() {
+            return getActivePlan().generationLimit; // null = unlimited
+        }
+
+        function getGenerationUsage() {
+            return parseInt(localStorage.getItem(GENERATION_USAGE_STORAGE_KEY) || '0', 10);
+        }
+
+        function incrementGenerationUsage() {
+            localStorage.setItem(GENERATION_USAGE_STORAGE_KEY, String(getGenerationUsage() + 1));
+            renderFreeUsagePanel();
+        }
+
+        // Checked right before an image is actually generated.
+        function checkGenerationQuota() {
+            const limit = getGenerationLimit();
+            if (limit === null || limit === undefined) return { allowed: true };
+            if (getGenerationUsage() >= limit) {
+                return { allowed: false, reason: `You've used all ${limit} image generations included in your ${getActivePlan().label}. Upgrade to a higher plan for more.` };
+            }
+            return { allowed: true };
+        }
+
+        // ==========================================
+        // 🎵 SONG GENERATION (per-plan daily limits)
+        // ==========================================
+        // Every song is capped at 30 seconds and the daily count resets at
+        // Pacific midnight (same clock the free-tier message limits use),
+        // instead of the image-generation counter's "never resets" behavior.
+        const SONG_USAGE_STORAGE_KEY = 'cavdo_song_generation_usage';
+
+        function getSongGenerationLimit() {
+            return getActivePlan().songGenerationLimit; // null/undefined = unlimited
+        }
+
+        function loadSongUsage() {
+            let entry;
+            try { entry = JSON.parse(localStorage.getItem(SONG_USAGE_STORAGE_KEY)) || null; }
+            catch (e) { entry = null; }
+            if (!entry || typeof entry !== 'object' || Date.now() >= entry.resetAt) {
+                entry = { count: 0, resetAt: getNextPacificMidnightUTC(Date.now()) };
+                localStorage.setItem(SONG_USAGE_STORAGE_KEY, JSON.stringify(entry));
+            }
+            return entry;
+        }
+
+        function getSongUsageCount() {
+            return loadSongUsage().count;
+        }
+
+        function getSongUsageResetAt() {
+            return loadSongUsage().resetAt;
+        }
+
+        function incrementSongUsage() {
+            const entry = loadSongUsage();
+            entry.count += 1;
+            localStorage.setItem(SONG_USAGE_STORAGE_KEY, JSON.stringify(entry));
+            renderFreeUsagePanel();
+        }
+
+        // Checked right before a song is actually generated.
+        function checkSongGenerationQuota() {
+            const limit = getSongGenerationLimit();
+            if (limit === null || limit === undefined) return { allowed: true };
+            if (getSongUsageCount() >= limit) {
+                const resetNote = formatTimeRemaining(getSongUsageResetAt());
+                return { allowed: false, reason: `You've used all ${limit} song generation${limit === 1 ? '' : 's'} included in your ${getActivePlan().label} today (${resetNote}). Upgrade to a higher plan for more.` };
+            }
+            return { allowed: true };
+        }
+
+        // Activates a plan after the user confirms payment on the QR
+        // screen. Clears existing free-tier usage/locks and resets the
+        // generation counter so the new plan starts with a clean slate.
+        function setActivePlan(planKey) {
+            localStorage.setItem(ACTIVE_PLAN_STORAGE_KEY, planKey);
+            localStorage.removeItem(FREE_USAGE_STORAGE_KEY);
+            localStorage.removeItem(FREE_LOCK_STORAGE_KEY);
+            localStorage.removeItem(FREE_ULTIMATE_ROTATED_KEY);
+            localStorage.setItem(GENERATION_USAGE_STORAGE_KEY, '0');
+            localStorage.removeItem(SONG_USAGE_STORAGE_KEY);
+            renderModelDropdown();
+            updateModelSelectorLabel();
+            renderFreeUsagePanel();
+        }
+
+        function renderPlanCards() {
+            const grid = document.getElementById('planCardsGrid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            const activeKey = getActivePlanKey();
+
+            PLAN_LIST.forEach(plan => {
+                const isCurrent = plan.key === activeKey;
+                const card = document.createElement('div');
+                card.className = 'plan-card' + (isCurrent ? ' current' : '') + (plan.key === 'plan_ultimate' ? ' highlight' : '');
+
+                const featuresHtml = plan.features.map(f => {
+                    if (typeof f === 'object' && f !== null) {
+                        return `<li class="${f.included ? '' : 'excluded'}">${f.text}</li>`;
+                    }
+                    return `<li>${f}</li>`;
+                }).join('');
+                card.innerHTML = `
+                    ${isCurrent ? '<div class="plan-card-current-badge">CURRENT</div>' : ''}
+                    <div class="plan-card-name">${plan.label}</div>
+                    <div class="plan-card-price">${plan.price > 0 ? plan.priceLabel : 'Free'}${plan.price > 0 ? '<span> / month</span>' : ''}</div>
+                    <ul class="plan-card-features">${featuresHtml}</ul>
+                    <button class="plan-choose-btn" ${isCurrent ? 'disabled' : ''} type="button">${isCurrent ? 'Current Plan' : (plan.price === 0 ? 'Switch to Free' : 'Choose Plan')}</button>
+                `;
+
+                if (!isCurrent) {
+                    card.querySelector('.plan-choose-btn').onclick = () => {
+                        if (plan.price === 0) {
+                            setActivePlan('free');
+                            closePlansModal();
+                        } else {
+                            openQrPaymentModal(plan);
+                        }
+                    };
+                }
+
+                grid.appendChild(card);
+            });
+        }
+
+        function openPlansModal() {
+            renderPlanCards();
+            document.getElementById('plansModalOverlay').classList.add('show');
+        }
+
+        function closePlansModal() {
+            document.getElementById('plansModalOverlay').classList.remove('show');
+        }
+
+        let pendingPlanPurchase = null;
+
+        function openQrPaymentModal(plan) {
+            pendingPlanPurchase = plan;
+            document.getElementById('qrPlanName').textContent = plan.label;
+            document.getElementById('qrPlanAmount').textContent = plan.priceLabel;
+            const upiString = `upi://pay?pa=cavdoai@upi&pn=Cavdo%20AI&am=${plan.price}&cu=INR&tn=${encodeURIComponent(plan.label + ' Subscription')}`;
+            document.getElementById('qrPaymentImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiString)}`;
+            closePlansModal();
+            document.getElementById('qrPaymentModalOverlay').classList.add('show');
+        }
+
+        function closeQrPaymentModal() {
+            pendingPlanPurchase = null;
+            document.getElementById('qrPaymentModalOverlay').classList.remove('show');
+        }
+
+        document.getElementById('qrCancelBtn').onclick = closeQrPaymentModal;
+        document.getElementById('qrPaymentModalOverlay').addEventListener('click', (e) => {
+            if (e.target.id === 'qrPaymentModalOverlay') closeQrPaymentModal();
+        });
+
+        document.getElementById('qrConfirmBtn').onclick = () => {
+            if (!pendingPlanPurchase) return;
+            // No backend to verify the payment automatically — this is a
+            // manual, self-reported confirmation. Replace with a real
+            // payment-gateway callback/webhook for production use.
+            setActivePlan(pendingPlanPurchase.key);
+            const planLabel = pendingPlanPurchase.label;
+            closeQrPaymentModal();
+            alert(`Payment confirmed — you're now on the ${planLabel}! Your new limits are active immediately.`);
+        };
+
+        document.getElementById('plansCloseBtn').onclick = closePlansModal;
+        document.getElementById('plansModalOverlay').addEventListener('click', (e) => {
+            if (e.target.id === 'plansModalOverlay') closePlansModal();
+        });
+
+        // Checked right before a message is sent on the currently active
+        // tier. Returns { allowed: true } to proceed, or
+        // { allowed: false, reason: '...' } to block the send (the caller
+        // shows `reason` to the user and does not send).
+        function checkFreeTierBeforeSend(tierKey) {
+            if (isFreeTierLocked(tierKey)) {
+                const resetAt = getFreeTierLockResetAt(tierKey);
+                const tier = MODEL_TIERS[getTierIndexByKey(tierKey)];
+                return { allowed: false, reason: `Plan limit reached for ${tier.label} — ${formatTimeRemaining(resetAt)}. Upgrade for more messages, or try another model.` };
+            }
+
+            const plan = getActivePlan();
+            const limit = getMessageLimitForTier(tierKey);
+            const used = getFreeUsageCount(tierKey);
+
+            if (used >= limit) {
+                // Only the free plan's Ultimate tier gets one grace rotation
+                // to another built-in API key before the cooldown kicks in —
+                // everything else (and every paid plan) locks immediately
+                // once its cap is hit.
+                if (plan.key === 'free' && tierKey === 'ultimate' && KEY_POOL.length > 1 && localStorage.getItem(FREE_ULTIMATE_ROTATED_KEY) !== '1') {
+                    advanceApiKey();
+                    localStorage.setItem(FREE_ULTIMATE_ROTATED_KEY, '1');
+                    resetFreeUsageCount('ultimate');
+                    renderModelDropdown();
+                    updateModelSelectorLabel();
+                    return { allowed: true };
+                }
+                lockFreeTier(tierKey);
+                renderModelDropdown();
+                const tier = MODEL_TIERS[getTierIndexByKey(tierKey)];
+                return { allowed: false, reason: `Plan limit reached for ${tier.label} — locked for ${FREE_TIER_LOCK_HOURS[tierKey]}h. Upgrade for more messages, or try another model.` };
+            }
+
+            return { allowed: true };
+        }
+
+        // Called once per message actually sent, after checkFreeTierBeforeSend
+        // has allowed it through.
+        function recordFreeTierUsage(tierKey) {
+            incrementFreeUsageCount(tierKey);
+            renderFreeUsagePanel();
+        }
+
+        function renderFreeUsagePanel() {
+            const list = document.getElementById('freeUsageList');
+            const plan = getActivePlan();
+
+            const planBadgeEl = document.getElementById('planBadge');
+            const planNameEl = document.getElementById('currentPlanNameLabel');
+            if (planBadgeEl) planBadgeEl.textContent = plan.key === 'free' ? 'FREE' : plan.priceLabel;
+            if (planNameEl) planNameEl.textContent = plan.label;
+
+            if (!list) return;
+            list.innerHTML = '';
+            MODEL_TIERS.forEach(tier => {
+                const limit = getMessageLimitForTier(tier.key);
+                const used = Math.min(getFreeUsageCount(tier.key), limit);
+                const locked = isFreeTierLocked(tier.key);
+                const pct = Math.min(100, Math.round((used / limit) * 100));
+
+                const row = document.createElement('div');
+                row.className = 'usage-tier-row';
+
+                let barClass = '';
+                if (locked) barClass = 'locked';
+                else if (pct >= 80) barClass = 'warn';
+
+                row.innerHTML = `
+                    <div class="usage-tier-top">
+                        <span class="usage-tier-name">${tier.icon} ${tier.label}</span>
+                        <span class="usage-tier-count">${locked ? 'Locked' : `${used}/${limit} messages`}</span>
+                    </div>
+                    <div class="usage-tier-bar-track"><div class="usage-tier-bar-fill ${barClass}" style="width:${locked ? 100 : pct}%;"></div></div>
+                    ${locked ? `<div class="usage-tier-lock-note">Resets ${formatTimeRemaining(getFreeTierLockResetAt(tier.key))}</div>` : ''}
+                `;
+                list.appendChild(row);
+            });
+
+            if (plan.generationLimit !== null && plan.generationLimit !== undefined) {
+                const genUsed = Math.min(getGenerationUsage(), plan.generationLimit);
+                const genPct = Math.min(100, Math.round((genUsed / plan.generationLimit) * 100));
+                const genRow = document.createElement('div');
+                genRow.className = 'usage-tier-row';
+                genRow.innerHTML = `
+                    <div class="usage-tier-top">
+                        <span class="usage-tier-name">🖼️ Image Generations</span>
+                        <span class="usage-tier-count">${genUsed}/${plan.generationLimit} used</span>
+                    </div>
+                    <div class="usage-tier-bar-track"><div class="usage-tier-bar-fill ${genPct >= 80 ? 'warn' : ''}" style="width:${genPct}%;"></div></div>
+                `;
+                list.appendChild(genRow);
+            }
+
+            if (plan.songGenerationLimit !== null && plan.songGenerationLimit !== undefined) {
+                const songLimit = plan.songGenerationLimit;
+                const songUsed = Math.min(getSongUsageCount(), songLimit);
+                const songPct = Math.min(100, Math.round((songUsed / songLimit) * 100));
+                const songRow = document.createElement('div');
+                songRow.className = 'usage-tier-row';
+                songRow.innerHTML = `
+                    <div class="usage-tier-top">
+                        <span class="usage-tier-name">🎵 Song Generations</span>
+                        <span class="usage-tier-count">${songUsed}/${songLimit} today</span>
+                    </div>
+                    <div class="usage-tier-bar-track"><div class="usage-tier-bar-fill ${songPct >= 80 ? 'warn' : ''}" style="width:${songPct}%;"></div></div>
+                    ${songUsed >= songLimit ? `<div class="usage-tier-lock-note">Resets ${formatTimeRemaining(getSongUsageResetAt())}</div>` : ''}
+                `;
+                list.appendChild(songRow);
+            }
+        }
+
         function renderModelDropdown() {
             const dropdown = document.getElementById('modelDropdown');
             if (!dropdown) return;
             dropdown.innerHTML = '';
 
             MODEL_TIERS.forEach((tier, index) => {
-                const exhausted = isModelExhausted(tier.key);
+                const apiExhausted = isModelExhausted(tier.key);
+                const freeLocked = isFreeTierLocked(tier.key);
+                const exhausted = apiExhausted || freeLocked;
                 const isActive = index === activeTierIndex;
-                const resetInfo = exhausted ? getModelResetInfo(tier.key) : null;
-                const resetLabel = resetInfo ? formatTimeRemaining(resetInfo.resetAt) : '';
+                const resetAt = freeLocked ? getFreeTierLockResetAt(tier.key) : (apiExhausted ? getModelResetInfo(tier.key).resetAt : null);
+                const resetLabel = resetAt ? formatTimeRemaining(resetAt) : '';
+                const limit = getMessageLimitForTier(tier.key);
+                const used = Math.min(getFreeUsageCount(tier.key), limit);
 
                 const opt = document.createElement('div');
                 opt.className = 'model-option' + (exhausted ? ' disabled' : '') + (isActive ? ' active' : '');
-                opt.title = exhausted ? `${tier.label} — limit reached, ${resetLabel}` : tier.desc;
+                opt.title = exhausted ? `${tier.label} — limit reached, ${resetLabel}` : `${tier.desc} (${used}/${limit} messages used)`;
 
                 opt.innerHTML = `
                     <div class="model-option-icon">${tier.icon}</div>
                     <div class="model-option-text">
                         <div class="model-option-name">${tier.label}</div>
-                        <div class="model-option-desc">${exhausted ? `Limit reached — ${resetLabel}` : tier.desc}</div>
+                        <div class="model-option-desc">${exhausted ? `Limit reached — ${resetLabel}` : `${tier.desc} · ${used}/${limit} used`}</div>
                     </div>
                     <div class="model-option-check">${isActive ? '✓' : ''}</div>
                 `;
@@ -3383,6 +4231,10 @@
                 dropdown.appendChild(opt);
             });
         }
+
+        document.getElementById('upgradePlanBtn').addEventListener('click', () => {
+            openPlansModal();
+        });
 
         function openModelDropdown() {
             document.getElementById('modelDropdown').classList.add('show');
@@ -3536,6 +4388,99 @@
         }
 
         // ------------------------------------------------------------
+        // 🔑 Hugging Face token — used for song generation. Unlike the
+        // Gemini override above, this IS persisted to localStorage (it's
+        // not a paid-account credential, and re-pasting it every session
+        // would be a bad experience for a feature people use casually).
+        // ------------------------------------------------------------
+        const HF_TOKEN_STORAGE_KEY = 'cavdo_hf_token';
+
+        function getHfToken() {
+            return (localStorage.getItem(HF_TOKEN_STORAGE_KEY) || '').trim();
+        }
+
+        function refreshHfTokenUI() {
+            const masked = document.getElementById('hfTokenMasked');
+            const removeBtn = document.getElementById('removeHfTokenBtn');
+            const useBtn = document.getElementById('useHfTokenBtn');
+            const input = document.getElementById('hfTokenInput');
+            const token = getHfToken();
+            const active = !!token;
+
+            if (masked) masked.textContent = active ? maskApiKey(token) : 'Not set — song generation will be heavily rate-limited';
+            if (removeBtn) removeBtn.style.display = active ? 'inline-block' : 'none';
+            if (useBtn) useBtn.textContent = active ? 'Update' : 'Save';
+            if (input && !active) input.value = '';
+        }
+
+        function useHfToken() {
+            const input = document.getElementById('hfTokenInput');
+            const token = input ? input.value.trim() : '';
+            if (!token) return;
+            localStorage.setItem(HF_TOKEN_STORAGE_KEY, token);
+            refreshHfTokenUI();
+        }
+
+        function removeHfToken() {
+            localStorage.removeItem(HF_TOKEN_STORAGE_KEY);
+            refreshHfTokenUI();
+        }
+
+        // ------------------------------------------------------------
+        // 🔑 ElevenLabs API key — used for song generation (Eleven Music
+        // API, which supports vocals/lyrics unlike the MusicGen fallback
+        // above). Same pattern as the Hugging Face token: a built-in
+        // default key so generation works out of the box, with an
+        // optional user-supplied override saved to localStorage.
+        //
+        // ⚠️ SECURITY NOTE: ELEVENLABS_DEFAULT_KEY is shipped in this
+        // client-side file, which means it is visible to anyone who
+        // views this page's source — there is no server here to hide it
+        // behind. Anyone can extract it and use it against your
+        // ElevenLabs account/quota. Treat it as effectively public:
+        // don't put a key here you can't afford to have used by
+        // strangers, rotate it periodically, and set spend limits /
+        // usage alerts on the ElevenLabs account it belongs to.
+        // ------------------------------------------------------------
+        const ELEVENLABS_DEFAULT_KEY = 'sk_19ac6802e48c13266b6f8c76d0d1f5278f1af24061cd03d1';
+        const ELEVENLABS_KEY_STORAGE_KEY = 'cavdo_elevenlabs_key';
+
+        function getElevenLabsKey() {
+            const own = (localStorage.getItem(ELEVENLABS_KEY_STORAGE_KEY) || '').trim();
+            return own || ELEVENLABS_DEFAULT_KEY;
+        }
+
+        function hasOwnElevenLabsKey() {
+            return !!(localStorage.getItem(ELEVENLABS_KEY_STORAGE_KEY) || '').trim();
+        }
+
+        function refreshElevenLabsKeyUI() {
+            const masked = document.getElementById('elevenLabsKeyMasked');
+            const removeBtn = document.getElementById('removeElevenLabsKeyBtn');
+            const useBtn = document.getElementById('useElevenLabsKeyBtn');
+            const input = document.getElementById('elevenLabsKeyInput');
+            const active = hasOwnElevenLabsKey();
+
+            if (masked) masked.textContent = active ? maskApiKey(getElevenLabsKey()) : 'Not set — using built-in key';
+            if (removeBtn) removeBtn.style.display = active ? 'inline-block' : 'none';
+            if (useBtn) useBtn.textContent = active ? 'Update' : 'Save';
+            if (input && !active) input.value = '';
+        }
+
+        function useElevenLabsKey() {
+            const input = document.getElementById('elevenLabsKeyInput');
+            const key = input ? input.value.trim() : '';
+            if (!key) return;
+            localStorage.setItem(ELEVENLABS_KEY_STORAGE_KEY, key);
+            refreshElevenLabsKeyUI();
+        }
+
+        function removeElevenLabsKey() {
+            localStorage.removeItem(ELEVENLABS_KEY_STORAGE_KEY);
+            refreshElevenLabsKeyUI();
+        }
+
+        // ------------------------------------------------------------
         // ⚙️ Settings modal — General + API Keys tabs
         // ------------------------------------------------------------
         function maskApiKey(key) {
@@ -3622,6 +4567,7 @@
         function openSettingsModal() {
             refreshOwnKeyUI();
             renderGeminiModelStatusList();
+            renderFreeUsagePanel();
             document.getElementById('settingsModalOverlay').classList.add('show');
         }
 
@@ -3650,6 +4596,20 @@
         document.getElementById('ownGeminiKeyInput').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') useOwnGeminiKey();
         });
+
+        document.getElementById('useHfTokenBtn').onclick = useHfToken;
+        document.getElementById('removeHfTokenBtn').onclick = removeHfToken;
+        document.getElementById('hfTokenInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') useHfToken();
+        });
+        refreshHfTokenUI();
+
+        document.getElementById('useElevenLabsKeyBtn').onclick = useElevenLabsKey;
+        document.getElementById('removeElevenLabsKeyBtn').onclick = removeElevenLabsKey;
+        document.getElementById('elevenLabsKeyInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') useElevenLabsKey();
+        });
+        refreshElevenLabsKeyUI();
 
         function isRateLimitResponse(response, data) {
             if (response && response.status === 429) return true;
@@ -5529,6 +6489,15 @@
                         } else {
                             textDiv.textContent = 'This generated image is no longer available (it may have been removed from your image memory).';
                         }
+                    } else if (msg.isGeneratedSong && (msg.songMemoryId || msg.aiSongBytes)) {
+                        const songMemEntry = msg.songMemoryId ? getSongFromMemoryById(msg.songMemoryId) : null;
+                        const songBytes = songMemEntry ? songMemEntry.base64 : msg.aiSongBytes;
+                        const songMime = songMemEntry ? songMemEntry.mimeType : msg.aiSongMimeType;
+                        if (songBytes) {
+                            renderGeneratedSong(textDiv, songBytes, msg.text, songMime);
+                        } else {
+                            textDiv.textContent = 'This generated song is no longer available (it may have been removed from your song memory).';
+                        }
                     } else {
                         if (msg.isThinking) textDiv.classList.add('thinking-status-text');
                         renderAIContent(textDiv, msg.text, msg.wasStopped, msg.stoppedPrompt);
@@ -5743,7 +6712,7 @@
                     aiActionsBar.appendChild(thumbDownBtn);
                     aiActionsBar.appendChild(regenBtn);
                     aiActionsBar.appendChild(copyAiBtn);
-                    if (!msg.isGeneratedImage) aiActionsBar.appendChild(pdfBtn);
+                    if (!msg.isGeneratedImage && !msg.isGeneratedSong) aiActionsBar.appendChild(pdfBtn);
                     aiActionsBar.appendChild(moreBtn);
                     aiActionsBar.appendChild(moreMenu);
 
@@ -6099,6 +7068,255 @@
             renderImageGallery();
         }
 
+        // ------------------------------------------------------------
+        // 🎵 Song memory — same localStorage-per-record pattern as image
+        // memory above, so generated songs survive reloads and don't
+        // bloat the chat-history record itself.
+        // ------------------------------------------------------------
+        function saveSongToMemory({ prompt, base64, mimeType }) {
+            const id = 'cavdo_song_' + Date.now() + '_' + Math.random().toString(16).slice(2, 8);
+            const entry = { id, prompt, base64, mimeType: mimeType || 'audio/wav', ts: Date.now() };
+            const payload = JSON.stringify(entry);
+
+            const tryStore = () => {
+                try { localStorage.setItem(id, payload); return true; }
+                catch (e) { return false; }
+            };
+
+            if (tryStore()) return entry;
+
+            // Storage full — evict the oldest remembered songs first and retry,
+            // same eviction strategy as image memory.
+            for (let attempt = 0; attempt < 20; attempt++) {
+                const existing = getSongMemory(); // sorted newest first
+                const oldest = existing[existing.length - 1];
+                if (!oldest) break;
+                localStorage.removeItem(oldest.id);
+                if (tryStore()) return entry;
+            }
+
+            console.error('Could not save song to memory (storage full even after evicting old songs).');
+            return null;
+        }
+
+        function getSongMemory() {
+            return Object.keys(localStorage)
+                .filter(k => k.startsWith('cavdo_song_'))
+                .map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
+                .filter(Boolean)
+                .sort((a, b) => b.ts - a.ts);
+        }
+
+        function getSongFromMemoryById(id) {
+            if (!id) return null;
+            try { return JSON.parse(localStorage.getItem(id)); } catch { return null; }
+        }
+
+        function deleteSongFromMemory(id) {
+            localStorage.removeItem(id);
+        }
+
+        // ------------------------------------------------------------
+        // 🎵 Song generation — ElevenLabs Music API (POST /v1/music).
+        // Preferred path: unlike MusicGen below, this model can render
+        // actual sung vocals from lyrics text passed inside the prompt,
+        // so it's what powers "write me a song with these lyrics".
+        //
+        // ElevenLabs' own API rejects prompts containing copyrighted
+        // lyrics or named artists/songs (returns a 422 bad_prompt error)
+        // — we surface that error message as-is rather than trying to
+        // route around it.
+        // ------------------------------------------------------------
+        async function generateSongViaElevenLabs(prompt, { lyrics = null, musicLengthMs = 30000 } = {}) {
+            const endpoint = 'https://api.elevenlabs.io/v1/music';
+            const key = getElevenLabsKey();
+            if (!key) {
+                const noKeyErr = new Error('No ElevenLabs API key configured');
+                noKeyErr.isAuthError = true;
+                throw noKeyErr;
+            }
+
+            let fullPrompt = prompt || 'An original, upbeat song';
+            if (lyrics) {
+                // ElevenLabs accepts up to 4100 chars for `prompt`; leave
+                // headroom for the style description in front of the lyrics.
+                const trimmedLyrics = lyrics.length > 3800 ? lyrics.slice(0, 3800) : lyrics;
+                fullPrompt = `${fullPrompt}. Sung vocals, follow these lyrics closely:\n${trimmedLyrics}`;
+            }
+            if (fullPrompt.length > 4100) fullPrompt = fullPrompt.slice(0, 4100);
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'xi-api-key': key
+                },
+                body: JSON.stringify({
+                    prompt: fullPrompt,
+                    music_length_ms: Math.max(3000, Math.min(600000, musicLengthMs)),
+                    force_instrumental: !lyrics
+                })
+            });
+
+            if (!res.ok) {
+                let detail = '';
+                try {
+                    const errJson = await res.clone().json();
+                    detail = (errJson && errJson.detail && (errJson.detail.message || JSON.stringify(errJson.detail))) || '';
+                } catch (e) { /* body wasn't JSON */ }
+                if (res.status === 401 || res.status === 403) {
+                    const authErr = new Error(`ElevenLabs auth failed (${res.status})${detail ? ': ' + detail : ''}`);
+                    authErr.isAuthError = true;
+                    throw authErr;
+                }
+                if (res.status === 429) {
+                    const rateErr = new Error(`ElevenLabs rate-limited (429)${detail ? ': ' + detail : ''}`);
+                    rateErr.isRateLimited = true;
+                    throw rateErr;
+                }
+                if (res.status === 422) {
+                    const badPromptErr = new Error(`ElevenLabs rejected the prompt${detail ? ': ' + detail : ''}`);
+                    badPromptErr.isBadPrompt = true;
+                    throw badPromptErr;
+                }
+                throw new Error(`ElevenLabs request failed (${res.status})${detail ? ': ' + detail : ''}`);
+            }
+
+            const blob = await res.blob();
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+            return { base64, mimeType: blob.type || 'audio/mpeg' };
+        }
+
+        // ------------------------------------------------------------
+        // 🎵 Song generation — calls Hugging Face's Serverless Inference
+        // API for the officially supported "text-to-audio" task on
+        // facebook/musicgen-small. This is a plain, documented REST
+        // endpoint (no external client library, no reliance on a
+        // community demo Space's UI layout), so it's far less likely to
+        // silently break than scraping a Gradio app.
+        //
+        // The free/anonymous tier of this API can return 503 with an
+        // "estimated_time" the FIRST time the model is called after being
+        // idle (it has to warm up on Hugging Face's GPU) — that is NOT a
+        // real failure, so we wait the estimated time and retry once
+        // automatically instead of immediately telling the user the
+        // service is "busy".
+        // ------------------------------------------------------------
+        async function generateSongViaMusicGen(prompt, { allowColdStartRetry = true } = {}) {
+            const endpoint = 'https://api-inference.huggingface.co/models/facebook/musicgen-small';
+            const token = getHfToken();
+
+            const doRequest = () => fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify({
+                    inputs: prompt,
+                    // ~1500 tokens ≈ 30 seconds of audio at MusicGen's
+                    // ~50 tokens/sec generation rate, matching the "30 sec
+                    // song" promised on every plan.
+                    parameters: { max_new_tokens: 1500 }
+                })
+            });
+
+            let res = await doRequest();
+
+            if (res.status === 503 && allowColdStartRetry) {
+                let waitSeconds = 20;
+                try {
+                    const errBody = await res.clone().json();
+                    if (errBody && typeof errBody.estimated_time === 'number') {
+                        waitSeconds = Math.min(Math.ceil(errBody.estimated_time) + 3, 45);
+                    }
+                } catch (e) { /* not JSON — use the default wait */ }
+                await new Promise(r => setTimeout(r, waitSeconds * 1000));
+                res = await doRequest();
+            }
+
+            if (!res.ok) {
+                let detail = '';
+                try {
+                    const errJson = await res.clone().json();
+                    detail = (errJson && errJson.error) || '';
+                } catch (e) { /* body wasn't JSON */ }
+                // Tag the two specific, actionable causes so the caller can
+                // tell the user something useful instead of a generic
+                // "busy" message every time — this is exactly the failure
+                // mode that made the earlier version look permanently broken.
+                if (res.status === 401 || res.status === 403) {
+                    const authErr = new Error(`MusicGen auth failed (${res.status})${detail ? ': ' + detail : ''}`);
+                    authErr.isAuthError = true;
+                    throw authErr;
+                }
+                if (res.status === 429) {
+                    const rateErr = new Error(`MusicGen rate-limited (429)${detail ? ': ' + detail : ''}`);
+                    rateErr.isRateLimited = true;
+                    throw rateErr;
+                }
+                throw new Error(`MusicGen request failed (${res.status})${detail ? ': ' + detail : ''}`);
+            }
+
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.startsWith('audio/')) {
+                // A 200 response that isn't actually audio (rare, but
+                // guards against silently treating an error payload as a
+                // sound file).
+                let detail = '';
+                try {
+                    const j = await res.clone().json();
+                    detail = (j && j.error) || JSON.stringify(j);
+                } catch (e) { /* ignore */ }
+                throw new Error(`MusicGen did not return audio${detail ? ': ' + detail : ''}`);
+            }
+
+            const blob = await res.blob();
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+            return { base64, mimeType: blob.type || 'audio/flac' };
+        }
+
+        function renderGeneratedSong(targetNode, base64Data, promptText, mimeType) {
+            targetNode.innerHTML = '';
+            const box = document.createElement('div');
+            box.className = 'generated-image-box';
+
+            const label = document.createElement('div');
+            label.style.cssText = 'font-size:13px;color:rgba(255,255,255,0.7);margin-bottom:8px;';
+            label.textContent = `🎵 ${promptText || 'Generated song'}`;
+            box.appendChild(label);
+
+            const audioSrc = `data:${mimeType || 'audio/wav'};base64,${base64Data}`;
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.style.width = '100%';
+            audio.src = audioSrc;
+            box.appendChild(audio);
+
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'generated-image-actions';
+
+            const dl = document.createElement('a');
+            dl.className = 'image-download-link';
+            dl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download';
+            dl.href = audioSrc;
+            dl.download = `cavdo-song-${Date.now()}.wav`;
+            actionsRow.appendChild(dl);
+
+            box.appendChild(actionsRow);
+            targetNode.appendChild(box);
+        }
+
         // Re-runs generation for a prompt as a fresh chat message (reuses the
         // whole send pipeline — including memory-saving — instead of duplicating it).
         window.regenerateImageVariation = function(prompt) {
@@ -6346,7 +7564,7 @@
                     const chatData = JSON.parse(localStorage.getItem(currentChatId));
                     if (chatData && chatData.messages.length > 0) {
                         const lastMsg = chatData.messages[chatData.messages.length - 1];
-                        if (lastMsg && lastMsg.role === 'ai' && !lastMsg.isGeneratedImage) {
+                        if (lastMsg && lastMsg.role === 'ai' && !lastMsg.isGeneratedImage && !lastMsg.isGeneratedSong) {
                             lastMsg.wasStopped = true;
                             const prevUserMsg = chatData.messages[chatData.messages.length - 2];
                             lastMsg.stoppedPrompt = prevUserMsg ? prevUserMsg.text : "";
@@ -6390,6 +7608,15 @@
                 alert('Remove the file(s) that failed to attach (too large or unreadable) before sending.');
                 return;
             }
+
+            // 🆓 Free-plan message limit gate — checked before anything is
+            // added to the chat so a blocked send doesn't waste a turn.
+            const freeTierCheck = checkFreeTierBeforeSend(getActiveTier().key);
+            if (!freeTierCheck.allowed) {
+                alert(freeTierCheck.reason);
+                return;
+            }
+            recordFreeTierUsage(getActiveTier().key);
 
             const requestContextChatId = currentChatId || `cavdo_chat_${Date.now()}`;
 
@@ -6494,6 +7721,12 @@
             const imageGenPhrases = ['generate an image', 'generate image', 'create image', 'make an image', 'make me an image', 'draw me', 'paint me', 'create a picture', 'create a logo', 'make me a logo', 'make me a picture'];
             const codeKeywords = ['code', 'script', 'program', 'html', 'css', 'javascript', 'python', 'java', 'c++', 'function', 'ui like', 'make a web', 'build a site', 'write a function'];
 
+            // Words/phrases that mean "generate a piece of music" — mirrors
+            // the image detection above.
+            const songNouns = ['song', 'music', 'track', 'tune', 'melody', 'soundtrack', 'jingle'];
+            const songVerbs = ['compose'];
+            const songGenPhrases = ['generate a song', 'generate music', 'make a song', 'make me a song', 'create a song', 'create music', 'compose a song', 'compose music', 'generate a track', 'make a track', 'make a beat', 'generate a beat'];
+
             // Match whole words only — a plain substring check (lowerText.includes('pic'))
             // wrongly fires on words like "topic" or "epic".
             function containsKeyword(str, keyword) {
@@ -6547,10 +7780,17 @@
             const hasImageWord = imageNouns.some(noun => containsKeyword(lowerText, noun)) || hasImageTypo(lowerText);
             const looksLikeTroubleshooting = troubleshootingRegex.test(lowerText);
 
+            const hasExplicitSongAsk = songGenPhrases.some(phrase => lowerText.includes(phrase))
+                || songVerbs.some(verb => containsKeyword(lowerText, verb));
+            const hasSongWord = songNouns.some(noun => containsKeyword(lowerText, noun));
+
             if (hasExplicitImageAsk) {
                 // Unambiguous generation intent ("draw...", "paint...",
                 // "generate an image...") wins regardless of anything else.
                 selectedMode = 'image';
+            } else if (hasExplicitSongAsk) {
+                // Unambiguous song-generation intent wins next.
+                selectedMode = 'song';
             } else if (hasCodeSignal) {
                 // A clear code/HTML/script request wins over a bare image
                 // noun — "make html for my logo" means build a page, not
@@ -6560,6 +7800,10 @@
                 // Just a bare noun ("logo", "photo") with no code context and
                 // not describing a problem — still read as a request for one.
                 selectedMode = 'image';
+            } else if (hasSongWord && !looksLikeTroubleshooting) {
+                // Bare noun ("song", "music") with no code/image context —
+                // still read as a request for a generated track.
+                selectedMode = 'song';
             }
 
             // ------------------------------------------------------------
@@ -6611,10 +7855,52 @@
                 if (m.role === 'user') break; // only look at the immediately preceding AI turn's code
             }
             const codeEditIntentRegex = /\b(nice|nicer|nicely|better|clean(?:er)?|cleanup|improve|improved|polish|prettier|refactor|optimi[sz]e|shorten|shorter|simplify|rewrite|comment|document|fix (it|this|that)|update (it|this|that)|modify (it|this|that)|change (it|this|that)|the code|this code|that code|make it|make this)\b/i;
-            const isCodeEditRequest = !!(lastCodeContext && selectedMode !== 'image' && !hasExplicitImageAsk && codeEditIntentRegex.test(lowerText));
+            const isCodeEditRequest = !!(lastCodeContext && selectedMode !== 'image' && selectedMode !== 'song' && !hasExplicitImageAsk && codeEditIntentRegex.test(lowerText));
             if (isCodeEditRequest) {
                 selectedMode = 'code';
             }
+
+            // ------------------------------------------------------------
+            // 🧠 Lyrics follow-up memory: if the user pasted a full block of
+            // lyrics in an earlier message in this chat, remember it — so a
+            // later short instruction ("now make that into a song", "use
+            // those lyrics", "remember that") pulls the lyrics back in
+            // instead of requiring the user to repaste the whole thing.
+            // Unlike the image/code memory above, this looks back across
+            // the whole chat rather than just the immediately preceding
+            // turn, since lyrics are often pasted well before the actual
+            // "generate the song" request.
+            // ------------------------------------------------------------
+            function looksLikeLyrics(str) {
+                if (!str || typeof str !== 'string') return false;
+                const trimmed = str.trim();
+                if (/```/.test(trimmed)) return false; // don't confuse code blocks with lyrics
+                const lineCount = trimmed.split(/\n+/).filter(l => l.trim()).length;
+                const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+                // Several short-ish lines plus a decent amount of text reads
+                // as a lyrics/verse block rather than an ordinary chat message.
+                return lineCount >= 4 && wordCount >= 25;
+            }
+            let lastLyricsContext = null;
+            for (let i = chatData.messages.length - 1; i >= 0; i--) {
+                const m = chatData.messages[i];
+                if (m.role === 'user' && looksLikeLyrics(m.text)) {
+                    lastLyricsContext = m.text.trim();
+                    break;
+                }
+            }
+            const lyricsRecallRegex = /\b(those lyrics|that lyrics|the lyrics|remember (that|those|this|it)|use (that|those|it)|earlier lyrics|lyrics i (sent|gave|pasted|wrote|shared))\b/i;
+            const currentMessageIsLyrics = looksLikeLyrics(text);
+            const isLyricsRecallRequest = !!(lastLyricsContext && !currentMessageIsLyrics && (hasSongWord || selectedMode === 'song') && lyricsRecallRegex.test(lowerText));
+            if (isLyricsRecallRequest) {
+                selectedMode = 'song';
+            }
+            // The lyrics to actually send to the song generator: prefer
+            // lyrics pasted directly in *this* message, otherwise fall back
+            // to the remembered block above (only when in song mode).
+            const lyricsForSong = (selectedMode === 'song')
+                ? (currentMessageIsLyrics ? text.trim() : lastLyricsContext)
+                : null;
 
             // 18+ / explicit-content guard: never attempt to generate sexual,
             // nude, or otherwise adult imagery, regardless of mode detection above.
@@ -6627,7 +7913,9 @@
                 ? ['✨ Looking into that', '✨ Searching for related images', '✨ Checking sources', '✨ Almost there']
                 : (selectedMode === 'code')
                     ? ['✨ Reading your request', '✨ Planning the code', '✨ Writing the implementation', '✨ Double-checking syntax']
-                    : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
+                    : (selectedMode === 'song')
+                        ? ['🎵 Reading your request', '🎵 Composing the track', '🎵 Rendering the audio', '🎵 Almost there']
+                        : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
 
             const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true };
             chatData.messages.push(aiMsg);
@@ -6702,6 +7990,22 @@
                         renderActiveChatMessages();
                     }
                 } else if (selectedMode === 'image') {
+                    const genQuota = checkGenerationQuota();
+                    if (!genQuota.allowed) {
+                        const updatedChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                        updatedChat.messages[aiMsgIndex].text = genQuota.reason;
+                        updatedChat.messages[aiMsgIndex].isThinking = false;
+                        updatedChat.isGeneratingInBg = false;
+                        localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
+
+                        if (currentChatId === requestContextChatId) {
+                            isGenerating = false;
+                            renderActiveChatMessages();
+                        }
+                        clearInterval(internalThinkingInterval);
+                        return;
+                    }
+
                     let finalPrompt = text.replace(/\b(paint|draw|imagine|make|create|generate|show me|a|an|image|img|picture|pic|photo|of)\b/gi, '').replace(/\s+/g, ' ').trim();
                     if (!finalPrompt) finalPrompt = text;
 
@@ -6733,6 +8037,7 @@
                     let genError = null;
                     try {
                         genResult = await generateImageViaPerchance(finalPrompt);
+                        incrementGenerationUsage();
                     } catch (genErr) {
                         genError = genErr;
                         console.error('Image generation failed, falling back to related-image search:', genErr);
@@ -6784,6 +8089,96 @@
 
                     updatedChat.isGeneratingInBg = false;
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
+
+                    if (currentChatId === requestContextChatId) {
+                        isGenerating = false;
+                        renderActiveChatMessages();
+                    }
+
+                } else if (selectedMode === 'song') {
+                    const songQuota = checkSongGenerationQuota();
+                    if (!songQuota.allowed) {
+                        const updatedChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                        updatedChat.messages[aiMsgIndex].text = songQuota.reason;
+                        updatedChat.messages[aiMsgIndex].isThinking = false;
+                        updatedChat.isGeneratingInBg = false;
+                        localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
+
+                        if (currentChatId === requestContextChatId) {
+                            isGenerating = false;
+                            renderActiveChatMessages();
+                        }
+                        clearInterval(internalThinkingInterval);
+                        return;
+                    }
+
+                    let songPrompt = text.replace(/\b(generate|create|make|compose|write|a|an|the|me|for|please|song|music|track|tune|melody|of|remember|those|that|lyrics|use)\b/gi, '').replace(/\s+/g, ' ').trim();
+                    if (!songPrompt) songPrompt = lyricsForSong ? 'An original song' : text;
+
+                    let songResult = null;
+                    let songError = null;
+                    let usedElevenLabs = false;
+
+                    // Preferred path: ElevenLabs Music API — supports actual
+                    // sung vocals when we have lyrics (either pasted in this
+                    // message or recalled from earlier in the chat).
+                    try {
+                        songResult = await generateSongViaElevenLabs(songPrompt, { lyrics: lyricsForSong });
+                        usedElevenLabs = true;
+                    } catch (elErr) {
+                        songError = elErr;
+                        console.error('ElevenLabs song generation failed, falling back to MusicGen:', elErr);
+                        // Don't fall back on a "bad prompt" rejection (e.g.
+                        // copyrighted lyrics) — MusicGen can't do vocals
+                        // anyway, so retrying there wouldn't fix the actual
+                        // problem and would just discard the real reason.
+                        if (!elErr || !elErr.isBadPrompt) {
+                            try {
+                                songResult = await generateSongViaMusicGen(songPrompt);
+                                songError = null;
+                                usedElevenLabs = false;
+                            } catch (hfErr) {
+                                songError = hfErr;
+                                console.error('MusicGen fallback also failed:', hfErr);
+                            }
+                        }
+                    }
+
+                    if (songResult && songResult.base64) incrementSongUsage();
+
+                    const updatedSongChat = JSON.parse(localStorage.getItem(requestContextChatId));
+
+                    if (songResult && songResult.base64) {
+                        const songMemEntry = saveSongToMemory({ prompt: songPrompt, base64: songResult.base64, mimeType: songResult.mimeType });
+                        updatedSongChat.messages[aiMsgIndex].text = songPrompt;
+                        updatedSongChat.messages[aiMsgIndex].isThinking = false;
+                        updatedSongChat.messages[aiMsgIndex].isGeneratedSong = true;
+                        if (songMemEntry) {
+                            updatedSongChat.messages[aiMsgIndex].songMemoryId = songMemEntry.id;
+                        } else {
+                            updatedSongChat.messages[aiMsgIndex].aiSongBytes = songResult.base64;
+                            updatedSongChat.messages[aiMsgIndex].aiSongMimeType = songResult.mimeType;
+                        }
+                    } else {
+                        const isNetworkFailure = songError && /Failed to fetch|NetworkError|Load failed/i.test(songError.message || '');
+                        let declineText = songError
+                            ? `Song generation failed: ${songError.message}`
+                            : "The music generation service is busy right now, so I couldn't create that song — want to try again in a moment?";
+                        if (isNetworkFailure) {
+                            declineText = "Song generation couldn't reach the music API at all (a network/CORS failure, not an API error). If you're opening this file directly (file://) instead of serving it from a real web server (http://localhost or a deployed domain), the browser blocks the request before it even leaves the page — that's the most common cause. Check the browser DevTools Console/Network tab for the exact error, and try serving the file over http:// instead.";
+                        } else if (songError && songError.isBadPrompt) {
+                            declineText = `ElevenLabs couldn't generate that one: ${songError.message.replace('ElevenLabs rejected the prompt: ', '') || 'the prompt was rejected (this often happens with copyrighted lyrics or naming a real artist/song).'} Try again with original lyrics or a different description.`;
+                        } else if (songError && songError.isAuthError) {
+                            declineText = "Song generation needs a valid ElevenLabs API key. Add one in Settings → API Keys, then try again.";
+                        } else if (songError && songError.isRateLimited) {
+                            declineText = "Hit the music generation service's rate limit — please wait a bit and try again.";
+                        }
+                        updatedSongChat.messages[aiMsgIndex].text = declineText;
+                        updatedSongChat.messages[aiMsgIndex].isThinking = false;
+                    }
+
+                    updatedSongChat.isGeneratingInBg = false;
+                    localStorage.setItem(requestContextChatId, JSON.stringify(updatedSongChat));
 
                     if (currentChatId === requestContextChatId) {
                         isGenerating = false;
@@ -6919,7 +8314,7 @@
                 }
 
                 const finalRecord = JSON.parse(localStorage.getItem(requestContextChatId));
-                if (finalRecord && finalRecord.messages.length <= 4 && selectedMode !== 'image') {
+                if (finalRecord && finalRecord.messages.length <= 4 && selectedMode !== 'image' && selectedMode !== 'song') {
                     generateDynamicTitle(requestContextChatId, text, finalRecord.messages[aiMsgIndex].text);
                 } else {
                     loadHistoryList();

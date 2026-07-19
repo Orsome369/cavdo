@@ -9670,7 +9670,7 @@
         // Until a Client ID is added, the Google buttons show an inline explanation
         // instead of silently pretending to sign someone in.
         // ============================================================================
-        const CAVDO_GOOGLE_CLIENT_ID = ""; // <-- paste your Google OAuth Web Client ID here
+        const CAVDO_GOOGLE_CLIENT_ID = "628026215893-pkevf4a6vi1445f78u7o1gej7lh4ae93.apps.googleusercontent.com";
 
         (function () {
             var overlay = document.getElementById('authOverlay');
@@ -9781,6 +9781,17 @@
                 unlockApp();
             }
 
+            var GOOGLE_REASON_MESSAGES = {
+                'unregistered_origin': 'This page\'s URL isn\'t in the Client ID\'s "Authorized JavaScript origins" list in Google Cloud Console. Add this exact origin (scheme + domain, no path) and try again.',
+                'secure_http_required': 'Google Sign-In requires HTTPS (or localhost). This page is being served over plain HTTP or as a local file.',
+                'invalid_client': 'The Client ID looks invalid or doesn\'t match this project. Double-check it in Google Cloud Console.',
+                'missing_client_id': 'No Client ID is set.',
+                'opt_out_or_no_session': 'You\'re not signed into a Google account in this browser, or have opted out of One Tap. Sign into Google first, then try again.',
+                'suppressed_by_user': 'You previously dismissed this prompt, so the browser is temporarily suppressing it. Clear cookies for this site (or wait) and try again.',
+                'browser_not_supported': 'This browser doesn\'t support Google Sign-In\'s One Tap prompt.',
+                'invalid_configuration': 'The Google Sign-In configuration is invalid.'
+            };
+
             async function startGoogleSignIn(errEl) {
                 if (!CAVDO_GOOGLE_CLIENT_ID) {
                     errEl.textContent = 'Google sign-in isn\'t configured yet — add a Google OAuth Client ID (see the comment at the top of this script) to enable it.';
@@ -9795,13 +9806,20 @@
                     });
                     google.accounts.id.prompt(function (notification) {
                         if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                            errEl.textContent = 'Google sign-in was closed or blocked by the browser. Please try again.';
+                            var reason = (notification.getNotDisplayedReason && notification.getNotDisplayedReason())
+                                || (notification.getSkippedReason && notification.getSkippedReason())
+                                || 'unknown_reason';
+                            console.error('Google Sign-In not shown. Reason:', reason, '— current origin:', window.location.origin);
+                            errEl.textContent = GOOGLE_REASON_MESSAGES[reason]
+                                || ('Google sign-in was blocked (' + reason + '). Check the browser console for details.');
                         }
                     });
                 } catch (err) {
+                    console.error(err);
                     errEl.textContent = 'Could not reach Google Sign-In. Check your connection and try again.';
                 }
             }
+
 
             // --- Login step ---
             document.getElementById('goToRegisterLink').addEventListener('click', function () {

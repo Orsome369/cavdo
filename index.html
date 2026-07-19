@@ -9817,16 +9817,29 @@
             });
 
             // Resume an existing session (real persisted login) if one exists.
+            // Important: a session token alone isn't proof of registration — if
+            // it's a password-based session, re-check that the account it points
+            // to still actually exists before letting it straight into the app.
             (function tryResumeSession() {
                 try {
                     var raw = localStorage.getItem(SESSION_KEY);
-                    if (raw) {
-                        var session = JSON.parse(raw);
-                        if (session && session.username) {
-                            applyProfileToUI(session.username);
-                            unlockApp();
+                    if (!raw) return;
+                    var session = JSON.parse(raw);
+                    if (!session || !session.username) return;
+
+                    if (session.via === 'password') {
+                        var accounts = getAccounts();
+                        var account = accounts[session.username.toLowerCase()];
+                        if (!account) {
+                            // Stale session with no matching account — don't grant
+                            // entrance, clear it and fall through to the login screen.
+                            localStorage.removeItem(SESSION_KEY);
+                            return;
                         }
                     }
+
+                    applyProfileToUI(session.username);
+                    unlockApp();
                 } catch (e) {}
             })();
 

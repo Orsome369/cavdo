@@ -377,6 +377,36 @@
             gap: 12px;
             font-weight: 500;
             color: rgba(255, 255, 255, 0.8);
+            position: relative;
+        }
+
+        .user-profile-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+            background: none;
+            border: none;
+            padding: 4px;
+            margin: -4px;
+            border-radius: 10px;
+            cursor: pointer;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            transition: background 0.2s;
+        }
+
+        .user-profile-info:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .user-dropdown {
+            top: auto;
+            bottom: calc(100% + 6px);
+            left: 0;
+            right: auto;
         }
 
         .user-profile span {
@@ -2810,7 +2840,8 @@
                 border-top: none;
             }
             .sidebar.collapsed .settings-btn { order: 1; }
-            .sidebar.collapsed .user-avatar { order: 2; }
+            .sidebar.collapsed .user-profile-info { order: 2; flex: none; }
+            .sidebar.collapsed .user-dropdown { left: 50%; transform: translateX(-50%); }
             /* Once the rail itself can toggle the sidebar, the floating fab is
                only needed for the mobile slide-in drawer, not on desktop. */
             .show-sidebar-fab { display: none !important; }
@@ -3503,8 +3534,13 @@
             <div class="history-title">Recent Chats</div>
         </div>
         <div class="user-profile">
-            <div class="user-avatar">U</div>
-            <span class="btn-label">User Account</span>
+            <button type="button" class="user-profile-info" id="userProfileBtn" title="Account">
+                <div class="user-avatar">U</div>
+                <span class="btn-label">User Account</span>
+            </button>
+            <div class="chat-dropdown user-dropdown" id="userProfileDropdown">
+                <button type="button" class="chat-dropdown-item delete" id="logoutBtn">Log out</button>
+            </div>
             <button class="settings-btn" id="settingsBtn" title="Settings">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </button>
@@ -9744,6 +9780,41 @@
                 document.body.classList.remove('pre-auth');
                 overlay.classList.add('hidden');
             }
+
+            function resetProfileUI() {
+                var avatar = document.querySelector('.user-avatar');
+                var label = document.querySelector('.user-profile .btn-label');
+                if (avatar) avatar.textContent = 'U';
+                if (label) label.textContent = 'User Account';
+            }
+
+            function logOut() {
+                try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+                resetProfileUI();
+                document.getElementById('loginUsername').value = '';
+                document.getElementById('loginPassword').value = '';
+                document.getElementById('loginError').textContent = '';
+                showStep('login');
+                overlay.classList.remove('hidden');
+                document.body.classList.add('pre-auth');
+            }
+
+            // ---------------- Profile dropdown / logout ----------------
+            document.getElementById('userProfileBtn').addEventListener('click', function (e) {
+                e.stopPropagation();
+                var dd = document.getElementById('userProfileDropdown');
+                var wasOpen = dd.classList.contains('show');
+                document.querySelectorAll('.chat-dropdown, .ai-more-dropdown').forEach(function (d) {
+                    d.classList.remove('show');
+                });
+                if (!wasOpen) dd.classList.add('show');
+            });
+
+            document.getElementById('logoutBtn').addEventListener('click', function (e) {
+                e.stopPropagation();
+                document.getElementById('userProfileDropdown').classList.remove('show');
+                logOut();
+            });
 
             // Resume an existing session (real persisted login) if one exists.
             (function tryResumeSession() {

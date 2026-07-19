@@ -9731,6 +9731,7 @@
 
             // ---------------- Account store (real persistence, hashed passwords) ----------------
             var ACCOUNTS_KEY = 'cavdoAccounts';
+            var GOOGLE_ACCOUNTS_KEY = 'cavdoGoogleAccounts';
             var SESSION_KEY = 'cavdoCurrentUser';
 
             function getAccounts() {
@@ -9739,6 +9740,18 @@
             }
             function saveAccounts(accounts) {
                 try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts)); } catch (e) {}
+            }
+
+            // Google accounts are tracked separately (keyed by email), since Google
+            // sign-in never touches the username/password store. This is what lets
+            // login-via-Google actually tell a registered Google account apart from
+            // one that only just authenticated with Google but never registered here.
+            function getGoogleAccounts() {
+                try { return JSON.parse(localStorage.getItem(GOOGLE_ACCOUNTS_KEY) || '{}'); }
+                catch (e) { return {}; }
+            }
+            function saveGoogleAccounts(accounts) {
+                try { localStorage.setItem(GOOGLE_ACCOUNTS_KEY, JSON.stringify(accounts)); } catch (e) {}
             }
 
             // Real SHA-256 hashing via the browser's native WebCrypto API.
@@ -9836,6 +9849,13 @@
                             localStorage.removeItem(SESSION_KEY);
                             return;
                         }
+                    } else if (session.via === 'google') {
+                        var googleAccounts = getGoogleAccounts();
+                        var email = (session.email || '').toLowerCase();
+                        if (!email || !googleAccounts[email]) {
+                            localStorage.removeItem(SESSION_KEY);
+                            return;
+                        }
                     }
 
                     applyProfileToUI(session.username);
@@ -9871,8 +9891,34 @@
                 return JSON.parse(json);
             }
 
-            function handleGoogleCredential(response) {
+            function handleGoogleCredential(response, mode, errEl) {
                 var payload = decodeGoogleJwt(response.credential);
+                var email = (payload.email || '').toLowerCase();
+
+                if (!email) {
+                    if (errEl) errEl.textContent = 'Could not read your Google account\'s email. Please try again.';
+                    return;
+                }
+
+                var googleAccounts = getGoogleAccounts();
+
+                if (mode === 'login') {
+                    if (!googleAccounts[email]) {
+                        // Authenticated with Google fine, but never registered here — don't let them in.
+                        if (errEl) errEl.textContent = 'No Cavdo AI account is registered with this Google account. Please register first.';
+                        return;
+                    }
+                } else {
+                    // mode === 'register'
+                    if (googleAccounts[email]) {
+                        if (errEl) errEl.textContent = 'This Google account is already registered. Please log in instead.';
+                        return;
+                    }
+                    googleAccounts[email] = { email: email, name: payload.name || '', createdAt: Date.now() };
+                    saveGoogleAccounts(googleAccounts);
+                }
+
+                if (errEl) errEl.textContent = '';
                 setCurrentUser(payload.name || payload.email, { email: payload.email, via: 'google' });
                 unlockApp();
             }
@@ -9888,7 +9934,7 @@
                 'invalid_configuration': 'The Google Sign-In configuration is invalid.'
             };
 
-            async function startGoogleSignIn(errEl) {
+            async function startGoogleSignIn(errEl, mode) {
                 if (!CAVDO_GOOGLE_CLIENT_ID) {
                     errEl.textContent = 'Google sign-in isn\'t configured yet — add a Google OAuth Client ID (see the comment at the top of this script) to enable it.';
                     return;
@@ -9898,7 +9944,7 @@
                     await loadGoogleScript();
                     google.accounts.id.initialize({
                         client_id: CAVDO_GOOGLE_CLIENT_ID,
-                        callback: handleGoogleCredential
+                        callback: function (response) { handleGoogleCredential(response, mode, errEl); }
                     });
                     google.accounts.id.prompt(function (notification) {
                         if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
@@ -9924,7 +9970,7 @@
             });
 
             document.getElementById('loginGoogleBtn').addEventListener('click', function () {
-                startGoogleSignIn(document.getElementById('loginGoogleError'));
+                startGoogleSignIn(document.getElementById('loginGoogleError'), 'login');
             });
 
             document.getElementById('loginSubmitBtn').addEventListener('click', async function () {
@@ -9980,7 +10026,7 @@
             });
 
             document.getElementById('registerGoogleBtn').addEventListener('click', function () {
-                startGoogleSignIn(document.getElementById('registerGoogleError'));
+                startGoogleSignIn(document.getElementById('registerGoogleError'), 'register');
             });
 
             // --- Register: details (username + password + age) ---

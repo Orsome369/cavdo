@@ -9721,6 +9721,18 @@
                 applyProfileToUI(username);
             }
 
+            // Returns the active session (username + meta) if one exists, else null.
+            // Lets the login flow tell "already logged in, trying again" apart from
+            // "not logged in yet" instead of just silently re-checking credentials.
+            function getCurrentSession() {
+                try {
+                    var raw = localStorage.getItem(SESSION_KEY);
+                    if (!raw) return null;
+                    var session = JSON.parse(raw);
+                    return (session && session.username) ? session : null;
+                } catch (e) { return null; }
+            }
+
             function applyProfileToUI(username) {
                 var avatar = document.querySelector('.user-avatar');
                 var label = document.querySelector('.user-profile .btn-label');
@@ -9748,16 +9760,11 @@
             })();
 
             // ---------------- Google Identity Services (real sign-in, optional setup) ----------------
-            // Loaded eagerly (not on click) so the token client is ready by the time the
-            // user clicks a Google button — this keeps the click a direct user gesture,
-            // which browsers require to allow the popup instead of blocking it.
             var googleReadyPromise = null;
-            var googleTokenClient = null;
-
             function loadGoogleScript() {
                 if (googleReadyPromise) return googleReadyPromise;
                 googleReadyPromise = new Promise(function (resolve, reject) {
-                    if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+                    if (window.google && window.google.accounts && window.google.accounts.id) {
                         resolve();
                         return;
                     }
@@ -9772,57 +9779,30 @@
                 return googleReadyPromise;
             }
 
-            var pendingGoogleErrEl = null;
-
-            function getTokenClient() {
-                if (googleTokenClient) return googleTokenClient;
-                googleTokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: CAVDO_GOOGLE_CLIENT_ID,
-                    scope: 'openid email profile',
-                    callback: handleGoogleTokenResponse,
-                    error_callback: handleGoogleTokenError
-                });
-                return googleTokenClient;
+            function decodeGoogleJwt(token) {
+                var base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+                var json = decodeURIComponent(atob(base64).split('').map(function (c) {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+                return JSON.parse(json);
             }
 
-            async function handleGoogleTokenResponse(tokenResponse) {
-                var errEl = pendingGoogleErrEl;
-                if (!tokenResponse || tokenResponse.error) {
-                    if (errEl) errEl.textContent = 'Google sign-in failed or was cancelled. Please try again.';
-                    return;
-                }
-                try {
-                    var res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                        headers: { Authorization: 'Bearer ' + tokenResponse.access_token }
-                    });
-                    if (!res.ok) throw new Error('userinfo request failed: ' + res.status);
-                    var profile = await res.json();
-                    setCurrentUser(profile.name || profile.email, { email: profile.email, via: 'google' });
-                    unlockApp();
-                } catch (err) {
-                    console.error(err);
-                    if (errEl) errEl.textContent = 'Signed into Google, but could not fetch your profile. Please try again.';
-                }
+            function handleGoogleCredential(response) {
+                var payload = decodeGoogleJwt(response.credential);
+                setCurrentUser(payload.name || payload.email, { email: payload.email, via: 'google' });
+                unlockApp();
             }
 
             var GOOGLE_REASON_MESSAGES = {
-                'popup_failed_to_open': 'The Google sign-in popup was blocked by the browser. Allow popups for this site and try again.',
-                'popup_closed': 'The Google sign-in popup was closed before finishing. Please try again.',
                 'unregistered_origin': 'This page\'s URL isn\'t in the Client ID\'s "Authorized JavaScript origins" list in Google Cloud Console. Add this exact origin (scheme + domain, no path) and try again.',
                 'secure_http_required': 'Google Sign-In requires HTTPS (or localhost). This page is being served over plain HTTP or as a local file.',
                 'invalid_client': 'The Client ID looks invalid or doesn\'t match this project. Double-check it in Google Cloud Console.',
-                'missing_client_id': 'No Client ID is set.'
+                'missing_client_id': 'No Client ID is set.',
+                'opt_out_or_no_session': 'You\'re not signed into a Google account in this browser, or have opted out of One Tap. Sign into Google first, then try again.',
+                'suppressed_by_user': 'You previously dismissed this prompt, so the browser is temporarily suppressing it. Clear cookies for this site (or wait) and try again.',
+                'browser_not_supported': 'This browser doesn\'t support Google Sign-In\'s One Tap prompt.',
+                'invalid_configuration': 'The Google Sign-In configuration is invalid.'
             };
-
-            function handleGoogleTokenError(err) {
-                var errEl = pendingGoogleErrEl;
-                var reason = (err && (err.type || err.message)) || 'unknown_reason';
-                console.error('Google Sign-In error:', err, '— current origin:', window.location.origin);
-                if (errEl) {
-                    errEl.textContent = GOOGLE_REASON_MESSAGES[reason]
-                        || ('Google sign-in was blocked (' + reason + '). Check the browser console for details.');
-                }
-            }
 
             async function startGoogleSignIn(errEl) {
                 if (!CAVDO_GOOGLE_CLIENT_ID) {
@@ -9830,26 +9810,27 @@
                     return;
                 }
                 errEl.textContent = '';
-                pendingGoogleErrEl = errEl;
                 try {
-                    // If the script is already loaded (the common case, since we preload it),
-                    // this call is synchronous, keeping the click's user-gesture intact so
-                    // the popup opens directly instead of being blocked.
-                    if (window.google && window.google.accounts && window.google.accounts.oauth2) {
-                        getTokenClient().requestAccessToken({ prompt: 'select_account' });
-                    } else {
-                        await loadGoogleScript();
-                        errEl.textContent = 'Still loading Google Sign-In — click the button once more.';
-                    }
+                    await loadGoogleScript();
+                    google.accounts.id.initialize({
+                        client_id: CAVDO_GOOGLE_CLIENT_ID,
+                        callback: handleGoogleCredential
+                    });
+                    google.accounts.id.prompt(function (notification) {
+                        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                            var reason = (notification.getNotDisplayedReason && notification.getNotDisplayedReason())
+                                || (notification.getSkippedReason && notification.getSkippedReason())
+                                || 'unknown_reason';
+                            console.error('Google Sign-In not shown. Reason:', reason, '— current origin:', window.location.origin);
+                            errEl.textContent = GOOGLE_REASON_MESSAGES[reason]
+                                || ('Google sign-in was blocked (' + reason + '). Check the browser console for details.');
+                        }
+                    });
                 } catch (err) {
                     console.error(err);
                     errEl.textContent = 'Could not reach Google Sign-In. Check your connection and try again.';
                 }
             }
-
-            // Kick off loading the Google script immediately so it's ready before any click.
-            loadGoogleScript().catch(function (err) { console.error(err); });
-
 
 
             // --- Login step ---
@@ -9873,10 +9854,22 @@
                     return;
                 }
 
+                // Already logged in as this exact user and hitting "Log in" again
+                // (e.g. a stale tab, double submit) — don't re-check credentials,
+                // just resume the existing session straight into the app.
+                var existingSession = getCurrentSession();
+                if (existingSession && existingSession.username &&
+                    existingSession.username.toLowerCase() === user.toLowerCase()) {
+                    errEl.textContent = '';
+                    unlockApp();
+                    return;
+                }
+
                 var accounts = getAccounts();
                 var account = accounts[user.toLowerCase()];
                 if (!account) {
-                    errEl.textContent = 'No account found with that username. Try registering.';
+                    // Not registered — say so explicitly, don't let them through.
+                    errEl.textContent = 'This username isn\'t registered yet. Please register first.';
                     return;
                 }
 

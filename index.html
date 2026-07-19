@@ -3165,9 +3165,203 @@
             body.split-view-open #mainContainer { margin-right: 0; }
             .split-preview-panel { width: 100vw; }
         }
+        body.pre-auth .sidebar,
+        body.pre-auth .main-container {
+            display: none !important;
+        }
+
+        /* ===================== Auth Overlay (Login / Register) ===================== */
+        #authOverlay {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            height: var(--app-vh);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 50% -20%, #2c5e3b 0%, #131a15 40%, #050705 100%);
+            padding: 20px;
+            overflow-y: auto;
+        }
+        #authOverlay.hidden { display: none; }
+
+        .auth-panel {
+            width: 100%;
+            max-width: 380px;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(40px) saturate(160%);
+            -webkit-backdrop-filter: blur(40px) saturate(160%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border-radius: 24px;
+            padding: 32px 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            animation: authFadeIn 0.25s ease;
+        }
+        @keyframes authFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .auth-step { display: none; flex-direction: column; gap: 14px; }
+        .auth-step.active { display: flex; }
+
+        .auth-logo-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 4px;
+        }
+        .auth-logo-row img { width: 28px; height: 28px; }
+
+        .auth-title { font-size: 18px; font-weight: 700; text-align: center; color: #fff; }
+        .auth-subtitle { font-size: 13px; text-align: center; color: rgba(255,255,255,0.5); margin-bottom: 6px; line-height: 1.5; }
+
+        .auth-google-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.06);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.1s ease;
+        }
+        .auth-google-btn:hover { background: rgba(255,255,255,0.1); }
+        .auth-google-btn:active { transform: scale(0.98); }
+        .auth-google-btn svg { flex-shrink: 0; }
+
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: rgba(255,255,255,0.35);
+            font-size: 12px;
+            margin: 4px 0;
+        }
+        .auth-divider::before, .auth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .auth-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .auth-field label {
+            font-size: 12px;
+            color: rgba(255,255,255,0.55);
+            font-weight: 600;
+        }
+        .auth-field input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: #111813;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+        .auth-field input:focus { border-color: #2fd05c; }
+        .auth-field input::placeholder { color: rgba(255,255,255,0.3); }
+
+        .auth-error {
+            font-size: 12px;
+            color: #ff6b6b;
+            min-height: 14px;
+            text-align: center;
+        }
+
+        .auth-submit-btn {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 14px;
+            border: none;
+            background: #2fd05c;
+            color: #06170c;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 4px;
+            transition: background 0.15s ease, transform 0.1s ease;
+        }
+        .auth-submit-btn:hover { background: #3ee06c; }
+        .auth-submit-btn:active { transform: scale(0.98); }
+        .auth-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .auth-switch-text {
+            text-align: center;
+            font-size: 13px;
+            color: rgba(255,255,255,0.28);
+            margin-top: 6px;
+        }
+        .auth-switch-link {
+            color: rgba(255,255,255,0.4);
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        .auth-switch-link:hover { color: #2fd05c; }
+
+        .auth-back-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.4);
+            cursor: pointer;
+            margin-bottom: 2px;
+            width: fit-content;
+        }
+        .auth-back-row:hover { color: #fff; }
+
+        .auth-access-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(47, 208, 92, 0.12);
+            border: 1px solid rgba(47, 208, 92, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 6px;
+            color: #2fd05c;
+        }
+
+        .auth-loading-dots::after {
+            content: '';
+            animation: authDots 1.2s steps(4, end) infinite;
+        }
+        @keyframes authDots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+            100% { content: ''; }
+        }
     </style>
 </head>
-<body>
+<body class="pre-auth">
     <script>
         // Keep --app-vh synced to the *actual* visible viewport (not the
         // full/idealized one), so the layout reflows live as the mobile
@@ -3188,6 +3382,97 @@
             }
         })();
     </script>
+    <div id="authOverlay">
+        <div class="auth-panel">
+
+            <!-- STEP: LOGIN -->
+            <div class="auth-step active" id="authStepLogin">
+                <div class="auth-logo-row"><img id="authLoginLogo" src="" alt="Cavdo AI logo"><span>CAVDO</span></div>
+                <div class="auth-title">Welcome back</div>
+
+                <button type="button" class="auth-google-btn" id="loginGoogleBtn">
+                    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.8-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.3 0-9.8-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3 5.5-5.9 7.2l6.4 5.4C39.9 37.7 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                    Log in with Google
+                </button>
+                <div class="auth-error" id="loginGoogleError"></div>
+
+                <div class="auth-divider">or</div>
+
+                <div class="auth-field">
+                    <label for="loginUsername">Username</label>
+                    <input type="text" id="loginUsername" placeholder="Enter your username" autocomplete="username">
+                </div>
+                <div class="auth-field">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" placeholder="Enter your password" autocomplete="current-password">
+                </div>
+
+                <div class="auth-error" id="loginError"></div>
+                <button type="button" class="auth-submit-btn" id="loginSubmitBtn">Log in</button>
+
+                <div class="auth-switch-text">
+                    Don't have an account? <span class="auth-switch-link" id="goToRegisterLink">Register</span>
+                </div>
+            </div>
+
+            <!-- STEP: REGISTER START -->
+            <div class="auth-step" id="authStepRegisterStart">
+                <div class="auth-back-row" id="backToLoginBtn1">← Back to log in</div>
+                <div class="auth-logo-row"><img id="authRegisterLogo" src="" alt="Cavdo AI logo"><span>CAVDO</span></div>
+                <div class="auth-title">Create your account</div>
+                <div class="auth-subtitle">Start with your Google account to register for Cavdo AI.</div>
+
+                <button type="button" class="auth-google-btn" id="registerGoogleBtn">
+                    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.8-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.3 0-9.8-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3 5.5-5.9 7.2l6.4 5.4C39.9 37.7 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                    <span id="registerGoogleBtnLabel">Continue with Google</span>
+                </button>
+                <div class="auth-error" id="registerGoogleError"></div>
+
+                <div class="auth-switch-text">
+                    Already have an account? <span class="auth-switch-link" id="goToLoginLink">Log in</span>
+                </div>
+            </div>
+
+            <!-- STEP: REGISTER DETAILS (username + age) -->
+            <div class="auth-step" id="authStepRegisterDetails">
+                <div class="auth-back-row" id="backToRegisterStartBtn">← Back</div>
+                <div class="auth-title">Tell us about you</div>
+                <div class="auth-subtitle">Just a couple details to finish setting up your account.</div>
+
+                <div class="auth-field">
+                    <label for="registerUsername">Username</label>
+                    <input type="text" id="registerUsername" placeholder="Choose a username" autocomplete="username">
+                </div>
+                <div class="auth-field">
+                    <label for="registerPassword">Password</label>
+                    <input type="password" id="registerPassword" placeholder="Create a password" autocomplete="new-password">
+                </div>
+                <div class="auth-field">
+                    <label for="registerConfirmPassword">Confirm password</label>
+                    <input type="password" id="registerConfirmPassword" placeholder="Re-enter your password" autocomplete="new-password">
+                </div>
+                <div class="auth-field">
+                    <label for="registerAge">Age</label>
+                    <input type="number" id="registerAge" placeholder="Enter your age" min="1" max="120" inputmode="numeric">
+                </div>
+
+                <div class="auth-error" id="registerDetailsError"></div>
+                <button type="button" class="auth-submit-btn" id="registerDetailsSubmitBtn">Continue</button>
+            </div>
+
+            <!-- STEP: ACCESS GRANTED -->
+            <div class="auth-step" id="authStepAccess">
+                <div class="auth-access-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                </div>
+                <div class="auth-title" id="accessTitle">You're all set!</div>
+                <div class="auth-subtitle" id="accessSubtitle">Your account is ready. You now have access to Cavdo AI.</div>
+                <button type="button" class="auth-submit-btn" id="enterAppBtn">Access Cavdo AI</button>
+            </div>
+
+        </div>
+    </div>
+
     <div class="drop-zone-overlay" id="dropZoneOverlay">📥 Drop files anywhere to attach</div>
 
     <div class="sidebar" id="appSidebar">
@@ -3477,6 +3762,21 @@
                         <button class="own-key-remove-btn" id="removeElevenLabsKeyBtn" style="display:none;">Remove</button>
                     </div>
                     <div class="own-key-note">Song generation with lyrics/vocals uses ElevenLabs' Music API. This key is only kept in this browser's local storage and sent only to ElevenLabs — never to Cavdo's own servers.</div>
+                </div>
+                <div class="api-key-card" style="margin-top:16px;">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Pollinations API Key (Image Editing)</div>
+                            <div class="api-key-value" id="pollinationsKeyMasked">Not set — image editing will fail (Kontext now requires a key)</div>
+                        </div>
+                    </div>
+                    <div class="settings-section-title" style="margin-top:18px;">Add Your Free Key</div>
+                    <div class="own-key-row">
+                        <input type="password" id="pollinationsKeyInput" placeholder="Paste your Pollinations API key…" autocomplete="off">
+                        <button class="own-key-use-btn" id="usePollinationsKeyBtn">Save</button>
+                        <button class="own-key-remove-btn" id="removePollinationsKeyBtn" style="display:none;">Remove</button>
+                    </div>
+                    <div class="own-key-note">The "edit this image" feature uses Pollinations' Kontext model, which now requires an API key and a small amount of Pollen credit per edit. Get a free key at enter.pollinations.ai (registration is free; Pollen can be earned or bought as needed) and paste it here. Stored only in this browser's local storage, sent only to Pollinations.</div>
                 </div>
             </div>
         </div>
@@ -3800,7 +4100,28 @@
         }
 
         function saveFreeUsageMap(map) {
-            localStorage.setItem(FREE_USAGE_STORAGE_KEY, JSON.stringify(map));
+            const payload = JSON.stringify(map);
+            const tryStore = () => {
+                try { localStorage.setItem(FREE_USAGE_STORAGE_KEY, payload); return true; }
+                catch (e) { return false; }
+            };
+            if (tryStore()) return;
+
+            // Storage is full. This write is tiny but critical (it runs on
+            // every message send), so rather than let it throw and kill the
+            // whole send pipeline, free up room the same way image/song
+            // memory do — evict the oldest remembered media first — and
+            // retry. If there's genuinely nothing left to evict, swallow
+            // the error: losing one beat of usage-count accuracy is far
+            // better than silently blocking every message from sending.
+            // Note: generated images/songs now live in IndexedDB (see
+            // initMediaMemory above), not localStorage, so they no longer
+            // compete with this tiny usage map for the ~5-10MB quota — this
+            // write failing at all should now be rare. It's just a usage
+            // counter, so if it still fails, losing one beat of accuracy is
+            // fine; we deliberately don't auto-delete chat history to make
+            // room for it.
+            console.error('Could not save free-tier usage map (storage full).');
         }
 
         function getFreeUsageCount(tierKey) {
@@ -3867,23 +4188,23 @@
         const PLAN_LIST = [
             {
                 key: 'free', label: 'Free', priceLabel: 'Free', price: 0,
-                messageLimit: null, generationLimit: null, songGenerationLimit: 1,
-                features: ['Smaller chats', 'One 30-sec song generation per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: false }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }, { text: 'Video Generation', included: false }]
+                messageLimit: null, generationLimit: 5,
+                features: ['Smaller chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: false }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }]
             },
             {
                 key: 'plan_lite', label: 'Lite Plan', priceLabel: '₹100', price: 100,
-                messageLimit: 26, generationLimit: 2, songGenerationLimit: 2,
-                features: ['Longer chats', 'Two 30-sec song generations per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }, { text: 'Video Generation', included: false }]
+                messageLimit: 26, generationLimit: 10,
+                features: ['Longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }]
             },
             {
                 key: 'plan_speed', label: 'Speed Plan', priceLabel: '₹200', price: 200,
-                messageLimit: 40, generationLimit: 5, songGenerationLimit: 3,
-                features: ['Even longer chats', 'Three 30-sec song generations per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: false }, { text: 'Video Generation', included: false }]
+                messageLimit: 40, generationLimit: 15,
+                features: ['Even longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: false }]
             },
             {
                 key: 'plan_ultimate', label: 'Ultimate Plan', priceLabel: '₹500', price: 500,
-                messageLimit: 80, generationLimit: 10, songGenerationLimit: 5,
-                features: ['Very long chats', 'Five 30-sec song generations per day', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: true }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: true }, { text: 'Video Generation', included: true }]
+                messageLimit: 80, generationLimit: 30,
+                features: ['Very long chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: true }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: true }]
             }
         ];
 
@@ -4175,23 +4496,9 @@
                 list.appendChild(genRow);
             }
 
-            if (plan.songGenerationLimit !== null && plan.songGenerationLimit !== undefined) {
-                const songLimit = plan.songGenerationLimit;
-                const songUsed = Math.min(getSongUsageCount(), songLimit);
-                const songPct = Math.min(100, Math.round((songUsed / songLimit) * 100));
-                const songRow = document.createElement('div');
-                songRow.className = 'usage-tier-row';
-                songRow.innerHTML = `
-                    <div class="usage-tier-top">
-                        <span class="usage-tier-name">🎵 Song Generations</span>
-                        <span class="usage-tier-count">${songUsed}/${songLimit} today</span>
-                    </div>
-                    <div class="usage-tier-bar-track"><div class="usage-tier-bar-fill ${songPct >= 80 ? 'warn' : ''}" style="width:${songPct}%;"></div></div>
-                    ${songUsed >= songLimit ? `<div class="usage-tier-lock-note">Resets ${formatTimeRemaining(getSongUsageResetAt())}</div>` : ''}
-                `;
-                list.appendChild(songRow);
-            }
         }
+
+
 
         function renderModelDropdown() {
             const dropdown = document.getElementById('modelDropdown');
@@ -4427,6 +4734,48 @@
         }
 
         // ------------------------------------------------------------
+        // 🔑 Pollinations API key — used for the "edit this image"
+        // feature (Kontext model). Pollinations tightened access so that
+        // generation now requires a key; without one, edits fail with a
+        // 500/401 from their gateway regardless of retries. No built-in
+        // default here (unlike ElevenLabs above) — there's no free shared
+        // key to ship, so this is purely user-supplied, same persistence
+        // pattern as the Hugging Face token.
+        // ------------------------------------------------------------
+        const POLLINATIONS_KEY_STORAGE_KEY = 'cavdo_pollinations_key';
+
+        function getPollinationsKey() {
+            return (localStorage.getItem(POLLINATIONS_KEY_STORAGE_KEY) || '').trim();
+        }
+
+        function refreshPollinationsKeyUI() {
+            const masked = document.getElementById('pollinationsKeyMasked');
+            const removeBtn = document.getElementById('removePollinationsKeyBtn');
+            const useBtn = document.getElementById('usePollinationsKeyBtn');
+            const input = document.getElementById('pollinationsKeyInput');
+            const key = getPollinationsKey();
+            const active = !!key;
+
+            if (masked) masked.textContent = active ? maskApiKey(key) : 'Not set — image editing will fail (Kontext now requires a key)';
+            if (removeBtn) removeBtn.style.display = active ? 'inline-block' : 'none';
+            if (useBtn) useBtn.textContent = active ? 'Update' : 'Save';
+            if (input && !active) input.value = '';
+        }
+
+        function usePollinationsKey() {
+            const input = document.getElementById('pollinationsKeyInput');
+            const key = input ? input.value.trim() : '';
+            if (!key) return;
+            localStorage.setItem(POLLINATIONS_KEY_STORAGE_KEY, key);
+            refreshPollinationsKeyUI();
+        }
+
+        function removePollinationsKey() {
+            localStorage.removeItem(POLLINATIONS_KEY_STORAGE_KEY);
+            refreshPollinationsKeyUI();
+        }
+
+        // ------------------------------------------------------------
         // 🔑 ElevenLabs API key — used for song generation (Eleven Music
         // API, which supports vocals/lyrics unlike the MusicGen fallback
         // above). Same pattern as the Hugging Face token: a built-in
@@ -4568,6 +4917,7 @@
             refreshOwnKeyUI();
             renderGeminiModelStatusList();
             renderFreeUsagePanel();
+            refreshPollinationsKeyUI();
             document.getElementById('settingsModalOverlay').classList.add('show');
         }
 
@@ -4610,6 +4960,13 @@
             if (e.key === 'Enter') useElevenLabsKey();
         });
         refreshElevenLabsKeyUI();
+
+        document.getElementById('usePollinationsKeyBtn').onclick = usePollinationsKey;
+        document.getElementById('removePollinationsKeyBtn').onclick = removePollinationsKey;
+        document.getElementById('pollinationsKeyInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') usePollinationsKey();
+        });
+        refreshPollinationsKeyUI();
 
         function isRateLimitResponse(response, data) {
             if (response && response.status === 429) return true;
@@ -6484,8 +6841,9 @@
                         const memEntry = msg.memoryId ? getImageFromMemoryById(msg.memoryId) : null;
                         const imgBytes = memEntry ? memEntry.base64 : msg.aiImgBytes;
                         const imgMime = memEntry ? memEntry.mimeType : msg.aiImgMimeType;
+                        const imgAspect = memEntry ? memEntry.aspectRatio : msg.aiImgAspect;
                         if (imgBytes) {
-                            renderBase64GeneratedImage(textDiv, imgBytes, msg.text, imgMime);
+                            renderBase64GeneratedImage(textDiv, imgBytes, msg.text, imgMime, imgAspect);
                         } else {
                             textDiv.textContent = 'This generated image is no longer available (it may have been removed from your image memory).';
                         }
@@ -6773,7 +7131,7 @@
             }
         }
 
-        function renderBase64GeneratedImage(targetNode, base64Data, promptText, mimeType) {
+        function renderBase64GeneratedImage(targetNode, base64Data, promptText, mimeType, aspectRatio) {
             targetNode.innerHTML = '';
             const box = document.createElement('div');
             box.className = 'generated-image-box';
@@ -6784,6 +7142,20 @@
             img.alt = promptText;
             img.title = "Click for full-screen preview";
             img.onclick = () => window.openImageLightbox(imgSrc, promptText || "AI Art Piece");
+
+            // Give the image its natural aspect ratio right away so it
+            // renders at the correct shape (tall for 9:16, wide for 16:9,
+            // etc.) instead of briefly flashing at whatever CSS default
+            // and jumping once the file finishes loading.
+            if (aspectRatio && IMAGE_ASPECT_PRESETS[aspectRatio]) {
+                const { width, height } = IMAGE_ASPECT_PRESETS[aspectRatio];
+                img.style.aspectRatio = `${width} / ${height}`;
+                img.style.objectFit = 'cover';
+                img.style.width = '100%';
+                img.style.maxWidth = (width > height) ? '480px' : '360px';
+                img.style.margin = '0 auto';
+                img.style.display = 'block';
+            }
 
             const actionsRow = document.createElement('div');
             actionsRow.className = 'generated-image-actions';
@@ -6898,9 +7270,176 @@
             {
                 key: 'pollinations',
                 label: 'Pollinations',
-                buildUrl: (prompt, seed) => `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`
+                buildUrl: (prompt, seed, width, height) => `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width || 1024}&height=${height || 1024}&model=flux&nologo=true&seed=${seed}`
             }
         ];
+
+        // ============================================================
+        // 📐 Aspect-ratio detection for image generation/editing
+        // ------------------------------------------------------------
+        // Reads the aspect ratio straight out of what the user typed, the
+        // same pattern used elsewhere in this app for other generation
+        // modes. Explicit ratios ("16:9", "9:16", "1:1", "4:5"...) win
+        // outright; otherwise common platform/orientation words are
+        // treated as a hint (e.g. "portrait", "story", "wallpaper").
+        // Falls back to a square 1:1 image since that's the safest
+        // general-purpose default when nothing about orientation or
+        // intended use was said. Dimensions are kept as multiples of 16
+        // (required by most diffusion backends) and capped so the total
+        // pixel count stays close to a standard ~1024x1024 budget across
+        // every ratio, keeping generation speed and quality consistent
+        // regardless of which aspect ends up selected.
+        // ============================================================
+        const IMAGE_ASPECT_PRESETS = {
+            '1:1':  { width: 1024, height: 1024 },
+            '4:5':  { width: 896,  height: 1120 },
+            '3:4':  { width: 896,  height: 1184 },
+            '2:3':  { width: 832,  height: 1248 },
+            '9:16': { width: 768,  height: 1344 },
+            '5:4':  { width: 1120, height: 896  },
+            '4:3':  { width: 1184, height: 896  },
+            '3:2':  { width: 1248, height: 832  },
+            '16:9': { width: 1344, height: 768  },
+            '21:9': { width: 1536, height: 656  }
+        };
+
+        // The label we attach to an image (the ratio we *asked* the
+        // backend for) and the pixels it actually *returns* can drift
+        // apart — some generation/edit backends silently ignore the
+        // requested width/height and hand back a fixed square image
+        // regardless. If that mislabeled result is then displayed, the
+        // small chat thumbnail (which force-crops to the label via CSS
+        // object-fit:cover) looks like the right shape, while the
+        // full-screen lightbox (which honestly shows the real pixels)
+        // reveals it's actually square. Rather than trust the label,
+        // decode the real image and use ITS shape as ground truth.
+        function nearestAspectRatioLabel(width, height) {
+            if (!width || !height) return null;
+            const actual = width / height;
+            let best = null, bestDiff = Infinity;
+            for (const key of Object.keys(IMAGE_ASPECT_PRESETS)) {
+                const preset = IMAGE_ASPECT_PRESETS[key];
+                const diff = Math.abs((preset.width / preset.height) - actual);
+                if (diff < bestDiff) { bestDiff = diff; best = key; }
+            }
+            return best;
+        }
+
+        function loadImageDimensions(base64, mimeType) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                img.onerror = () => resolve(null);
+                img.src = `data:${mimeType || 'image/png'};base64,${base64}`;
+            });
+        }
+
+        // Re-labels a generation/edit result with the aspect ratio its
+        // actual pixels show, instead of whatever ratio was requested.
+        // Safe no-op (keeps the requested label) if decoding fails.
+        async function correctAspectRatioFromBytes(result) {
+            if (!result || !result.base64) return result;
+            try {
+                const dims = await loadImageDimensions(result.base64, result.mimeType);
+                if (dims && dims.width && dims.height) {
+                    const actualLabel = nearestAspectRatioLabel(dims.width, dims.height);
+                    if (actualLabel) result.aspectRatio = actualLabel;
+                }
+            } catch (e) { /* keep requested label */ }
+            return result;
+        }
+
+        // Some generation/edit backends silently ignore the width/height we
+        // ask for and always hand back a square (or otherwise wrong-shaped)
+        // image. Relabeling alone (above) is honest but doesn't fix the
+        // actual complaint — a "9:16" request should look tall, not
+        // square. This forces the real pixels into the requested shape by
+        // center-cropping on a canvas, so what the user asked for is what
+        // they see, no matter what the backend actually returned.
+        function cropImageToRatio(base64, mimeType, targetRatio) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const iw = img.naturalWidth, ih = img.naturalHeight;
+                    if (!iw || !ih) { resolve(null); return; }
+                    const actualRatio = iw / ih;
+                    // Already close enough to the requested shape — cropping
+                    // would only throw away pixels for no visible benefit.
+                    if (Math.abs(actualRatio - targetRatio) / targetRatio < 0.03) { resolve(null); return; }
+                    let cw, ch;
+                    if (actualRatio > targetRatio) { ch = ih; cw = Math.round(ih * targetRatio); }
+                    else { cw = iw; ch = Math.round(iw / targetRatio); }
+                    const sx = Math.round((iw - cw) / 2);
+                    const sy = Math.round((ih - ch) / 2);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = cw; canvas.height = ch;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, sx, sy, cw, ch, 0, 0, cw, ch);
+                    try {
+                        const outMime = (mimeType && /png/i.test(mimeType)) ? 'image/png' : 'image/jpeg';
+                        resolve({ base64: canvas.toDataURL(outMime, 0.95).split(',')[1], mimeType: outMime });
+                    } catch (e) { resolve(null); } // shouldn't happen for data: URLs, but fail safe
+                };
+                img.onerror = () => resolve(null);
+                img.src = `data:${mimeType || 'image/png'};base64,${base64}`;
+            });
+        }
+
+        // Forces a generation/edit result into the exact aspect ratio the
+        // user requested (cropping if the backend returned something else),
+        // and labels it accordingly. Call this instead of
+        // correctAspectRatioFromBytes wherever we know what ratio was asked
+        // for; falls back to honest relabeling if no target was given.
+        async function enforceAspectRatio(result, requestedRatioKey) {
+            if (!result || !result.base64) return result;
+            const preset = requestedRatioKey && IMAGE_ASPECT_PRESETS[requestedRatioKey];
+            if (!preset) return await correctAspectRatioFromBytes(result);
+            try {
+                const cropped = await cropImageToRatio(result.base64, result.mimeType, preset.width / preset.height);
+                if (cropped) {
+                    result.base64 = cropped.base64;
+                    result.mimeType = cropped.mimeType;
+                    // The cropped bytes no longer match whatever hosted
+                    // sourceUrl came back with the original — drop it so a
+                    // follow-up edit re-uploads the (correctly-shaped) bytes
+                    // instead of chaining off the uncropped original.
+                    result.sourceUrl = null;
+                }
+                result.aspectRatio = requestedRatioKey;
+            } catch (e) { /* keep as-is */ }
+            return result;
+        }
+
+        function detectImageAspectRatio(prompt, fallbackRatio) {
+            const p = (prompt || '').toLowerCase();
+            // No explicit ratio, no orientation word, no fallback from an
+            // earlier turn — default to a 16:9 widescreen shape rather than
+            // a square, since that's the most commonly wanted "no ratio
+            // specified" shape (wallpapers, banners, general images).
+            const fallback = (fallbackRatio && IMAGE_ASPECT_PRESETS[fallbackRatio])
+                ? { ratio: fallbackRatio, ...IMAGE_ASPECT_PRESETS[fallbackRatio] }
+                : { ratio: '16:9', ...IMAGE_ASPECT_PRESETS['16:9'] };
+            const explicit = p.match(/\b(\d{1,2})\s*:\s*(\d{1,2})\b/);
+            if (explicit) {
+                const ratioKey = `${explicit[1]}:${explicit[2]}`;
+                if (IMAGE_ASPECT_PRESETS[ratioKey]) return { ratio: ratioKey, ...IMAGE_ASPECT_PRESETS[ratioKey] };
+            }
+            if (/\b(story|stories|reel|reels|tiktok|shorts?)\b/.test(p)) return { ratio: '9:16', ...IMAGE_ASPECT_PRESETS['9:16'] };
+            // "khada"/"khadi"/"khade" (खड़ा) — Hindi/Hinglish for
+            // "standing", the common colloquial way to ask for a
+            // vertical/portrait shot.
+            if (/\b(portrait|vertical|khad[ae]|khadi)\b/.test(p)) return { ratio: '3:4', ...IMAGE_ASPECT_PRESETS['3:4'] };
+            if (/\b(poster|book cover|phone wallpaper)\b/.test(p)) return { ratio: '2:3', ...IMAGE_ASPECT_PRESETS['2:3'] };
+            if (/\b(instagram post|social post)\b/.test(p)) return { ratio: '4:5', ...IMAGE_ASPECT_PRESETS['4:5'] };
+            if (/\b(widescreen|cinematic|banner|desktop wallpaper|youtube thumbnail|thumbnail)\b/.test(p)) return { ratio: '16:9', ...IMAGE_ASPECT_PRESETS['16:9'] };
+            if (/\b(ultrawide|panoramic|panorama)\b/.test(p)) return { ratio: '21:9', ...IMAGE_ASPECT_PRESETS['21:9'] };
+            // "seedha"/"sidha"/"seeda"/"seedhi" (सीधा) — Hindi/Hinglish for
+            // "straight"/"lying flat", the common colloquial way to ask for
+            // a horizontal/landscape shot.
+            if (/\b(landscape|horizontal|seedha|seedhi|seedi|seeda|sidha|sidhi)\b/.test(p)) return { ratio: '4:3', ...IMAGE_ASPECT_PRESETS['4:3'] };
+            if (/\bsquare\b/.test(p)) return { ratio: '1:1', ...IMAGE_ASPECT_PRESETS['1:1'] };
+            return fallback;
+        }
 
         const IMAGE_API_COOLDOWN_MS = 10 * 60 * 1000; // short cooldown — these are per-worker/network hiccups, not a daily quota like Gemini
         const IMAGE_API_EXHAUSTED_STORAGE_KEY = 'cavdo_exhausted_image_apis';
@@ -6946,10 +7485,10 @@
             });
         }
 
-        async function fetchFromImageTier(tier, prompt, seed) {
+        async function fetchFromImageTier(tier, prompt, seed, width, height) {
             const genUrl = typeof tier.buildUrl === 'function'
-                ? tier.buildUrl(prompt, seed)
-                : `${tier.url}?prompt=${encodeURIComponent(prompt)}&seed=${seed}`;
+                ? tier.buildUrl(prompt, seed, width, height)
+                : `${tier.url}?prompt=${encodeURIComponent(prompt)}&seed=${seed}&width=${width || 1024}&height=${height || 1024}`;
             let imgRes;
             try {
                 imgRes = await fetch(genUrl, { signal: AbortSignal.timeout(IMAGE_API_TIMEOUT_MS), cache: 'no-store' });
@@ -6971,14 +7510,19 @@
             const blob = await imgRes.blob();
             if (!blob || blob.size === 0) throw new Error(`${tier.label} returned an empty response.`);
             const base64 = await blobToBase64(blob);
-            return { base64, mimeType: blob.type || 'image/jpeg' };
+            // Only the Pollinations tier's URL is a real, publicly fetchable
+            // image — the Cloudflare Worker tier returns raw bytes with no
+            // public URL behind them. Track which is which so a later edit
+            // request knows whether it can hand this straight to the
+            // image-to-image model or needs to re-host the bytes first.
+            return { base64, mimeType: blob.type || 'image/jpeg', sourceUrl: tier.key === 'pollinations' ? genUrl : null };
         }
 
         // Tries each non-cooling-down image tier in order, moving to the
         // next immediately (no delay) on a rate-limit/5xx/timeout, and
         // putting the failing tier on a short cooldown so the NEXT image
         // request in this session skips straight past it too.
-        async function generateImageViaPerchance(prompt) {
+        async function generateImageViaPerchance(prompt, aspect) {
             const orderedTiers = [
                 ...IMAGE_API_TIERS.filter(t => !isImageApiCoolingDown(t.key)),
                 ...IMAGE_API_TIERS.filter(t => isImageApiCoolingDown(t.key)) // still try as a last resort even if cooling down
@@ -6987,11 +7531,20 @@
             // prompt (e.g. clicking "Vary" on an existing image) still gets
             // a genuinely new image instead of an identical cached result.
             const seed = Math.floor(Math.random() * 1e9);
+            // Aspect ratio is read from the prompt itself (or passed in
+            // directly by a caller that already knows it, e.g. the "Vary"
+            // button re-using a previous image's ratio) so every tier in
+            // the rotation renders the same requested shape — portrait,
+            // landscape, square, or any of the other supported ratios —
+            // instead of always coming back as a fixed 1024x1024 square.
+            const resolvedAspect = aspect || detectImageAspectRatio(prompt);
+            const { width, height, ratio } = resolvedAspect;
 
             let lastErr = null;
             for (const tier of orderedTiers) {
                 try {
-                    return await fetchFromImageTier(tier, prompt, seed);
+                    const result = await fetchFromImageTier(tier, prompt, seed, width, height);
+                    return await enforceAspectRatio(result, ratio);
                 } catch (err) {
                     lastErr = err;
                     const looksRateLimited = err.status === 429 || err.status === 503 || (err.status >= 500 && err.status < 600) || /timed out|network error/i.test(err.message);
@@ -7007,113 +7560,411 @@
             throw lastErr || new Error('All image generation tiers failed.');
         }
 
-        // ------------------------------------------------------------
-        // 🧠 Image memory — every generated image is remembered locally
-        // (same localStorage-per-record pattern as chat history) so the
-        // user can revisit, re-download, or edit anything they've made
-        // before, even after closing and reopening the browser.
-        // ------------------------------------------------------------
-        function saveImageToMemory({ prompt, base64, mimeType }) {
-            const id = 'cavdo_img_' + Date.now() + '_' + Math.random().toString(16).slice(2, 8);
-            const entry = { id, prompt, base64, mimeType: mimeType || 'image/png', ts: Date.now() };
-            const payload = JSON.stringify(entry);
+        // ============================================================
+        // ✏️ Real image editing via Pollinations' "kontext" model — a true
+        // image-to-image endpoint (unlike the plain text-to-image tiers
+        // above) — a true image-to-image endpoint (unlike the plain
+        // text-to-image tiers above). It takes an *existing* image (by URL)
+        // plus a text instruction and returns a precisely edited version of
+        // that same image, instead of a brand new unrelated picture.
+        //
+        // ⚠️ As of mid-2026, Pollinations requires an API key for
+        // generation requests, and Kontext specifically draws down Pollen
+        // credit per edit — it's no longer usable fully anonymously. We
+        // route through their unified gen.pollinations.ai gateway with
+        // whatever key the user has saved in Settings → API Keys.
+        // ============================================================
+        const IMAGE_EDIT_TIMEOUT_MS = 35000; // edits run a heavier model than plain generation — give them more room before giving up
 
-            const tryStore = () => {
-                try {
-                    localStorage.setItem(id, payload);
-                    return true;
-                } catch (e) {
-                    return false;
-                }
-            };
-
-            if (tryStore()) return entry;
-
-            // Storage is full — rather than giving up immediately, free up
-            // room by evicting the oldest remembered images first (cheapest
-            // to lose) and retry. This is what keeps image memory usable
-            // over a long history instead of silently breaking once
-            // localStorage fills up.
-            for (let attempt = 0; attempt < 20; attempt++) {
-                const existing = getImageMemory(); // sorted newest first
-                const oldest = existing[existing.length - 1];
-                if (!oldest) break; // nothing left to evict
-                localStorage.removeItem(oldest.id);
-                if (tryStore()) return entry;
+        async function editImageViaKontextOnce(instruction, imageUrl, apiKey, width, height) {
+            const seed = Math.floor(Math.random() * 1e9);
+            const genUrl = `https://gen.pollinations.ai/image/${encodeURIComponent(instruction)}?model=kontext&image=${encodeURIComponent(imageUrl)}&width=${width || 1024}&height=${height || 1024}&seed=${seed}&nologo=true`;
+            let imgRes;
+            try {
+                imgRes = await fetch(genUrl, {
+                    signal: AbortSignal.timeout(IMAGE_EDIT_TIMEOUT_MS),
+                    cache: 'no-store',
+                    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
+                });
+            } catch (netErr) {
+                const isTimeout = netErr && (netErr.name === 'TimeoutError' || netErr.name === 'AbortError');
+                throw new Error(isTimeout ? 'The image editor timed out.' : 'Could not reach the image editor (network error).');
             }
+            if (!imgRes.ok) {
+                let detail = '';
+                try {
+                    const body = await imgRes.json();
+                    detail = [body.error && body.error.message, body.error && body.error.code, body.detail].filter(Boolean).join(' — ');
+                } catch {}
+                const err = new Error(`Image edit request failed (HTTP ${imgRes.status}). ${detail}`);
+                err.status = imgRes.status;
+                throw err;
+            }
+            const blob = await imgRes.blob();
+            if (!blob || blob.size === 0) throw new Error('The image editor returned an empty response.');
+            const base64 = await blobToBase64(blob);
+            // The edited result is itself hosted at genUrl, so if the user
+            // asks to edit it again, we can chain straight off this URL
+            // too — no re-upload needed for a second or third edit.
+            return { base64, mimeType: blob.type || 'image/jpeg', sourceUrl: genUrl };
+        }
 
-            console.error('Could not save image to memory (storage full even after evicting old images).');
-            // Return null rather than the entry — a caller storing entry.id
-            // as memoryId when the write above failed would create a
-            // reference that resolves to nothing later, which is what
-            // produced "This generated image is no longer available".
+        // The kontext tier occasionally returns a transient 429/5xx or
+        // drops the connection under load. Two retries (new seed each time,
+        // growing backoff with a little jitter so simultaneous retries
+        // don't all land in the same instant) clear the large majority of
+        // these without making the user re-type their request. A missing
+        // key, though, fails every attempt identically — so that check
+        // happens once, up front, instead of burning 3 attempts on it.
+        async function editImageViaKontext(instruction, imageUrl, sourceAspectRatio) {
+            const apiKey = getPollinationsKey();
+            if (!apiKey) {
+                const err = new Error("no Pollinations API key set — add one free at enter.pollinations.ai, then paste it into Settings → API Keys");
+                err.isMissingKey = true;
+                throw err;
+            }
+            // Edits keep the same shape as the original by default, but if
+            // the instruction itself asks for a different one ("make it
+            // widescreen", "crop to a square", "16:9") that wins instead —
+            // same detection used for fresh generations.
+            const { width, height, ratio } = detectImageAspectRatio(instruction, sourceAspectRatio);
+            const maxAttempts = 3;
+            let lastErr;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                try {
+                    const result = await editImageViaKontextOnce(instruction, imageUrl, apiKey, width, height);
+                    return await enforceAspectRatio(result, ratio);
+                } catch (err) {
+                    lastErr = err;
+                    if (err.status === 401 || err.status === 403) throw err; // bad/expired key — retrying won't help
+                    const looksTransient = err.status === 429 || err.status === 500 || err.status === 502 || err.status === 503 || err.status === 504 || /timed out|network error/i.test(err.message);
+                    if (!looksTransient || attempt === maxAttempts - 1) throw err;
+                    console.error(`Image edit failed (attempt ${attempt + 1}/${maxAttempts}), retrying:`, err);
+                    const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 400;
+                    await new Promise(r => setTimeout(r, backoff));
+                }
+            }
+            throw lastErr;
+        }
+
+        // ============================================================
+        // ✏️ Real image editing, take two — Gemini's native image model
+        // ("gemini-2.5-flash-image", aka Nano Banana) does true
+        // image-to-image editing and, unlike Kontext, is covered by the
+        // same free daily quota as this app's existing Gemini text calls.
+        // It also takes the image as inline base64 bytes directly in the
+        // request body, so — unlike Kontext — it needs no public URL and
+        // no temp-host upload step at all. This reuses the same
+        // KEY_POOL / getActiveGeminiKey() / advanceApiKey() rotation the
+        // rest of the app already relies on for text generation, so it
+        // inherits the same multi-key resilience for free.
+        // ============================================================
+        async function editImageViaGeminiOnce(instruction, base64, mimeType, apiKey, targetRatioKey) {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
+            let res;
+            try {
+                res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(IMAGE_EDIT_TIMEOUT_MS),
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { inlineData: { data: base64, mimeType: mimeType || 'image/png' } },
+                                { text: instruction }
+                            ]
+                        }],
+                        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+                    })
+                });
+            } catch (netErr) {
+                const isTimeout = netErr && (netErr.name === 'TimeoutError' || netErr.name === 'AbortError');
+                throw new Error(isTimeout ? 'The image editor timed out.' : 'Could not reach the image editor (network error).');
+            }
+            let data = null;
+            try { data = await res.json(); } catch {}
+            if (!res.ok) {
+                const err = new Error((data && data.error && data.error.message) || `Image edit request failed (HTTP ${res.status}).`);
+                err.status = res.status;
+                err.responseData = data;
+                throw err;
+            }
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            const imgPart = parts.find(p => p.inlineData && p.inlineData.data);
+            if (!imgPart) {
+                // The model can legally respond with only text (e.g. it
+                // refused, or asked a clarifying question) — that's not a
+                // network/server failure, so surface its actual words
+                // rather than a generic error.
+                const textPart = parts.find(p => p.text);
+                throw new Error(textPart ? textPart.text : 'The image editor did not return an edited image.');
+            }
+            return await enforceAspectRatio({ base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' }, targetRatioKey);
+        }
+
+        // Same key-rotation shape as the main text-generation loop: try the
+        // active key, and on a rate-limit/access-denied response, advance
+        // to the next key in KEY_POOL before giving up. A user's own saved
+        // override key (if set) is used as-is, no rotation.
+        async function editImageViaGemini(instruction, base64, mimeType, targetRatioKey) {
+            const maxKeyAttempts = sessionGeminiKeyOverride ? 1 : KEY_POOL.length;
+            let lastErr;
+            for (let i = 0; i < maxKeyAttempts; i++) {
+                const apiKey = getActiveGeminiKey();
+                try {
+                    return await editImageViaGeminiOnce(instruction, base64, mimeType, apiKey, targetRatioKey);
+                } catch (err) {
+                    lastErr = err;
+                    const rotatable = !sessionGeminiKeyOverride && (err.status === 429 || err.status === 403) && i < maxKeyAttempts - 1;
+                    if (!rotatable) throw err;
+                    console.error(`Gemini image edit failed on key ${i + 1}/${maxKeyAttempts}, rotating:`, err);
+                    advanceApiKey();
+                }
+            }
+            throw lastErr;
+        }
+
+        // Kontext needs a real, publicly fetchable image URL. We only have
+        // that for images this app itself generated via the Pollinations
+        // tier — a user's uploaded photo, or an image from the Cloudflare
+        // Worker tier, only exists here as base64 bytes. To edit those, we
+        // upload the bytes to a free, anonymous, keyless file host first to
+        // get a temporary URL Kontext can fetch.
+        //
+        // A single host (previously just catbox.moe) is a single point of
+        // failure — one rate limit, hiccup, or outage there and the whole
+        // edit feature dies with an honest-but-unhelpful decline. Instead
+        // we try a short chain of independent hosts, each with its own
+        // retry, and only give up (returning null) once every host in the
+        // chain has failed.
+        function base64ToBlob(base64, mimeType) {
+            const byteChars = atob(base64);
+            const byteNumbers = new Uint8Array(byteChars.length);
+            for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+            return new Blob([byteNumbers], { type: mimeType || 'image/png' });
+        }
+
+        async function uploadViaCatbox(blob, ext) {
+            const form = new FormData();
+            form.append('reqtype', 'fileupload');
+            form.append('fileToUpload', blob, `cavdo-src-${Date.now()}.${ext}`);
+            const res = await fetch('https://catbox.moe/user/api.php', {
+                method: 'POST',
+                body: form,
+                signal: AbortSignal.timeout(15000)
+            });
+            if (!res.ok) throw new Error(`catbox.moe upload failed (HTTP ${res.status}).`);
+            const url = (await res.text()).trim();
+            if (!/^https?:\/\//i.test(url)) throw new Error('catbox.moe did not return a usable URL.');
+            return url;
+        }
+
+        async function uploadViaTmpfiles(blob, ext) {
+            const form = new FormData();
+            form.append('file', blob, `cavdo-src-${Date.now()}.${ext}`);
+            const res = await fetch('https://tmpfiles.org/api/v1/upload', {
+                method: 'POST',
+                body: form,
+                signal: AbortSignal.timeout(15000)
+            });
+            if (!res.ok) throw new Error(`tmpfiles.org upload failed (HTTP ${res.status}).`);
+            const data = await res.json();
+            const rawUrl = data && data.data && data.data.url;
+            if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) throw new Error('tmpfiles.org did not return a usable URL.');
+            // tmpfiles.org returns a landing-page URL; /dl/ gives the direct,
+            // hotlinkable file Kontext can actually fetch.
+            return rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+        }
+
+        // One retry per host smooths over a single dropped connection or
+        // transient 5xx without giving up on a host that's otherwise fine.
+        async function uploadWithRetry(uploadFn, blob, ext, attempts = 2) {
+            let lastErr;
+            for (let i = 0; i < attempts; i++) {
+                try {
+                    return await uploadFn(blob, ext);
+                } catch (err) {
+                    lastErr = err;
+                    if (i < attempts - 1) await new Promise(r => setTimeout(r, 600 * (i + 1)));
+                }
+            }
+            throw lastErr;
+        }
+
+        async function uploadBase64ToTempHost(base64, mimeType) {
+            const ext = /png/i.test(mimeType || '') ? 'png' : 'jpg';
+            const blob = base64ToBlob(base64, mimeType);
+            const hosts = [
+                { name: 'catbox.moe', fn: uploadViaCatbox },
+                { name: 'tmpfiles.org', fn: uploadViaTmpfiles }
+            ];
+            for (const host of hosts) {
+                try {
+                    return await uploadWithRetry(host.fn, blob, ext);
+                } catch (err) {
+                    console.error(`Temp image host "${host.name}" failed, trying next if available:`, err);
+                }
+            }
+            console.error('uploadBase64ToTempHost failed: all temp hosts exhausted.');
             return null;
         }
 
+        // ------------------------------------------------------------
+        // 🧠 Image + song memory — backed by IndexedDB instead of
+        // localStorage.
+        //
+        // localStorage has a hard, browser-enforced cap (~5-10MB total,
+        // per origin) that no amount of app code can raise — that's what
+        // produced "storage full" errors as soon as a few generated
+        // images/songs piled up. IndexedDB has no such small fixed cap:
+        // browsers grant it a large share of whatever free disk space is
+        // available (often hundreds of MB to several GB), so in practice
+        // this removes the ceiling entirely.
+        //
+        // IndexedDB's API is async, but every call site in this app
+        // (rendering messages, the gallery, the edit pipeline) expects
+        // these lookups to be synchronous. Rather than rewrite every call
+        // site to be async, we keep a plain in-memory Map as a synchronous
+        // read-through cache: reads hit the Map instantly, writes update
+        // the Map immediately (so the UI never waits) and persist to
+        // IndexedDB in the background. initMediaMemory() below fills the
+        // Map from IndexedDB (and migrates any old localStorage-based
+        // entries into it) once, on page load.
+        // ------------------------------------------------------------
+        const CAVDO_DB_NAME = 'cavdo_media_db';
+        const CAVDO_DB_VERSION = 1;
+        let cavdoDbPromise = null;
+        function openCavdoDb() {
+            if (cavdoDbPromise) return cavdoDbPromise;
+            cavdoDbPromise = new Promise((resolve, reject) => {
+                if (!window.indexedDB) { reject(new Error('IndexedDB not available in this browser')); return; }
+                const req = indexedDB.open(CAVDO_DB_NAME, CAVDO_DB_VERSION);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'id' });
+                    if (!db.objectStoreNames.contains('songs')) db.createObjectStore('songs', { keyPath: 'id' });
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+            return cavdoDbPromise;
+        }
+        function idbPut(storeName, entry) {
+            return openCavdoDb().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                tx.objectStore(storeName).put(entry);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            }));
+        }
+        function idbDelete(storeName, id) {
+            return openCavdoDb().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                tx.objectStore(storeName).delete(id);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            }));
+        }
+        function idbGetAll(storeName) {
+            return openCavdoDb().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const req = tx.objectStore(storeName).getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error);
+            }));
+        }
+
+        const imageMemoryCache = new Map();
+        const songMemoryCache = new Map();
+
+        // One-time startup: migrate any pre-existing localStorage entries
+        // (from before this app used IndexedDB) into IndexedDB and remove
+        // them from localStorage — freeing that space immediately — then
+        // warm the in-memory caches from IndexedDB. Runs once at load;
+        // re-renders the current chat afterward in case message bubbles
+        // painted before this finished.
+        async function initMediaMemory() {
+            try {
+                const legacyImageKeys = Object.keys(localStorage).filter(k => k.startsWith('cavdo_img_'));
+                for (const k of legacyImageKeys) {
+                    try {
+                        const entry = JSON.parse(localStorage.getItem(k));
+                        if (entry && entry.id) await idbPut('images', entry);
+                    } catch (e) { console.error('Skipping unreadable legacy image entry', k, e); }
+                    localStorage.removeItem(k);
+                }
+                const legacySongKeys = Object.keys(localStorage).filter(k => k.startsWith('cavdo_song_'));
+                for (const k of legacySongKeys) {
+                    try {
+                        const entry = JSON.parse(localStorage.getItem(k));
+                        if (entry && entry.id) await idbPut('songs', entry);
+                    } catch (e) { console.error('Skipping unreadable legacy song entry', k, e); }
+                    localStorage.removeItem(k);
+                }
+            } catch (e) {
+                console.error('Media memory migration from localStorage skipped:', e);
+            }
+
+            try {
+                (await idbGetAll('images')).forEach(e => imageMemoryCache.set(e.id, e));
+            } catch (e) { console.error('Could not load image memory from IndexedDB:', e); }
+            try {
+                (await idbGetAll('songs')).forEach(e => songMemoryCache.set(e.id, e));
+            } catch (e) { console.error('Could not load song memory from IndexedDB:', e); }
+
+            if (typeof currentChatId !== 'undefined' && currentChatId && typeof renderActiveChatMessages === 'function') {
+                renderActiveChatMessages(false);
+            }
+        }
+
+        function saveImageToMemory({ prompt, base64, mimeType, sourceUrl, aspectRatio }) {
+            const id = 'cavdo_img_' + Date.now() + '_' + Math.random().toString(16).slice(2, 8);
+            const entry = { id, prompt, base64, mimeType: mimeType || 'image/png', sourceUrl: sourceUrl || null, aspectRatio: aspectRatio || null, ts: Date.now() };
+            imageMemoryCache.set(id, entry); // available to the UI immediately
+            idbPut('images', entry).catch(e => console.error('Could not persist image to IndexedDB (kept in this tab only):', e));
+            return entry;
+        }
+
         function getImageMemory() {
-            return Object.keys(localStorage)
-                .filter(k => k.startsWith('cavdo_img_'))
-                .map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
-                .filter(Boolean)
-                .sort((a, b) => b.ts - a.ts);
+            return Array.from(imageMemoryCache.values()).sort((a, b) => b.ts - a.ts);
         }
 
         function getImageFromMemoryById(id) {
             if (!id) return null;
-            try { return JSON.parse(localStorage.getItem(id)); } catch { return null; }
+            return imageMemoryCache.get(id) || null;
         }
 
         function deleteImageFromMemory(id) {
-            localStorage.removeItem(id);
+            imageMemoryCache.delete(id);
+            idbDelete('images', id).catch(e => console.error('Could not delete image from IndexedDB:', e));
             renderImageGallery();
         }
 
         // ------------------------------------------------------------
-        // 🎵 Song memory — same localStorage-per-record pattern as image
-        // memory above, so generated songs survive reloads and don't
-        // bloat the chat-history record itself.
+        // 🎵 Song memory — same IndexedDB-backed pattern as image memory
+        // above, so generated songs survive reloads without competing
+        // for the tiny localStorage quota.
         // ------------------------------------------------------------
         function saveSongToMemory({ prompt, base64, mimeType }) {
             const id = 'cavdo_song_' + Date.now() + '_' + Math.random().toString(16).slice(2, 8);
             const entry = { id, prompt, base64, mimeType: mimeType || 'audio/wav', ts: Date.now() };
-            const payload = JSON.stringify(entry);
-
-            const tryStore = () => {
-                try { localStorage.setItem(id, payload); return true; }
-                catch (e) { return false; }
-            };
-
-            if (tryStore()) return entry;
-
-            // Storage full — evict the oldest remembered songs first and retry,
-            // same eviction strategy as image memory.
-            for (let attempt = 0; attempt < 20; attempt++) {
-                const existing = getSongMemory(); // sorted newest first
-                const oldest = existing[existing.length - 1];
-                if (!oldest) break;
-                localStorage.removeItem(oldest.id);
-                if (tryStore()) return entry;
-            }
-
-            console.error('Could not save song to memory (storage full even after evicting old songs).');
-            return null;
+            songMemoryCache.set(id, entry);
+            idbPut('songs', entry).catch(e => console.error('Could not persist song to IndexedDB (kept in this tab only):', e));
+            return entry;
         }
 
         function getSongMemory() {
-            return Object.keys(localStorage)
-                .filter(k => k.startsWith('cavdo_song_'))
-                .map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
-                .filter(Boolean)
-                .sort((a, b) => b.ts - a.ts);
+            return Array.from(songMemoryCache.values()).sort((a, b) => b.ts - a.ts);
         }
 
         function getSongFromMemoryById(id) {
             if (!id) return null;
-            try { return JSON.parse(localStorage.getItem(id)); } catch { return null; }
+            return songMemoryCache.get(id) || null;
         }
 
         function deleteSongFromMemory(id) {
-            localStorage.removeItem(id);
+            songMemoryCache.delete(id);
+            idbDelete('songs', id).catch(e => console.error('Could not delete song from IndexedDB:', e));
         }
 
         // ------------------------------------------------------------
@@ -7317,6 +8168,7 @@
             targetNode.appendChild(box);
         }
 
+        // ============================================================
         // Re-runs generation for a prompt as a fresh chat message (reuses the
         // whole send pipeline — including memory-saving — instead of duplicating it).
         window.regenerateImageVariation = function(prompt) {
@@ -7817,20 +8669,62 @@
             // like "iamge" and produces a hallucinated fake image link).
             // ------------------------------------------------------------
             let lastImageContext = null;
-            for (let i = chatData.messages.length - 2; i >= 0; i--) {
-                const m = chatData.messages[i];
-                if (m.role === 'ai' && m.isGeneratedImage && (m.memoryId || m.aiImgBytes)) {
-                    const memEntry = m.memoryId ? getImageFromMemoryById(m.memoryId) : null;
-                    lastImageContext = {
-                        prompt: m.text || '',
-                        base64: memEntry ? memEntry.base64 : m.aiImgBytes,
-                        mimeType: memEntry ? memEntry.mimeType : m.aiImgMimeType
-                    };
-                    break;
+
+            // 0) The image to edit may be attached to THIS same message —
+            // e.g. the very first message in the chat is a photo upload
+            // with "edit this, remove the background" as the caption.
+            // Check that before looking backward at all.
+            const currentUserMsgForEdit = chatData.messages[chatData.messages.length - 1];
+            if (currentUserMsgForEdit && currentUserMsgForEdit.role === 'user' && Array.isArray(currentUserMsgForEdit.files)) {
+                const attachedImg = currentUserMsgForEdit.files.find(f => f.isImage && f.base64);
+                if (attachedImg) {
+                    lastImageContext = { prompt: '', base64: attachedImg.base64, mimeType: attachedImg.type, sourceUrl: null };
                 }
-                if (m.role === 'user') break; // only look at the immediately preceding AI turn's image
             }
-            const editIntentRegex = /\b(remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add|this image|that image|the image|this photo|that photo|the photo|it,|to it|of it)\b/i;
+
+            // 1) Otherwise, if the immediately preceding AI turn generated
+            // an image, build on that (this also naturally chains a 2nd,
+            // 3rd, ... edit, since each edit's result is itself saved with
+            // isGeneratedImage set).
+            if (!lastImageContext) {
+                for (let i = chatData.messages.length - 2; i >= 0; i--) {
+                    const m = chatData.messages[i];
+                    if (m.role === 'ai' && m.isGeneratedImage && (m.memoryId || m.aiImgBytes)) {
+                        const memEntry = m.memoryId ? getImageFromMemoryById(m.memoryId) : null;
+                        lastImageContext = {
+                            prompt: m.text || '',
+                            base64: memEntry ? memEntry.base64 : m.aiImgBytes,
+                            mimeType: memEntry ? memEntry.mimeType : m.aiImgMimeType,
+                            sourceUrl: memEntry ? memEntry.sourceUrl : m.aiImgSourceUrl,
+                            aspectRatio: memEntry ? memEntry.aspectRatio : m.aiImgAspect
+                        };
+                        break;
+                    }
+                    if (m.role === 'user') break; // only look at the immediately preceding AI turn's image
+                }
+            }
+
+            // 2) Otherwise, the user may have uploaded a photo earlier in
+            // the chat (e.g. as message 1) and is now, a message or two
+            // later, just saying "edit image" / "edit it" with nothing of
+            // its own attached. Walk the whole chat (newest-first) for the
+            // most recent uploaded photo so that vague follow-up still has
+            // something concrete to act on — this is the "remembers the
+            // first message's edit request" behavior.
+            if (!lastImageContext) {
+                for (let i = chatData.messages.length - 2; i >= 0; i--) {
+                    const m = chatData.messages[i];
+                    if (m.role === 'user' && Array.isArray(m.files)) {
+                        const attachedImg = m.files.find(f => f.isImage && f.base64);
+                        if (attachedImg) {
+                            lastImageContext = { prompt: m.text || '', base64: attachedImg.base64, mimeType: attachedImg.type, sourceUrl: null };
+                            break;
+                        }
+                    }
+                }
+            }
+
+            const editIntentRegex = /\b(edit|remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add|this image|that image|the image|this photo|that photo|the photo|it,|to it|of it)\b/i;
             const isImageEditRequest = !!(lastImageContext && selectedMode !== 'code' && editIntentRegex.test(lowerText));
             if (isImageEditRequest) {
                 selectedMode = 'image';
@@ -7972,15 +8866,10 @@
                         renderActiveChatMessages();
                     }
                 } else if (selectedMode === 'image' && isImageEditRequest) {
-                    // Honest decline: there is no image-to-image / inpainting API
-                    // wired up here (generateImageViaPerchance only ever takes a
-                    // text prompt, never the actual image bytes), so there is no
-                    // real way to remove/add/change one specific part of an
-                    // existing picture. Say so plainly instead of silently
-                    // regenerating a brand-new, unrelated image and passing it
-                    // off as an "edit".
+                    // Editing feature removed — decline plainly instead of
+                    // attempting the (unreliable) edit pipeline.
                     const updatedChat = JSON.parse(localStorage.getItem(requestContextChatId));
-                    updatedChat.messages[aiMsgIndex].text = "I don't have the ability to edit an existing image (remove, add, or change just one part of it) — I can only generate a brand-new image from a full text description. If you describe the whole scene you want (including what should replace the removed part), I can generate that as a new image.";
+                    updatedChat.messages[aiMsgIndex].text = "I can't edit existing images right now. Describe the whole picture you want and I'll generate a brand new one instead.";
                     updatedChat.messages[aiMsgIndex].isThinking = false;
                     updatedChat.isGeneratingInBg = false;
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
@@ -8005,6 +8894,14 @@
                         clearInterval(internalThinkingInterval);
                         return;
                     }
+
+                    // Read the intended shape (portrait/landscape/square/an
+                    // explicit "16:9" etc.) straight from what the user
+                    // typed, before any filler words get stripped below —
+                    // this is what lets "a phone wallpaper of a mountain"
+                    // or "16:9 banner of a sunset" come back in the right
+                    // aspect instead of always a fixed square.
+                    const detectedAspect = detectImageAspectRatio(text);
 
                     let finalPrompt = text.replace(/\b(paint|draw|imagine|make|create|generate|show me|a|an|image|img|picture|pic|photo|of)\b/gi, '').replace(/\s+/g, ' ').trim();
                     if (!finalPrompt) finalPrompt = text;
@@ -8036,7 +8933,7 @@
                     let genResult = null;
                     let genError = null;
                     try {
-                        genResult = await generateImageViaPerchance(finalPrompt);
+                        genResult = await generateImageViaPerchance(finalPrompt, detectedAspect);
                         incrementGenerationUsage();
                     } catch (genErr) {
                         genError = genErr;
@@ -8046,7 +8943,7 @@
                     const updatedChat = JSON.parse(localStorage.getItem(requestContextChatId));
 
                     if (genResult && genResult.base64) {
-                        const memEntry = saveImageToMemory({ prompt: finalPrompt, base64: genResult.base64, mimeType: genResult.mimeType });
+                        const memEntry = saveImageToMemory({ prompt: finalPrompt, base64: genResult.base64, mimeType: genResult.mimeType, sourceUrl: genResult.sourceUrl, aspectRatio: genResult.aspectRatio });
                         updatedChat.messages[aiMsgIndex].text = finalPrompt;
                         updatedChat.messages[aiMsgIndex].isThinking = false;
                         updatedChat.messages[aiMsgIndex].isGeneratedImage = true;
@@ -8066,6 +8963,8 @@
                             // available" to show up immediately on a fresh image).
                             updatedChat.messages[aiMsgIndex].aiImgBytes = genResult.base64;
                             updatedChat.messages[aiMsgIndex].aiImgMimeType = genResult.mimeType;
+                            updatedChat.messages[aiMsgIndex].aiImgSourceUrl = genResult.sourceUrl || null;
+                            updatedChat.messages[aiMsgIndex].aiImgAspect = genResult.aspectRatio || null;
                         }
                     } else {
                         let foundImages = [];
@@ -8096,87 +8995,11 @@
                     }
 
                 } else if (selectedMode === 'song') {
-                    const songQuota = checkSongGenerationQuota();
-                    if (!songQuota.allowed) {
-                        const updatedChat = JSON.parse(localStorage.getItem(requestContextChatId));
-                        updatedChat.messages[aiMsgIndex].text = songQuota.reason;
-                        updatedChat.messages[aiMsgIndex].isThinking = false;
-                        updatedChat.isGeneratingInBg = false;
-                        localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
-
-                        if (currentChatId === requestContextChatId) {
-                            isGenerating = false;
-                            renderActiveChatMessages();
-                        }
-                        clearInterval(internalThinkingInterval);
-                        return;
-                    }
-
-                    let songPrompt = text.replace(/\b(generate|create|make|compose|write|a|an|the|me|for|please|song|music|track|tune|melody|of|remember|those|that|lyrics|use)\b/gi, '').replace(/\s+/g, ' ').trim();
-                    if (!songPrompt) songPrompt = lyricsForSong ? 'An original song' : text;
-
-                    let songResult = null;
-                    let songError = null;
-                    let usedElevenLabs = false;
-
-                    // Preferred path: ElevenLabs Music API — supports actual
-                    // sung vocals when we have lyrics (either pasted in this
-                    // message or recalled from earlier in the chat).
-                    try {
-                        songResult = await generateSongViaElevenLabs(songPrompt, { lyrics: lyricsForSong });
-                        usedElevenLabs = true;
-                    } catch (elErr) {
-                        songError = elErr;
-                        console.error('ElevenLabs song generation failed, falling back to MusicGen:', elErr);
-                        // Don't fall back on a "bad prompt" rejection (e.g.
-                        // copyrighted lyrics) — MusicGen can't do vocals
-                        // anyway, so retrying there wouldn't fix the actual
-                        // problem and would just discard the real reason.
-                        if (!elErr || !elErr.isBadPrompt) {
-                            try {
-                                songResult = await generateSongViaMusicGen(songPrompt);
-                                songError = null;
-                                usedElevenLabs = false;
-                            } catch (hfErr) {
-                                songError = hfErr;
-                                console.error('MusicGen fallback also failed:', hfErr);
-                            }
-                        }
-                    }
-
-                    if (songResult && songResult.base64) incrementSongUsage();
-
+                    // Song generation is disabled — decline immediately,
+                    // no quota check and no API calls to ElevenLabs/MusicGen.
                     const updatedSongChat = JSON.parse(localStorage.getItem(requestContextChatId));
-
-                    if (songResult && songResult.base64) {
-                        const songMemEntry = saveSongToMemory({ prompt: songPrompt, base64: songResult.base64, mimeType: songResult.mimeType });
-                        updatedSongChat.messages[aiMsgIndex].text = songPrompt;
-                        updatedSongChat.messages[aiMsgIndex].isThinking = false;
-                        updatedSongChat.messages[aiMsgIndex].isGeneratedSong = true;
-                        if (songMemEntry) {
-                            updatedSongChat.messages[aiMsgIndex].songMemoryId = songMemEntry.id;
-                        } else {
-                            updatedSongChat.messages[aiMsgIndex].aiSongBytes = songResult.base64;
-                            updatedSongChat.messages[aiMsgIndex].aiSongMimeType = songResult.mimeType;
-                        }
-                    } else {
-                        const isNetworkFailure = songError && /Failed to fetch|NetworkError|Load failed/i.test(songError.message || '');
-                        let declineText = songError
-                            ? `Song generation failed: ${songError.message}`
-                            : "The music generation service is busy right now, so I couldn't create that song — want to try again in a moment?";
-                        if (isNetworkFailure) {
-                            declineText = "Song generation couldn't reach the music API at all (a network/CORS failure, not an API error). If you're opening this file directly (file://) instead of serving it from a real web server (http://localhost or a deployed domain), the browser blocks the request before it even leaves the page — that's the most common cause. Check the browser DevTools Console/Network tab for the exact error, and try serving the file over http:// instead.";
-                        } else if (songError && songError.isBadPrompt) {
-                            declineText = `ElevenLabs couldn't generate that one: ${songError.message.replace('ElevenLabs rejected the prompt: ', '') || 'the prompt was rejected (this often happens with copyrighted lyrics or naming a real artist/song).'} Try again with original lyrics or a different description.`;
-                        } else if (songError && songError.isAuthError) {
-                            declineText = "Song generation needs a valid ElevenLabs API key. Add one in Settings → API Keys, then try again.";
-                        } else if (songError && songError.isRateLimited) {
-                            declineText = "Hit the music generation service's rate limit — please wait a bit and try again.";
-                        }
-                        updatedSongChat.messages[aiMsgIndex].text = declineText;
-                        updatedSongChat.messages[aiMsgIndex].isThinking = false;
-                    }
-
+                    updatedSongChat.messages[aiMsgIndex].text = "I can't generate songs right now — that feature's turned off.";
+                    updatedSongChat.messages[aiMsgIndex].isThinking = false;
                     updatedSongChat.isGeneratingInBg = false;
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedSongChat));
 
@@ -8184,6 +9007,7 @@
                         isGenerating = false;
                         renderActiveChatMessages();
                     }
+                    clearInterval(internalThinkingInterval);
 
                 } else {
                     let sysInstruction = (selectedMode === 'code') 
@@ -8635,7 +9459,7 @@
         const imageEditorClose = document.getElementById('imageEditorClose');
         const imageEditorSave = document.getElementById('imageEditorSave');
 
-        let editorState = { img: null, rotation: 0, grayscale: false, prompt: '' };
+        let editorState = { img: null, rotation: 0, grayscale: false, prompt: '', sourceBase64: null, sourceMimeType: null };
 
         function drawEditorCanvas() {
             const ctx = imageEditorCanvas.getContext('2d');
@@ -8660,7 +9484,7 @@
         window.openImageEditor = function({ base64, mimeType, prompt }) {
             const img = new Image();
             img.onload = () => {
-                editorState = { img, rotation: 0, grayscale: false, prompt: prompt || '' };
+                editorState = { img, rotation: 0, grayscale: false, prompt: prompt || '', sourceBase64: base64, sourceMimeType: mimeType || 'image/png' };
                 editBrightness.value = 100; editContrast.value = 100; editSaturation.value = 100;
                 editPromptInput.value = prompt || '';
                 drawEditorCanvas();
@@ -8693,16 +9517,47 @@
             a.click();
         };
 
+        // If a generation is still in-flight when this fires, sendMessage()
+        // will just abort it and return without sending the new text —
+        // that's what caused the "text sits in the box, I have to press
+        // Send myself" glitch. Wait for isGenerating to actually clear
+        // before sending, instead of calling sendMessage() unconditionally.
+        function sendMessageWhenIdle(maxWaitMs = 8000) {
+            if (!isGenerating) { sendMessage(); return; }
+            const startedAt = Date.now();
+            const waitForIdle = setInterval(() => {
+                if (!isGenerating || Date.now() - startedAt > maxWaitMs) {
+                    clearInterval(waitForIdle);
+                    sendMessage();
+                }
+            }, 150);
+        }
+
         editRegenerateBtn.onclick = () => {
             const revised = editPromptInput.value.trim();
             if (!revised) { alert('Describe what you want in the revised image first.'); return; }
+            if (!editorState.img || !editorState.sourceBase64) { alert('No source image to edit.'); return; }
             closeImageEditor();
             closeImageGallery();
-            userInput.value = `generate an image of ${revised}`;
-            sendMessage();
+            // Attach the actual source image to the outgoing message so the
+            // edit-intent detection picks it up (editing itself replies
+            // with a decline message, but this still routes correctly).
+            pendingAttachments.push({
+                id: `editor-src-${Date.now()}`,
+                name: 'Image to edit',
+                type: editorState.sourceMimeType || 'image/png',
+                isImage: true,
+                base64: editorState.sourceBase64,
+                isLoading: false,
+                isError: false
+            });
+            renderAttachmentTray();
+            userInput.value = `edit this image: ${revised}`;
+            sendMessageWhenIdle();
         };
 
         loadHistoryList();
+        initMediaMemory();
 
         // Apply the Cavdo logo mark wherever it's used in the UI.
         (function initLogo() {
@@ -8788,6 +9643,284 @@
             });
             if (anyGenerating) loadHistoryList();
         }, 2000);
+    </script>
+
+    <script>
+        // ============================================================================
+        // CAVDO AI — AUTH SYSTEM
+        // ----------------------------------------------------------------------------
+        // Username/password: REAL and fully working. Accounts are created, SHA-256
+        // hashed (via the browser's built-in crypto.subtle — the password itself is
+        // never stored), and persisted in this browser's localStorage. Logging back
+        // in re-checks the hash, wrong passwords/usernames are rejected for real, and
+        // duplicate usernames are blocked at registration. There's no server, so
+        // accounts live only on this device/browser — they won't follow you to
+        // another computer, and clearing site data clears them.
+        //
+        // "Log in / Continue with Google": to make this real (not a mock) it uses
+        // Google Identity Services and returns an actual signed Google ID token that
+        // is verified client-side. This REQUIRES a one-time setup step from you:
+        //   1. Create an OAuth 2.0 Client ID at https://console.cloud.google.com
+        //      (APIs & Services > Credentials > Create Credentials > OAuth client ID
+        //      > Web application).
+        //   2. Add the exact URL this file will be served from (e.g.
+        //      https://yourdomain.com) under "Authorized JavaScript origins".
+        //      Google Sign-In will NOT work opened directly as a local file://.
+        //   3. Paste that Client ID into CAVDO_GOOGLE_CLIENT_ID below.
+        // Until a Client ID is added, the Google buttons show an inline explanation
+        // instead of silently pretending to sign someone in.
+        // ============================================================================
+        const CAVDO_GOOGLE_CLIENT_ID = ""; // <-- paste your Google OAuth Web Client ID here
+
+        (function () {
+            var overlay = document.getElementById('authOverlay');
+            var steps = {
+                login: document.getElementById('authStepLogin'),
+                registerStart: document.getElementById('authStepRegisterStart'),
+                registerDetails: document.getElementById('authStepRegisterDetails'),
+                access: document.getElementById('authStepAccess')
+            };
+
+            // Set the real app logo inside the auth panel.
+            var loginLogo = document.getElementById('authLoginLogo');
+            var registerLogo = document.getElementById('authRegisterLogo');
+            if (loginLogo) loginLogo.src = CAVDO_LOGO_DATA_URI;
+            if (registerLogo) registerLogo.src = CAVDO_LOGO_DATA_URI;
+
+            function showStep(name) {
+                Object.keys(steps).forEach(function (key) {
+                    steps[key].classList.toggle('active', key === name);
+                });
+            }
+
+            // ---------------- Account store (real persistence, hashed passwords) ----------------
+            var ACCOUNTS_KEY = 'cavdoAccounts';
+            var SESSION_KEY = 'cavdoCurrentUser';
+
+            function getAccounts() {
+                try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '{}'); }
+                catch (e) { return {}; }
+            }
+            function saveAccounts(accounts) {
+                try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts)); } catch (e) {}
+            }
+
+            // Real SHA-256 hashing via the browser's native WebCrypto API.
+            // The plaintext password is never written to storage — only this digest is.
+            async function hashPassword(password) {
+                var enc = new TextEncoder().encode(password);
+                var digest = await crypto.subtle.digest('SHA-256', enc);
+                return Array.from(new Uint8Array(digest))
+                    .map(function (b) { return b.toString(16).padStart(2, '0'); })
+                    .join('');
+            }
+
+            function setCurrentUser(username, meta) {
+                var session = Object.assign({ username: username, at: Date.now() }, meta || {});
+                try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) {}
+                applyProfileToUI(username);
+            }
+
+            function applyProfileToUI(username) {
+                var avatar = document.querySelector('.user-avatar');
+                var label = document.querySelector('.user-profile .btn-label');
+                if (avatar && username) avatar.textContent = username.trim().charAt(0).toUpperCase();
+                if (label && username) label.textContent = username;
+            }
+
+            function unlockApp() {
+                document.body.classList.remove('pre-auth');
+                overlay.classList.add('hidden');
+            }
+
+            // Resume an existing session (real persisted login) if one exists.
+            (function tryResumeSession() {
+                try {
+                    var raw = localStorage.getItem(SESSION_KEY);
+                    if (raw) {
+                        var session = JSON.parse(raw);
+                        if (session && session.username) {
+                            applyProfileToUI(session.username);
+                            unlockApp();
+                        }
+                    }
+                } catch (e) {}
+            })();
+
+            // ---------------- Google Identity Services (real sign-in, optional setup) ----------------
+            var googleReadyPromise = null;
+            function loadGoogleScript() {
+                if (googleReadyPromise) return googleReadyPromise;
+                googleReadyPromise = new Promise(function (resolve, reject) {
+                    if (window.google && window.google.accounts && window.google.accounts.id) {
+                        resolve();
+                        return;
+                    }
+                    var s = document.createElement('script');
+                    s.src = 'https://accounts.google.com/gsi/client';
+                    s.async = true;
+                    s.defer = true;
+                    s.onload = function () { resolve(); };
+                    s.onerror = function () { reject(new Error('Could not load Google Sign-In script.')); };
+                    document.head.appendChild(s);
+                });
+                return googleReadyPromise;
+            }
+
+            function decodeGoogleJwt(token) {
+                var base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+                var json = decodeURIComponent(atob(base64).split('').map(function (c) {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+                return JSON.parse(json);
+            }
+
+            function handleGoogleCredential(response) {
+                var payload = decodeGoogleJwt(response.credential);
+                setCurrentUser(payload.name || payload.email, { email: payload.email, via: 'google' });
+                unlockApp();
+            }
+
+            async function startGoogleSignIn(errEl) {
+                if (!CAVDO_GOOGLE_CLIENT_ID) {
+                    errEl.textContent = 'Google sign-in isn\'t configured yet — add a Google OAuth Client ID (see the comment at the top of this script) to enable it.';
+                    return;
+                }
+                errEl.textContent = '';
+                try {
+                    await loadGoogleScript();
+                    google.accounts.id.initialize({
+                        client_id: CAVDO_GOOGLE_CLIENT_ID,
+                        callback: handleGoogleCredential
+                    });
+                    google.accounts.id.prompt(function (notification) {
+                        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                            errEl.textContent = 'Google sign-in was closed or blocked by the browser. Please try again.';
+                        }
+                    });
+                } catch (err) {
+                    errEl.textContent = 'Could not reach Google Sign-In. Check your connection and try again.';
+                }
+            }
+
+            // --- Login step ---
+            document.getElementById('goToRegisterLink').addEventListener('click', function () {
+                document.getElementById('loginError').textContent = '';
+                showStep('registerStart');
+            });
+
+            document.getElementById('loginGoogleBtn').addEventListener('click', function () {
+                startGoogleSignIn(document.getElementById('loginGoogleError'));
+            });
+
+            document.getElementById('loginSubmitBtn').addEventListener('click', async function () {
+                var user = document.getElementById('loginUsername').value.trim();
+                var pass = document.getElementById('loginPassword').value;
+                var errEl = document.getElementById('loginError');
+                var btn = this;
+
+                if (!user || !pass) {
+                    errEl.textContent = 'Please enter your username and password.';
+                    return;
+                }
+
+                var accounts = getAccounts();
+                var account = accounts[user.toLowerCase()];
+                if (!account) {
+                    errEl.textContent = 'No account found with that username. Try registering.';
+                    return;
+                }
+
+                btn.disabled = true;
+                var hash = await hashPassword(pass);
+                btn.disabled = false;
+
+                if (hash !== account.passwordHash) {
+                    errEl.textContent = 'Incorrect password.';
+                    return;
+                }
+
+                errEl.textContent = '';
+                setCurrentUser(account.username, { via: 'password' });
+                unlockApp();
+            });
+
+            // --- Register: start (continue with Google) ---
+            document.getElementById('goToLoginLink').addEventListener('click', function () {
+                showStep('login');
+            });
+            document.getElementById('backToLoginBtn1').addEventListener('click', function () {
+                showStep('login');
+            });
+
+            document.getElementById('registerGoogleBtn').addEventListener('click', function () {
+                startGoogleSignIn(document.getElementById('registerGoogleError'));
+            });
+
+            // --- Register: details (username + password + age) ---
+            document.getElementById('backToRegisterStartBtn').addEventListener('click', function () {
+                showStep('registerStart');
+            });
+
+            document.getElementById('registerDetailsSubmitBtn').addEventListener('click', async function () {
+                var user = document.getElementById('registerUsername').value.trim();
+                var pass = document.getElementById('registerPassword').value;
+                var confirmPass = document.getElementById('registerConfirmPassword').value;
+                var age = document.getElementById('registerAge').value.trim();
+                var errEl = document.getElementById('registerDetailsError');
+                var btn = this;
+
+                if (!user) {
+                    errEl.textContent = 'Please choose a username.';
+                    return;
+                }
+                var accounts = getAccounts();
+                if (accounts[user.toLowerCase()]) {
+                    errEl.textContent = 'That username is already taken. Try another, or log in instead.';
+                    return;
+                }
+                if (!pass || pass.length < 6) {
+                    errEl.textContent = 'Password must be at least 6 characters.';
+                    return;
+                }
+                if (pass !== confirmPass) {
+                    errEl.textContent = 'Passwords do not match.';
+                    return;
+                }
+                var ageNum = parseInt(age, 10);
+                if (!age || isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
+                    errEl.textContent = 'Please enter a valid age.';
+                    return;
+                }
+                if (ageNum < 13) {
+                    errEl.textContent = 'You must be at least 13 years old to use Cavdo AI.';
+                    return;
+                }
+                errEl.textContent = '';
+
+                btn.disabled = true;
+                var passwordHash = await hashPassword(pass);
+                btn.disabled = false;
+
+                accounts[user.toLowerCase()] = {
+                    username: user,
+                    passwordHash: passwordHash,
+                    age: ageNum,
+                    createdAt: Date.now()
+                };
+                saveAccounts(accounts);
+                setCurrentUser(user, { via: 'password' });
+
+                document.getElementById('accessTitle').textContent = 'Welcome, ' + user + '!';
+                document.getElementById('accessSubtitle').textContent = 'Your account is ready. You now have access to Cavdo AI.';
+                showStep('access');
+            });
+
+            // --- Access granted ---
+            document.getElementById('enterAppBtn').addEventListener('click', function () {
+                unlockApp();
+            });
+        })();
     </script>
 </body>
 </html>

@@ -3417,6 +3417,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 </head>
 <body class="pre-auth">
     <script>
@@ -8211,6 +8212,7 @@
             const entry = { id, prompt, base64, mimeType: mimeType || 'image/png', sourceUrl: sourceUrl || null, aspectRatio: aspectRatio || null, ts: Date.now() };
             imageMemoryCache.set(id, entry); // available to the UI immediately
             idbPut('images', entry).catch(e => console.error('Could not persist image to IndexedDB (kept in this tab only):', e));
+            if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.uploadImage(entry);
             return entry;
         }
 
@@ -8226,6 +8228,7 @@
         function deleteImageFromMemory(id) {
             imageMemoryCache.delete(id);
             idbDelete('images', id).catch(e => console.error('Could not delete image from IndexedDB:', e));
+            if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.deleteImage(id);
             renderImageGallery();
         }
 
@@ -8239,6 +8242,7 @@
             const entry = { id, prompt, base64, mimeType: mimeType || 'audio/wav', ts: Date.now() };
             songMemoryCache.set(id, entry);
             idbPut('songs', entry).catch(e => console.error('Could not persist song to IndexedDB (kept in this tab only):', e));
+            if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.uploadSong(entry);
             return entry;
         }
 
@@ -8254,6 +8258,7 @@
         function deleteSongFromMemory(id) {
             songMemoryCache.delete(id);
             idbDelete('songs', id).catch(e => console.error('Could not delete song from IndexedDB:', e));
+            if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.deleteSong(id);
         }
 
         // ------------------------------------------------------------
@@ -10064,6 +10069,7 @@
         firebase.initializeApp(firebaseConfig);
         const cavdoAuth = firebase.auth();
         const cavdoDb = firebase.firestore();
+        const cavdoStorage = firebase.storage();
 
         // Firebase Auth needs an email format — this app uses usernames, so we
         // derive a stable, private pseudo-email from the username. It's never
@@ -10146,6 +10152,121 @@
                 });
             }
 
+            // ------------------------------------------------------------
+            // ROOT FIX (part 2): generated images/songs live in IndexedDB
+            // (see CAVDO_DB_NAME below), completely separate from
+            // localStorage — so everything above this comment never
+            // touched them at all. That meant a) they never made it to
+            // the cloud, so a different device never saw them, and b)
+            // switching accounts on the SAME browser never cleared them,
+            // so one account could still see another's generated images.
+            // This mirrors them the same way localStorage is mirrored,
+            // using Firebase Storage instead of Firestore because
+            // base64 image/audio data routinely exceeds Firestore's 1MB
+            // per-document limit.
+            // ------------------------------------------------------------
+            function idbClearStore(storeName) {
+                return openCavdoDb().then(db => new Promise((resolve, reject) => {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    tx.objectStore(storeName).clear();
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                }));
+            }
+
+            function blobToBase64(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const result = reader.result || '';
+                        const comma = result.indexOf(',');
+                        resolve(comma >= 0 ? result.slice(comma + 1) : result);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            }
+
+            async function downloadMediaKind(userId, kind, cache) {
+                let listing;
+                try {
+                    listing = await withTimeout(cavdoStorage.ref('users/' + userId + '/' + kind).listAll(), 8000, 'Media list');
+                } catch (e) {
+                    console.warn('Cavdo sync: could not list cloud ' + kind, e);
+                    return;
+                }
+                for (const itemRef of listing.items) {
+                    try {
+                        const meta = await itemRef.getMetadata();
+                        const url = await itemRef.getDownloadURL();
+                        const blob = await (await fetch(url)).blob();
+                        const base64 = await blobToBase64(blob);
+                        const custom = meta.customMetadata || {};
+                        const entry = {
+                            id: itemRef.name,
+                            prompt: custom.prompt || '',
+                            base64: base64,
+                            mimeType: meta.contentType || (kind === 'images' ? 'image/png' : 'audio/wav'),
+                            ts: custom.ts ? parseInt(custom.ts, 10) : Date.now()
+                        };
+                        if (kind === 'images') entry.aspectRatio = custom.aspectRatio || null;
+                        await idbPut(kind, entry);
+                        if (cache) cache.set(entry.id, entry);
+                    } catch (e) {
+                        console.warn('Cavdo sync: skipping one cloud ' + kind + ' item', e);
+                    }
+                }
+            }
+
+            async function hydrateMedia(userId) {
+                try {
+                    await idbClearStore('images');
+                    await idbClearStore('songs');
+                    if (typeof imageMemoryCache !== 'undefined') imageMemoryCache.clear();
+                    if (typeof songMemoryCache !== 'undefined') songMemoryCache.clear();
+                    await downloadMediaKind(userId, 'images', typeof imageMemoryCache !== 'undefined' ? imageMemoryCache : null);
+                    await downloadMediaKind(userId, 'songs', typeof songMemoryCache !== 'undefined' ? songMemoryCache : null);
+                    if (typeof currentChatId !== 'undefined' && currentChatId && typeof renderActiveChatMessages === 'function') {
+                        renderActiveChatMessages(false);
+                    }
+                    if (typeof renderImageGallery === 'function') renderImageGallery();
+                } catch (e) {
+                    console.warn('Cavdo sync: media hydrate failed, continuing with local media only', e);
+                }
+            }
+
+            async function uploadMedia(kind, entry) {
+                if (!enabled || !uid) return;
+                try {
+                    const meta = {
+                        contentType: entry.mimeType || (kind === 'images' ? 'image/png' : 'audio/wav'),
+                        customMetadata: {
+                            prompt: String(entry.prompt || '').slice(0, 900),
+                            ts: String(entry.ts || Date.now()),
+                            aspectRatio: entry.aspectRatio || ''
+                        }
+                    };
+                    await withTimeout(
+                        cavdoStorage.ref('users/' + uid + '/' + kind + '/' + entry.id).putString(entry.base64, 'base64', meta),
+                        20000, 'Media upload'
+                    );
+                } catch (e) {
+                    console.warn('Cavdo sync: could not upload ' + kind + ' to the cloud (kept on this device only)', e);
+                    cavdoToast('⚠ Could not save this ' + (kind === 'images' ? 'image' : 'song') + ' to your account in the cloud — it\'ll stay on this device only. (' + (e.code || e.message || 'unknown error') + ')', 'warn');
+                }
+            }
+
+            async function deleteMedia(kind, id) {
+                if (!enabled || !uid) return;
+                try {
+                    await cavdoStorage.ref('users/' + uid + '/' + kind + '/' + id).delete();
+                } catch (e) {
+                    if (e && e.code !== 'storage/object-not-found') {
+                        console.warn('Cavdo sync: could not delete ' + kind + ' from the cloud', e);
+                    }
+                }
+            }
+
             async function hydrate(userId) {
                 uid = userId;
                 clearSyncedLocalData();
@@ -10159,6 +10280,7 @@
                         if (data && typeof data.key === 'string') nativeSetItem(data.key, data.value);
                     });
                     enabled = true;
+                    await hydrateMedia(userId);
                     cavdoToast('✓ Synced with your account', 'ok');
                 } catch (e) {
                     console.warn('Cavdo sync: cloud load failed, continuing with local data only', e);
@@ -10178,7 +10300,13 @@
 
             window.addEventListener('beforeunload', function () { if (pendingWrites.size) flush(); });
 
-            return { hydrate: hydrate, stop: stop, flushNow: flushNow };
+            return {
+                hydrate: hydrate, stop: stop, flushNow: flushNow,
+                uploadImage: function (entry) { return uploadMedia('images', entry); },
+                deleteImage: function (id) { return deleteMedia('images', id); },
+                uploadSong: function (entry) { return uploadMedia('songs', entry); },
+                deleteSong: function (id) { return deleteMedia('songs', id); }
+            };
         })();
 
     </script>
@@ -10205,7 +10333,7 @@
         // Until a Client ID is added, the Google buttons show an inline explanation
         // instead of silently pretending to sign someone in.
         // ============================================================================
-        const CAVDO_GOOGLE_CLIENT_ID = "1073560074472-i78296vvtdq5vg9jeo2j2d9elp0fespl.apps.googleusercontent.com";
+        const CAVDO_GOOGLE_CLIENT_ID = "628026215893-pkevf4a6vi1445f78u7o1gej7lh4ae93.apps.googleusercontent.com";
 
         (function () {
             var overlay = document.getElementById('authOverlay');

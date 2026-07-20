@@ -3276,6 +3276,24 @@
         .auth-google-btn:active { transform: scale(0.98); }
         .auth-google-btn svg { flex-shrink: 0; }
 
+        /* The visible "Continue with Google" button above is purely decorative.
+           Google's real, clickable Sign-In button is rendered invisibly on top
+           of it (see googleRealBtnHost below) so the click goes straight into
+           Google's own button-driven OAuth flow instead of the One Tap auto
+           -prompt, which Google silently suppresses after a dismissal
+           ("You previously dismissed this prompt…") with no reliable way to
+           recover short of clearing cookies or waiting. A real button click
+           isn't subject to that One Tap cooldown at all. */
+        .google-btn-wrap { position: relative; }
+        #googleRealBtnHost {
+            position: absolute;
+            inset: 0;
+            opacity: 0.01;
+            overflow: hidden;
+            z-index: 2;
+        }
+        #googleRealBtnHost iframe { width: 100% !important; }
+
         .auth-divider {
             display: flex;
             align-items: center;
@@ -3448,10 +3466,13 @@
                 <div class="auth-logo-row"><img id="authLoginLogo" src="" alt="Cavdo AI logo"><span>CAVDO</span></div>
                 <div class="auth-title">Welcome back</div>
 
-                <button type="button" class="auth-google-btn" id="loginGoogleBtn">
-                    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.8-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.3 0-9.8-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3 5.5-5.9 7.2l6.4 5.4C39.9 37.7 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
-                    Continue with Google
-                </button>
+                <div class="google-btn-wrap">
+                    <button type="button" class="auth-google-btn" id="loginGoogleBtn">
+                        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.8-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.3 0-9.8-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3 5.5-5.9 7.2l6.4 5.4C39.9 37.7 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                        Continue with Google
+                    </button>
+                    <div id="googleRealBtnHost"></div>
+                </div>
                 <div class="auth-error" id="loginGoogleError"></div>
 
                 <div class="auth-divider">or</div>
@@ -10713,55 +10734,70 @@
                 'unregistered_origin': 'This page\'s URL isn\'t in the Client ID\'s "Authorized JavaScript origins" list in Google Cloud Console. Add this exact origin (scheme + domain, no path) and try again.',
                 'secure_http_required': 'Google Sign-In requires HTTPS (or localhost). This page is being served over plain HTTP or as a local file.',
                 'invalid_client': 'The Client ID looks invalid or doesn\'t match this project. Double-check it in Google Cloud Console.',
-                'missing_client_id': 'No Client ID is set.',
-                'opt_out_or_no_session': 'You\'re not signed into a Google account in this browser, or have opted out of One Tap. Sign into Google first, then try again.',
-                'suppressed_by_user': 'You previously dismissed this prompt, so the browser is temporarily suppressing it. Clear cookies for this site (or wait) and try again.',
-                'browser_not_supported': 'This browser doesn\'t support Google Sign-In\'s One Tap prompt.',
-                'invalid_configuration': 'The Google Sign-In configuration is invalid.'
+                'missing_client_id': 'No Client ID is set.'
             };
 
-            async function startGoogleSignIn(errEl) {
+            // Renders Google's REAL Sign-In button, invisibly, directly on top
+            // of the custom-styled "Continue with Google" button (see
+            // .google-btn-wrap / #googleRealBtnHost CSS). A click therefore
+            // goes straight into Google's own button-driven OAuth popup flow.
+            //
+            // This used to instead call google.accounts.id.prompt() to trigger
+            // the One Tap auto-popup on click. The problem: once a person
+            // dismisses that auto-popup (or Google's own heuristics decide
+            // to), Google suppresses it for a cooldown period and prompt()
+            // just fails with reason 'suppressed_by_user' — leaving the
+            // button dead with no way to recover short of clearing cookies or
+            // waiting. A real, directly-clicked Sign-In button isn't part of
+            // the One Tap moment at all, so it isn't subject to that
+            // suppression.
+            var googleButtonMountPromise = null;
+            function mountGoogleButton(errEl) {
+                if (googleButtonMountPromise) return googleButtonMountPromise;
                 if (!CAVDO_GOOGLE_CLIENT_ID) {
-                    errEl.textContent = 'Google sign-in isn\'t configured yet — add a Google OAuth Client ID (see the comment at the top of this script) to enable it.';
-                    return;
+                    if (errEl) errEl.textContent = 'Google sign-in isn\'t configured yet — add a Google OAuth Client ID (see the comment at the top of this script) to enable it.';
+                    return Promise.resolve();
                 }
-                errEl.textContent = '';
-                try {
-                    await loadGoogleScript();
+                googleButtonMountPromise = loadGoogleScript().then(function () {
                     google.accounts.id.initialize({
                         client_id: CAVDO_GOOGLE_CLIENT_ID,
-                        callback: function (response) { handleGoogleCredential(response, errEl); }
+                        callback: function (response) { handleGoogleCredential(response, document.getElementById('loginGoogleError')); }
                     });
-                    google.accounts.id.prompt(function (notification) {
-                        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                            var reason = (notification.getNotDisplayedReason && notification.getNotDisplayedReason())
-                                || (notification.getSkippedReason && notification.getSkippedReason())
-                                || 'unknown_reason';
-                            console.warn('Google One Tap not shown. Reason:', reason, '— current origin:', window.location.origin);
-                            // NOTE: this used to auto-fall-back to signInWithRedirect
-                            // here. That flow requires cross-origin storage access
-                            // between this domain and the *.firebaseapp.com
-                            // authDomain, which current browsers block by default —
-                            // the result was an infinite redirect loop instead of a
-                            // working fallback. Until this site is served from
-                            // Firebase Hosting itself (so the domains match and no
-                            // cross-origin handshake is needed), showing a clear
-                            // message and leaving username/password as the working
-                            // path is better than a fallback that loops.
-                            errEl.textContent = GOOGLE_REASON_MESSAGES[reason]
-                                || ('Google sign-in isn\'t available right now (' + reason + '). Please log in with your username and password instead.');
-                        }
+                    var host = document.getElementById('googleRealBtnHost');
+                    var visibleBtn = document.getElementById('loginGoogleBtn');
+                    var width = Math.min(Math.max(visibleBtn ? visibleBtn.offsetWidth : 300, 200), 400);
+                    google.accounts.id.renderButton(host, {
+                        type: 'standard',
+                        theme: 'outline',
+                        size: 'large',
+                        shape: 'pill',
+                        text: 'continue_with',
+                        width: width
                     });
-                } catch (err) {
+                }).catch(function (err) {
                     console.error(err);
-                    errEl.textContent = 'Could not reach Google Sign-In. Please log in with your username and password instead.';
-                }
+                    if (errEl) errEl.textContent = 'Could not reach Google Sign-In. Please log in with your username and password instead.';
+                });
+                return googleButtonMountPromise;
             }
 
+            // Mount as soon as the auth panel is on screen, so the real button
+            // is ready to receive the click the instant someone taps it —
+            // no visible delay, no need to click twice.
+            mountGoogleButton(document.getElementById('loginGoogleError'));
 
             // --- Login step ---
+            // The visible button itself has no click handler that starts
+            // sign-in — Google's real (invisible) button sits directly on
+            // top of it and receives the click instead. If that real button
+            // somehow failed to mount (e.g. the script never loaded), retry
+            // mounting so a second click has a chance of working.
             document.getElementById('loginGoogleBtn').addEventListener('click', function () {
-                startGoogleSignIn(document.getElementById('loginGoogleError'));
+                var errEl = document.getElementById('loginGoogleError');
+                if (!document.getElementById('googleRealBtnHost').querySelector('iframe')) {
+                    googleButtonMountPromise = null;
+                    mountGoogleButton(errEl);
+                }
             });
 
             document.getElementById('loginSubmitBtn').addEventListener('click', async function () {

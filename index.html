@@ -10297,8 +10297,14 @@
                 if (label) label.textContent = 'User Account';
             }
 
-            function logOut() {
+            async function logOut() {
                 try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+                // Make sure anything the user just did (e.g. a message sent
+                // seconds ago) is actually saved to the cloud before we wipe
+                // this device's local copy for whoever logs in next —
+                // otherwise a write still waiting in the ~1.2s save batch
+                // gets thrown away here and is gone for good.
+                try { await CAVDO_SYNC.flushNow(); } catch (e) {}
                 CAVDO_SYNC.stop();
                 cavdoAuth.signOut().catch(function () {});
                 resetProfileUI();

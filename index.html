@@ -10542,10 +10542,12 @@
             cavdoAuth.onAuthStateChanged(async function (fbUser) {
                 if (resumedOnce) return; // only auto-resume once, on first load
                 resumedOnce = true;
+                console.log('Cavdo: onAuthStateChanged fired, fbUser =', fbUser && fbUser.uid);
                 if (!fbUser) return;
 
                 try {
                     var redirectResult = await redirectResultPromise;
+                    console.log('Cavdo: redirect result =', redirectResult && redirectResult.user && redirectResult.user.uid, 'isNewUser =', redirectResult && redirectResult.additionalUserInfo && redirectResult.additionalUserInfo.isNewUser);
                     if (redirectResult && redirectResult.user) {
                         // This resume IS a Google redirect completing — hand off
                         // to finishGoogleSignIn so a first-time sign-in is routed
@@ -10569,7 +10571,11 @@
                     if (typeof toggleInterface === 'function') toggleInterface(false);
                     setCurrentUser(username, { via: via, uid: fbUser.uid });
                     unlockApp();
-                } catch (e) {}
+                } catch (e) {
+                    console.error('Cavdo: sign-in resume failed:', e);
+                    var errEl = document.getElementById('loginGoogleError');
+                    if (errEl) errEl.textContent = 'Something went wrong finishing sign-in: ' + (e.message || 'unknown error') + '. Check the browser console for details.';
+                }
             });
 
             var googleReadyPromise = null;

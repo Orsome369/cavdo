@@ -10736,15 +10736,24 @@
                             var reason = (notification.getNotDisplayedReason && notification.getNotDisplayedReason())
                                 || (notification.getSkippedReason && notification.getSkippedReason())
                                 || 'unknown_reason';
-                            console.warn('Google One Tap not shown (falling back to redirect sign-in). Reason:', reason, '— current origin:', window.location.origin);
-                            signInWithGoogleRedirect(errEl);
+                            console.warn('Google One Tap not shown. Reason:', reason, '— current origin:', window.location.origin);
+                            // NOTE: this used to auto-fall-back to signInWithRedirect
+                            // here. That flow requires cross-origin storage access
+                            // between this domain and the *.firebaseapp.com
+                            // authDomain, which current browsers block by default —
+                            // the result was an infinite redirect loop instead of a
+                            // working fallback. Until this site is served from
+                            // Firebase Hosting itself (so the domains match and no
+                            // cross-origin handshake is needed), showing a clear
+                            // message and leaving username/password as the working
+                            // path is better than a fallback that loops.
+                            errEl.textContent = GOOGLE_REASON_MESSAGES[reason]
+                                || ('Google sign-in isn\'t available right now (' + reason + '). Please log in with your username and password instead.');
                         }
                     });
                 } catch (err) {
                     console.error(err);
-                    // Even the One Tap script itself failed to load/init — still
-                    // try the redirect flow, since that doesn't depend on it.
-                    signInWithGoogleRedirect(errEl);
+                    errEl.textContent = 'Could not reach Google Sign-In. Please log in with your username and password instead.';
                 }
             }
 

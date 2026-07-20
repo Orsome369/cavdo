@@ -3285,14 +3285,14 @@
            recover short of clearing cookies or waiting. A real button click
            isn't subject to that One Tap cooldown at all. */
         .google-btn-wrap { position: relative; }
-        #googleRealBtnHost {
+        #googleRealBtnHost, #googleRealBtnHostRegister {
             position: absolute;
             inset: 0;
             opacity: 0.01;
             overflow: hidden;
             z-index: 2;
         }
-        #googleRealBtnHost iframe { width: 100% !important; }
+        #googleRealBtnHost iframe, #googleRealBtnHostRegister iframe { width: 100% !important; }
 
         .auth-divider {
             display: flex;
@@ -3496,6 +3496,16 @@
                 <div class="auth-back-row" id="backToRegisterStartBtn">← Back to log in</div>
                 <div class="auth-title">Tell us about you</div>
                 <div class="auth-subtitle">Just a couple details to finish setting up your account.</div>
+
+                <div class="google-btn-wrap" id="registerGoogleBtnWrap">
+                    <button type="button" class="auth-google-btn" id="registerGoogleBtn">
+                        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.8-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.3 0-9.8-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3 5.5-5.9 7.2l6.4 5.4C39.9 37.7 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                        Continue with Google
+                    </button>
+                    <div id="googleRealBtnHostRegister"></div>
+                </div>
+                <div class="auth-error" id="registerGoogleError"></div>
+                <div class="auth-divider" id="registerOrDivider">or fill in manually</div>
 
                 <div class="auth-field">
                     <label for="registerUsername">Username</label>
@@ -10357,7 +10367,17 @@
                         if (data && typeof data.key === 'string') nativeSetItem(data.key, data.value);
                     });
                     enabled = true;
-                    await hydrateMedia(userId);
+                    // Images/songs are fetched, decoded to base64, and written
+                    // to IndexedDB one at a time — for an account with any
+                    // real number of them this alone can take much longer
+                    // than the core data sync above. Blocking login/register
+                    // on it (the old behaviour) is what made sign-in feel
+                    // slow. Core chat/settings data is small and already
+                    // synced by this point, so unlock right away and let
+                    // media fill in the gallery/song list in the background.
+                    hydrateMedia(userId).catch(function (e) {
+                        console.warn('Cavdo sync: media hydrate failed, continuing with local media only', e);
+                    });
                     cavdoToast('✓ Synced with your account', 'ok');
                 } catch (e) {
                     console.warn('Cavdo sync: cloud load failed, continuing with local data only', e);
@@ -10664,6 +10684,10 @@
                     document.getElementById('registerDetailsError').textContent = '';
                     var pwFields = document.getElementById('registerPasswordFields');
                     if (pwFields) pwFields.style.display = 'none';
+                    var googleWrap = document.getElementById('registerGoogleBtnWrap');
+                    var orDivider = document.getElementById('registerOrDivider');
+                    if (googleWrap) googleWrap.style.display = 'none';
+                    if (orDivider) orDivider.style.display = 'none';
                     showStep('registerDetails');
                     return;
                 }
@@ -10738,9 +10762,12 @@
             };
 
             // Renders Google's REAL Sign-In button, invisibly, directly on top
-            // of the custom-styled "Continue with Google" button (see
-            // .google-btn-wrap / #googleRealBtnHost CSS). A click therefore
+            // of a custom-styled "Continue with Google" button (see
+            // .google-btn-wrap / #googleRealBtnHost* CSS). A click therefore
             // goes straight into Google's own button-driven OAuth popup flow.
+            // Used for both the login step and the register step, each with
+            // its own host container, since a single rendered Google button
+            // can't be moved between two different DOM locations.
             //
             // This used to instead call google.accounts.id.prompt() to trigger
             // the One Tap auto-popup on click. The problem: once a person
@@ -10751,20 +10778,25 @@
             // waiting. A real, directly-clicked Sign-In button isn't part of
             // the One Tap moment at all, so it isn't subject to that
             // suppression.
-            var googleButtonMountPromise = null;
-            function mountGoogleButton(errEl) {
-                if (googleButtonMountPromise) return googleButtonMountPromise;
+            var googleButtonMountPromises = {};
+            function mountGoogleButton(errEl, hostId, visibleBtnId) {
+                hostId = hostId || 'googleRealBtnHost';
+                visibleBtnId = visibleBtnId || 'loginGoogleBtn';
+                if (googleButtonMountPromises[hostId]) return googleButtonMountPromises[hostId];
                 if (!CAVDO_GOOGLE_CLIENT_ID) {
                     if (errEl) errEl.textContent = 'Google sign-in isn\'t configured yet — add a Google OAuth Client ID (see the comment at the top of this script) to enable it.';
                     return Promise.resolve();
                 }
-                googleButtonMountPromise = loadGoogleScript().then(function () {
+                googleButtonMountPromises[hostId] = loadGoogleScript().then(function () {
+                    // initialize() is safe to call more than once with the same
+                    // client — each renderButton call below still needs its own
+                    // callback wired to that host's own error element.
                     google.accounts.id.initialize({
                         client_id: CAVDO_GOOGLE_CLIENT_ID,
-                        callback: function (response) { handleGoogleCredential(response, document.getElementById('loginGoogleError')); }
+                        callback: function (response) { handleGoogleCredential(response, errEl); }
                     });
-                    var host = document.getElementById('googleRealBtnHost');
-                    var visibleBtn = document.getElementById('loginGoogleBtn');
+                    var host = document.getElementById(hostId);
+                    var visibleBtn = document.getElementById(visibleBtnId);
                     var width = Math.min(Math.max(visibleBtn ? visibleBtn.offsetWidth : 300, 200), 400);
                     google.accounts.id.renderButton(host, {
                         type: 'standard',
@@ -10778,13 +10810,15 @@
                     console.error(err);
                     if (errEl) errEl.textContent = 'Could not reach Google Sign-In. Please log in with your username and password instead.';
                 });
-                return googleButtonMountPromise;
+                return googleButtonMountPromises[hostId];
             }
 
-            // Mount as soon as the auth panel is on screen, so the real button
-            // is ready to receive the click the instant someone taps it —
-            // no visible delay, no need to click twice.
-            mountGoogleButton(document.getElementById('loginGoogleError'));
+            // Mount the login one as soon as the auth panel is on screen, so
+            // the real button is ready to receive the click the instant
+            // someone taps it — no visible delay, no need to click twice.
+            // The register one mounts lazily (see goToRegisterBtn below)
+            // since that screen isn't shown until it's needed.
+            mountGoogleButton(document.getElementById('loginGoogleError'), 'googleRealBtnHost', 'loginGoogleBtn');
 
             // --- Login step ---
             // The visible button itself has no click handler that starts
@@ -10795,8 +10829,15 @@
             document.getElementById('loginGoogleBtn').addEventListener('click', function () {
                 var errEl = document.getElementById('loginGoogleError');
                 if (!document.getElementById('googleRealBtnHost').querySelector('iframe')) {
-                    googleButtonMountPromise = null;
-                    mountGoogleButton(errEl);
+                    googleButtonMountPromises.googleRealBtnHost = null;
+                    mountGoogleButton(errEl, 'googleRealBtnHost', 'loginGoogleBtn');
+                }
+            });
+            document.getElementById('registerGoogleBtn').addEventListener('click', function () {
+                var errEl = document.getElementById('registerGoogleError');
+                if (!document.getElementById('googleRealBtnHostRegister').querySelector('iframe')) {
+                    googleButtonMountPromises.googleRealBtnHostRegister = null;
+                    mountGoogleButton(errEl, 'googleRealBtnHostRegister', 'registerGoogleBtn');
                 }
             });
 
@@ -10848,6 +10889,11 @@
                 document.getElementById('registerDetailsError').textContent = '';
                 var pwFields = document.getElementById('registerPasswordFields');
                 if (pwFields) pwFields.style.display = '';
+                var googleWrap = document.getElementById('registerGoogleBtnWrap');
+                var orDivider = document.getElementById('registerOrDivider');
+                if (googleWrap) googleWrap.style.display = '';
+                if (orDivider) orDivider.style.display = '';
+                mountGoogleButton(document.getElementById('registerGoogleError'), 'googleRealBtnHostRegister', 'registerGoogleBtn');
                 document.getElementById('loginError').textContent = '';
                 showStep('registerDetails');
             });
@@ -10866,6 +10912,10 @@
                 pendingGoogleRegistration = null;
                 var pwFields = document.getElementById('registerPasswordFields');
                 if (pwFields) pwFields.style.display = '';
+                var googleWrap = document.getElementById('registerGoogleBtnWrap');
+                var orDivider = document.getElementById('registerOrDivider');
+                if (googleWrap) googleWrap.style.display = '';
+                if (orDivider) orDivider.style.display = '';
                 document.getElementById('loginError').textContent = '';
                 showStep('login');
             });
@@ -10982,17 +11032,22 @@
                 termsAgreeBtn.addEventListener('click', async function () {
                     var restoreBtn = cavdoSetLoading(termsAgreeBtn, 'Saving…');
                     if (pendingNewAccountUid) {
-                        try {
-                            await cavdoDb.collection('users').doc(pendingNewAccountUid).set(
+                        // Don't make the person wait on this write — it's just
+                        // a timestamp for records, not something that should
+                        // hold up getting into the app.
+                        withTimeout(
+                            cavdoDb.collection('users').doc(pendingNewAccountUid).set(
                                 { termsAgreedAt: Date.now() }, { merge: true }
-                            );
-                        } catch (e) {}
+                            ),
+                            8000, 'Terms save'
+                        ).catch(function (e) { console.warn('Cavdo: terms timestamp save failed', e); });
                     }
-                    var user = getCurrentSession() ? getCurrentSession().username : '';
-                    document.getElementById('accessTitle').textContent = 'Welcome, ' + user + '!';
-                    document.getElementById('accessSubtitle').textContent = 'Your account is ready. You now have access to Cavdo AI.';
                     restoreBtn();
-                    showStep('access');
+                    // Go straight into the app — no separate "Access Granted"
+                    // screen requiring yet another click. Agreeing to terms is
+                    // the last thing standing between account creation and
+                    // actually using Cavdo AI.
+                    unlockApp();
                 });
             }
 

@@ -3338,6 +3338,28 @@
         .auth-submit-btn:hover { background: #3ee06c; }
         .auth-submit-btn:active { transform: scale(0.98); }
         .auth-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .terms-scroll-box {
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-size: 13px;
+            line-height: 1.55;
+            opacity: 0.85;
+            margin-bottom: 14px;
+        }
+        .terms-scroll-box p { margin: 0 0 10px 0; }
+        .terms-scroll-box p:last-child { margin-bottom: 0; }
+        .terms-agree-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            cursor: pointer;
+        }
+        .terms-agree-row input { margin-top: 2px; }
 
         .auth-switch-text {
             text-align: center;
@@ -3391,6 +3413,10 @@
             100% { content: ''; }
         }
     </style>
+    <!-- Firebase (Auth + Firestore) -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 </head>
 <body class="pre-auth">
     <script>
@@ -3467,6 +3493,27 @@
 
                 <div class="auth-error" id="registerDetailsError"></div>
                 <button type="button" class="auth-submit-btn" id="registerDetailsSubmitBtn">Continue</button>
+            </div>
+
+            <!-- STEP: TERMS & AGREEMENT (mandatory, shown right after registration) -->
+            <div class="auth-step" id="authStepTerms">
+                <div class="auth-title">Terms &amp; Agreement</div>
+                <div class="auth-subtitle">Please read and agree before using Cavdo AI.</div>
+                <div class="terms-scroll-box">
+                    <p><strong>1. Acceptance.</strong> By creating an account and using Cavdo AI, you agree to these terms. If you don't agree, please don't use the app.</p>
+                    <p><strong>2. Your account.</strong> You're responsible for keeping your password secure and for anything that happens under your account. You must be at least 13 years old to use Cavdo AI.</p>
+                    <p><strong>3. Acceptable use.</strong> Don't use Cavdo AI to break the law, harm others, or attempt to disrupt or reverse-engineer the service.</p>
+                    <p><strong>4. Your content.</strong> Chats, prompts, and generations you create remain yours. We store them so you can access them from your account on any device.</p>
+                    <p><strong>5. Plans &amp; billing.</strong> Paid plans are active for the period shown in Settings → Billing and revert to the Free plan automatically once that period ends, unless renewed.</p>
+                    <p><strong>6. No warranty.</strong> Cavdo AI is provided "as is." AI-generated content can be inaccurate — use your judgment, especially for anything important.</p>
+                    <p><strong>7. Account deletion.</strong> You can delete your account at any time from Settings → Account. This permanently removes your data and cannot be undone.</p>
+                    <p><strong>8. Changes.</strong> These terms may be updated from time to time; continued use after a change means you accept the updated terms.</p>
+                </div>
+                <label class="terms-agree-row">
+                    <input type="checkbox" id="termsAgreeCheckbox">
+                    <span>I have read and agree to the Terms &amp; Agreement.</span>
+                </label>
+                <button type="button" class="auth-submit-btn" id="termsAgreeBtn" disabled>Agree &amp; Continue</button>
             </div>
 
             <!-- STEP: ACCESS GRANTED -->
@@ -3687,20 +3734,11 @@
             </div>
             <div class="settings-tabs">
                 <button class="settings-tab-btn active" data-tab="general">General</button>
-                <button class="settings-tab-btn" data-tab="apikeys">API Keys</button>
+                <button class="settings-tab-btn" data-tab="account">Account</button>
+                <button class="settings-tab-btn" data-tab="billing">Billing</button>
             </div>
 
             <div class="settings-tab-panel active" id="settingsTabGeneral">
-                <div class="settings-section-title">Account</div>
-                <div class="api-key-card">
-                    <div class="api-key-card-top">
-                        <div>
-                            <div class="api-key-name">User Account</div>
-                            <div class="api-key-value">Local session — nothing is sent to a server except model API calls.</div>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="settings-section-title">Plan &amp; Usage</div>
                 <div class="api-key-card">
                     <div class="api-key-card-top">
@@ -3717,13 +3755,87 @@
                     <div class="api-key-card-top">
                         <div>
                             <div class="api-key-name">Cavdo AI</div>
-                            <div class="api-key-value">Model availability and API key health can be checked in the "API Keys" tab.</div>
+                            <div class="api-key-value">Your data is synced to your account and available on any device you log into.</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="settings-tab-panel" id="settingsTabApiKeys">
+            <div class="settings-tab-panel" id="settingsTabAccount">
+                <div class="settings-section-title">Profile</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Username</div>
+                            <div class="api-key-value" id="accountUsernameLabel">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section-title">Change Password</div>
+                <div class="api-key-card">
+                    <div class="own-key-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+                        <input type="password" id="accountCurrentPasswordInput" placeholder="Current password" autocomplete="current-password">
+                        <input type="password" id="accountNewPasswordInput" placeholder="New password (min 6 characters)" autocomplete="new-password">
+                        <button class="own-key-use-btn" id="accountChangePasswordBtn" style="align-self:flex-start;">Update Password</button>
+                    </div>
+                    <div class="own-key-note" id="accountPasswordStatus"></div>
+                </div>
+
+                <div class="settings-section-title">Session</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Log out</div>
+                            <div class="api-key-value">Sign out of Cavdo AI on this device.</div>
+                        </div>
+                        <button class="api-key-check-btn" id="accountLogoutBtn">Log out</button>
+                    </div>
+                </div>
+
+                <div class="settings-section-title" style="color:#ff5c5c;">Danger Zone</div>
+                <div class="api-key-card" style="border-color:rgba(255,92,92,0.35);">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Delete Account</div>
+                            <div class="api-key-value">Permanently deletes your account and all synced data. This cannot be undone.</div>
+                        </div>
+                        <button class="api-key-check-btn" id="accountDeleteBtn" style="border-color:#ff5c5c;color:#ff5c5c;">Delete Account</button>
+                    </div>
+                    <div class="own-key-note" id="accountDeleteStatus"></div>
+                </div>
+            </div>
+
+            <div class="settings-tab-panel" id="settingsTabBilling">
+                <div class="settings-section-title">Current Plan</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name"><span id="billingPlanNameLabel">Free Plan</span><span class="plan-badge" id="billingPlanBadge">FREE</span></div>
+                            <div class="api-key-value" id="billingPlanPrice"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section-title">Billing Period</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Active From</div>
+                            <div class="api-key-value" id="billingStartDate">—</div>
+                        </div>
+                    </div>
+                    <div class="api-key-card-top" style="margin-top:10px;">
+                        <div>
+                            <div class="api-key-name">Active Until</div>
+                            <div class="api-key-value" id="billingEndDate">—</div>
+                        </div>
+                    </div>
+                    <div class="own-key-note" id="billingStatusNote">Your plan will automatically switch back to Free once this period ends.</div>
+                </div>
+            </div>
+
+            <div class="settings-tab-panel" id="settingsTabApiKeys" style="display:none !important;">
                 <div class="settings-section-title">Gemini API</div>
                 <div class="api-key-card">
                     <div class="api-key-card-top">
@@ -4223,7 +4335,21 @@
         ];
 
         const ACTIVE_PLAN_STORAGE_KEY = 'cavdo_active_plan';
+        const PLAN_START_STORAGE_KEY = 'cavdo_plan_start';
+        const PLAN_END_STORAGE_KEY = 'cavdo_plan_end';
+        const PLAN_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // billing period length: 30 days
         const GENERATION_USAGE_STORAGE_KEY = 'cavdo_generation_usage';
+
+        // If a paid plan's billing period has ended, drop back to Free.
+        // Called on load and whenever Settings → Billing is opened.
+        function checkPlanExpiry() {
+            const planKey = localStorage.getItem(ACTIVE_PLAN_STORAGE_KEY) || 'free';
+            if (planKey === 'free') return;
+            const end = parseInt(localStorage.getItem(PLAN_END_STORAGE_KEY), 10);
+            if (end && Date.now() > end) {
+                setActivePlan('free');
+            }
+        }
 
         function getActivePlanKey() {
             return localStorage.getItem(ACTIVE_PLAN_STORAGE_KEY) || 'free';
@@ -4319,6 +4445,14 @@
         // generation counter so the new plan starts with a clean slate.
         function setActivePlan(planKey) {
             localStorage.setItem(ACTIVE_PLAN_STORAGE_KEY, planKey);
+            if (planKey === 'free') {
+                localStorage.removeItem(PLAN_START_STORAGE_KEY);
+                localStorage.removeItem(PLAN_END_STORAGE_KEY);
+            } else {
+                const now = Date.now();
+                localStorage.setItem(PLAN_START_STORAGE_KEY, String(now));
+                localStorage.setItem(PLAN_END_STORAGE_KEY, String(now + PLAN_DURATION_MS));
+            }
             localStorage.removeItem(FREE_USAGE_STORAGE_KEY);
             localStorage.removeItem(FREE_LOCK_STORAGE_KEY);
             localStorage.removeItem(FREE_ULTIMATE_ROTATED_KEY);
@@ -4927,11 +5061,19 @@
             if (btn) { btn.disabled = false; btn.textContent = 'Check All'; }
         }
 
+        const SETTINGS_TAB_PANEL_IDS = {
+            general: 'settingsTabGeneral',
+            account: 'settingsTabAccount',
+            billing: 'settingsTabBilling'
+        };
+
         function openSettingsModal() {
             refreshOwnKeyUI();
             renderGeminiModelStatusList();
             renderFreeUsagePanel();
             refreshPollinationsKeyUI();
+            renderAccountTab();
+            renderBillingTab();
             document.getElementById('settingsModalOverlay').classList.add('show');
         }
 
@@ -4950,9 +5092,123 @@
                 document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.settings-tab-panel').forEach(p => p.classList.remove('active'));
                 btn.classList.add('active');
-                document.getElementById(btn.dataset.tab === 'general' ? 'settingsTabGeneral' : 'settingsTabApiKeys').classList.add('active');
+                var panelId = SETTINGS_TAB_PANEL_IDS[btn.dataset.tab] || 'settingsTabGeneral';
+                document.getElementById(panelId).classList.add('active');
             });
         });
+
+        // ---------------- Account tab ----------------
+        function renderAccountTab() {
+            var label = document.getElementById('accountUsernameLabel');
+            var session = (typeof getCurrentSession === 'function') ? getCurrentSession() : null;
+            if (label) label.textContent = (session && session.username) ? session.username : '—';
+            var status = document.getElementById('accountPasswordStatus');
+            if (status) status.textContent = '';
+            var delStatus = document.getElementById('accountDeleteStatus');
+            if (delStatus) delStatus.textContent = '';
+        }
+
+        document.getElementById('accountLogoutBtn').onclick = function () {
+            closeSettingsModal();
+            if (typeof window.cavdoLogOut === 'function') window.cavdoLogOut();
+        };
+
+        document.getElementById('accountChangePasswordBtn').onclick = async function () {
+            var statusEl = document.getElementById('accountPasswordStatus');
+            var currentPass = document.getElementById('accountCurrentPasswordInput').value;
+            var newPass = document.getElementById('accountNewPasswordInput').value;
+            var user = cavdoAuth.currentUser;
+
+            if (!user) { statusEl.textContent = 'You need to be logged in to change your password.'; return; }
+            if (!currentPass || !newPass) { statusEl.textContent = 'Please fill in both fields.'; return; }
+            if (newPass.length < 6) { statusEl.textContent = 'New password must be at least 6 characters.'; return; }
+
+            statusEl.textContent = 'Updating…';
+            try {
+                var cred = firebase.auth.EmailAuthProvider.credential(user.email, currentPass);
+                await user.reauthenticateWithCredential(cred);
+                await user.updatePassword(newPass);
+                statusEl.textContent = 'Password updated successfully.';
+                document.getElementById('accountCurrentPasswordInput').value = '';
+                document.getElementById('accountNewPasswordInput').value = '';
+            } catch (err) {
+                if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                    statusEl.textContent = 'Current password is incorrect.';
+                } else {
+                    statusEl.textContent = 'Could not update password: ' + (err.message || 'unknown error');
+                }
+            }
+        };
+
+        document.getElementById('accountDeleteBtn').onclick = async function () {
+            var statusEl = document.getElementById('accountDeleteStatus');
+            var user = cavdoAuth.currentUser;
+            if (!user) { statusEl.textContent = 'You need to be logged in to delete your account.'; return; }
+
+            var confirmed = window.confirm('This will permanently delete your account and all synced data. This cannot be undone. Continue?');
+            if (!confirmed) return;
+            var pass = window.prompt('For security, please re-enter your password to confirm deletion:');
+            if (!pass) return;
+
+            statusEl.textContent = 'Deleting…';
+            try {
+                var cred = firebase.auth.EmailAuthProvider.credential(user.email, pass);
+                await user.reauthenticateWithCredential(cred);
+
+                var col = cavdoDb.collection('users').doc(user.uid).collection('data');
+                var snap = await col.get();
+                var batch = cavdoDb.batch();
+                snap.forEach(function (doc) { batch.delete(doc.ref); });
+                await batch.commit();
+                await cavdoDb.collection('users').doc(user.uid).delete();
+                await user.delete();
+
+                CAVDO_SYNC.stop();
+                closeSettingsModal();
+                localStorage.clear();
+                window.location.reload();
+            } catch (err) {
+                if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                    statusEl.textContent = 'Incorrect password — account was not deleted.';
+                } else {
+                    statusEl.textContent = 'Could not delete account: ' + (err.message || 'unknown error');
+                }
+            }
+        };
+
+        // ---------------- Billing tab ----------------
+        function formatBillingDate(ts) {
+            if (!ts) return '—';
+            try { return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }); }
+            catch (e) { return '—'; }
+        }
+
+        function renderBillingTab() {
+            checkPlanExpiry();
+            var plan = getActivePlan();
+            var nameLabel = document.getElementById('billingPlanNameLabel');
+            var badge = document.getElementById('billingPlanBadge');
+            var priceEl = document.getElementById('billingPlanPrice');
+            if (nameLabel) nameLabel.textContent = plan.label;
+            if (badge) badge.textContent = plan.key === 'free' ? 'FREE' : plan.key.replace('plan_', '').toUpperCase();
+            if (priceEl) priceEl.textContent = plan.key === 'free' ? 'No cost.' : (plan.priceLabel + ' for this billing period.');
+
+            var start = localStorage.getItem(PLAN_START_STORAGE_KEY);
+            var end = localStorage.getItem(PLAN_END_STORAGE_KEY);
+            var startEl = document.getElementById('billingStartDate');
+            var endEl = document.getElementById('billingEndDate');
+            var noteEl = document.getElementById('billingStatusNote');
+
+            if (plan.key === 'free') {
+                if (startEl) startEl.textContent = '—';
+                if (endEl) endEl.textContent = '—';
+                if (noteEl) noteEl.textContent = 'The Free plan has no expiry. Upgrade from the plan menu to unlock more usage for a billing period.';
+            } else {
+                if (startEl) startEl.textContent = formatBillingDate(start ? parseInt(start, 10) : null);
+                if (endEl) endEl.textContent = formatBillingDate(end ? parseInt(end, 10) : null);
+                if (noteEl) noteEl.textContent = 'Your plan will automatically switch back to Free once the "Active Until" date passes.';
+            }
+        }
 
         document.getElementById('checkAllGeminiBtn').onclick = checkAllGeminiTiers;
         document.getElementById('useOwnKeyBtn').onclick = useOwnGeminiKey;
@@ -9661,15 +9917,137 @@
 
     <script>
         // ============================================================================
+        // CAVDO AI — FIREBASE (real accounts + cross-device data sync)
+        // ----------------------------------------------------------------------------
+        // Auth is now handled server-side by Firebase Authentication, so accounts
+        // and login work from ANY device/browser, not just the one that created
+        // them. Firestore then stores a copy of everything this app already keeps
+        // in localStorage, keyed to the signed-in user's account.
+        //
+        // Rather than rewriting every single localStorage.getItem/setItem call in
+        // this file (there are 100+), CAVDO_SYNC transparently wraps them:
+        //   - On login, it downloads that user's saved data from Firestore and
+        //     writes it into real localStorage BEFORE the rest of the app reads it.
+        //   - After that, every localStorage.setItem/removeItem the app already
+        //     makes is mirrored up to Firestore automatically in the background.
+        // The rest of the app's code doesn't need to change at all.
+        // ============================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCJ7-AEw-e7STx8yCFLzNWnVr-TtgolsBQ",
+            authDomain: "cavdo-ai-76731.firebaseapp.com",
+            projectId: "cavdo-ai-76731",
+            storageBucket: "cavdo-ai-76731.firebasestorage.app",
+            messagingSenderId: "1073560074472",
+            appId: "1:1073560074472:web:4ebecd9694aacbae24315d",
+            measurementId: "G-4YGJXTLLN0"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const cavdoAuth = firebase.auth();
+        const cavdoDb = firebase.firestore();
+
+        // Firebase Auth needs an email format — this app uses usernames, so we
+        // derive a stable, private pseudo-email from the username. It's never
+        // shown to the user and has nothing to do with a real inbox.
+        function usernameToEmail(username) {
+            return username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '_') + '@cavdo-users.app';
+        }
+
+        const CAVDO_SYNC = (function () {
+            const nativeSetItem = Storage.prototype.setItem.bind(localStorage);
+            const nativeRemoveItem = Storage.prototype.removeItem.bind(localStorage);
+            let uid = null;
+            let enabled = false;
+            const pendingWrites = new Map(); // key -> value|null(delete)
+            let flushTimer = null;
+
+            // Keys we never want to push to the cloud (per-device/session only).
+            const LOCAL_ONLY_KEYS = new Set([
+                'cavdoAccounts', 'cavdoGoogleAccounts', 'cavdoCurrentUser',
+                'cavdo_own_gemini_key', 'cavdo_hf_token', 'cavdo_elevenlabs_key', 'cavdo_pollinations_key'
+            ]);
+
+            function docIdFor(key) {
+                // Firestore doc IDs can't contain "/" and can't be empty.
+                return encodeURIComponent(key).slice(0, 1500) || '_empty_';
+            }
+
+            function queueFlush() {
+                if (flushTimer) clearTimeout(flushTimer);
+                flushTimer = setTimeout(flush, 1200);
+            }
+
+            async function flush() {
+                if (!enabled || !uid || pendingWrites.size === 0) return;
+                const batch = cavdoDb.batch();
+                const entries = Array.from(pendingWrites.entries());
+                pendingWrites.clear();
+                const col = cavdoDb.collection('users').doc(uid).collection('data');
+                entries.forEach(function ([key, value]) {
+                    const ref = col.doc(docIdFor(key));
+                    if (value === null) {
+                        batch.delete(ref);
+                    } else {
+                        batch.set(ref, { key: key, value: value, updatedAt: Date.now() });
+                    }
+                });
+                try { await batch.commit(); } catch (e) { console.warn('Cavdo sync: cloud save failed', e); }
+            }
+
+            // Wrap localStorage so every write the rest of the app already makes
+            // also gets mirrored to Firestore in the background.
+            Storage.prototype.setItem = function (key, value) {
+                nativeSetItem(key, value);
+                if (enabled && !LOCAL_ONLY_KEYS.has(key)) {
+                    pendingWrites.set(key, value);
+                    queueFlush();
+                }
+            };
+            Storage.prototype.removeItem = function (key) {
+                nativeRemoveItem(key);
+                if (enabled && !LOCAL_ONLY_KEYS.has(key)) {
+                    pendingWrites.set(key, null);
+                    queueFlush();
+                }
+            };
+
+            async function hydrate(userId) {
+                uid = userId;
+                try {
+                    const snap = await cavdoDb.collection('users').doc(uid).collection('data').get();
+                    snap.forEach(function (doc) {
+                        const data = doc.data();
+                        if (data && typeof data.key === 'string') nativeSetItem(data.key, data.value);
+                    });
+                } catch (e) {
+                    console.warn('Cavdo sync: cloud load failed, continuing with local data only', e);
+                }
+                enabled = true;
+            }
+
+            async function flushNow() { await flush(); }
+
+            function stop() {
+                enabled = false;
+                uid = null;
+                pendingWrites.clear();
+                if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+            }
+
+            window.addEventListener('beforeunload', function () { if (pendingWrites.size) flush(); });
+
+            return { hydrate: hydrate, stop: stop, flushNow: flushNow };
+        })();
+
+    </script>
+
+    <script>
+        // ============================================================================
         // CAVDO AI — AUTH SYSTEM
         // ----------------------------------------------------------------------------
-        // Username/password: REAL and fully working. Accounts are created, SHA-256
-        // hashed (via the browser's built-in crypto.subtle — the password itself is
-        // never stored), and persisted in this browser's localStorage. Logging back
-        // in re-checks the hash, wrong passwords/usernames are rejected for real, and
-        // duplicate usernames are blocked at registration. There's no server, so
-        // accounts live only on this device/browser — they won't follow you to
-        // another computer, and clearing site data clears them.
+        // Username/password: now backed by real Firebase Authentication, so an
+        // account created on one device works on any device. The pre-existing
+        // local hashed-password path below is kept only as an offline/legacy
+        // fallback for sessions created before this change.
         //
         // "Log in / Continue with Google": to make this real (not a mock) it uses
         // Google Identity Services and returns an actual signed Google ID token that
@@ -9691,6 +10069,7 @@
             var steps = {
                 login: document.getElementById('authStepLogin'),
                 registerDetails: document.getElementById('authStepRegisterDetails'),
+                terms: document.getElementById('authStepTerms'),
                 access: document.getElementById('authStepAccess')
             };
 
@@ -9767,6 +10146,7 @@
             function unlockApp() {
                 document.body.classList.remove('pre-auth');
                 overlay.classList.add('hidden');
+                if (typeof checkPlanExpiry === 'function') checkPlanExpiry();
             }
 
             function resetProfileUI() {
@@ -9778,6 +10158,8 @@
 
             function logOut() {
                 try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+                CAVDO_SYNC.stop();
+                cavdoAuth.signOut().catch(function () {});
                 resetProfileUI();
                 document.getElementById('loginUsername').value = '';
                 document.getElementById('loginPassword').value = '';
@@ -9786,6 +10168,7 @@
                 overlay.classList.remove('hidden');
                 document.body.classList.add('pre-auth');
             }
+            window.cavdoLogOut = logOut;
 
             // ---------------- Profile dropdown / logout ----------------
             document.getElementById('userProfileBtn').addEventListener('click', function (e) {
@@ -9804,39 +10187,38 @@
                 logOut();
             });
 
-            // Resume an existing session (real persisted login) if one exists.
-            // Important: a session token alone isn't proof of registration — if
-            // it's a password-based session, re-check that the account it points
-            // to still actually exists before letting it straight into the app.
-            (function tryResumeSession() {
+            // Resume an existing session on reload. Firebase Auth persists the
+            // real login server-side, so onAuthStateChanged fires with the
+            // signed-in user (if any) as soon as it's ready to tell us — this
+            // is what makes "still logged in" work across devices/browsers
+            // too, not just across reloads of the same one.
+            var resumedOnce = false;
+            cavdoAuth.onAuthStateChanged(async function (fbUser) {
+                if (resumedOnce) return; // only auto-resume once, on first load
+                resumedOnce = true;
+                if (!fbUser) return;
+
                 try {
                     var raw = localStorage.getItem(SESSION_KEY);
-                    if (!raw) return;
-                    var session = JSON.parse(raw);
-                    if (!session || !session.username) return;
+                    var session = raw ? JSON.parse(raw) : null;
 
-                    if (session.via === 'password') {
-                        var accounts = getAccounts();
-                        var account = accounts[session.username.toLowerCase()];
-                        if (!account) {
-                            // Stale session with no matching account — don't grant
-                            // entrance, clear it and fall through to the login screen.
-                            localStorage.removeItem(SESSION_KEY);
-                            return;
-                        }
-                    } else if (session.via === 'google') {
+                    if (session && session.via === 'google') {
+                        // Google-linked sessions aren't Firebase-Auth sessions;
+                        // keep the existing local check for those.
                         var googleAccounts = getGoogleAccounts();
                         var email = (session.email || '').toLowerCase();
-                        if (!email || !googleAccounts[email]) {
-                            localStorage.removeItem(SESSION_KEY);
-                            return;
-                        }
+                        if (!email || !googleAccounts[email]) { localStorage.removeItem(SESSION_KEY); return; }
+                        applyProfileToUI(session.username);
+                        unlockApp();
+                        return;
                     }
 
-                    applyProfileToUI(session.username);
+                    var username = fbUser.displayName || (session && session.username) || fbUser.email.split('@')[0];
+                    await CAVDO_SYNC.hydrate(fbUser.uid);
+                    setCurrentUser(username, { via: 'password', uid: fbUser.uid });
                     unlockApp();
                 } catch (e) {}
-            })();
+            });
 
             // ---------------- Google Identity Services (real sign-in, optional setup) ----------------
             var googleReadyPromise = null;
@@ -9954,37 +10336,24 @@
                     return;
                 }
 
-                // Already logged in as this exact user and hitting "Log in" again
-                // (e.g. a stale tab, double submit) — don't re-check credentials,
-                // just resume the existing session straight into the app.
-                var existingSession = getCurrentSession();
-                if (existingSession && existingSession.username &&
-                    existingSession.username.toLowerCase() === user.toLowerCase()) {
-                    errEl.textContent = '';
-                    unlockApp();
-                    return;
-                }
-
-                var accounts = getAccounts();
-                var account = accounts[user.toLowerCase()];
-                if (!account) {
-                    // Not registered — say so explicitly, don't let them through.
-                    errEl.textContent = 'This username isn\'t registered yet. Please register first.';
-                    return;
-                }
-
-                btn.disabled = true;
-                var hash = await hashPassword(pass);
-                btn.disabled = false;
-
-                if (hash !== account.passwordHash) {
-                    errEl.textContent = 'Incorrect password.';
-                    return;
-                }
-
                 errEl.textContent = '';
-                setCurrentUser(account.username, { via: 'password' });
-                unlockApp();
+                btn.disabled = true;
+                try {
+                    var cred = await cavdoAuth.signInWithEmailAndPassword(usernameToEmail(user), pass);
+                    await CAVDO_SYNC.hydrate(cred.user.uid);
+                    setCurrentUser(user, { via: 'password', uid: cred.user.uid });
+                    unlockApp();
+                } catch (err) {
+                    if (err.code === 'auth/user-not-found') {
+                        errEl.textContent = 'This username isn\'t registered yet. Please register first.';
+                    } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                        errEl.textContent = 'Incorrect username or password.';
+                    } else {
+                        errEl.textContent = 'Could not log in: ' + (err.message || 'unknown error');
+                    }
+                } finally {
+                    btn.disabled = false;
+                }
             });
 
             // --- Register: details (username + password + age, reached only
@@ -10007,11 +10376,6 @@
                     errEl.textContent = 'Please choose a username.';
                     return;
                 }
-                var accounts = getAccounts();
-                if (accounts[user.toLowerCase()]) {
-                    errEl.textContent = 'That username is already taken. Try another, or log in instead.';
-                    return;
-                }
                 if (!pass || pass.length < 6) {
                     errEl.textContent = 'Password must be at least 6 characters.';
                     return;
@@ -10032,38 +10396,70 @@
                 errEl.textContent = '';
 
                 btn.disabled = true;
-                var passwordHash = await hashPassword(pass);
-                btn.disabled = false;
-
-                accounts[user.toLowerCase()] = {
-                    username: user,
-                    passwordHash: passwordHash,
-                    age: ageNum,
-                    email: pendingGoogleRegistration ? pendingGoogleRegistration.email : undefined,
-                    createdAt: Date.now()
-                };
-                saveAccounts(accounts);
-
-                // Link this new account to the Google identity that started
-                // this flow, so "Continue with Google" recognizes it next time.
-                if (pendingGoogleRegistration) {
-                    var googleAccounts = getGoogleAccounts();
-                    googleAccounts[pendingGoogleRegistration.email] = {
-                        email: pendingGoogleRegistration.email,
-                        name: pendingGoogleRegistration.name,
+                try {
+                    var cred = await cavdoAuth.createUserWithEmailAndPassword(usernameToEmail(user), pass);
+                    await cred.user.updateProfile({ displayName: user });
+                    await cavdoDb.collection('users').doc(cred.user.uid).set({
                         username: user,
-                        createdAt: Date.now()
-                    };
-                    saveGoogleAccounts(googleAccounts);
-                    pendingGoogleRegistration = null;
+                        age: ageNum,
+                        googleEmail: pendingGoogleRegistration ? pendingGoogleRegistration.email : null,
+                        createdAt: Date.now(),
+                        termsAgreedAt: null
+                    });
+                    await CAVDO_SYNC.hydrate(cred.user.uid);
+
+                    if (pendingGoogleRegistration) {
+                        var googleAccounts = getGoogleAccounts();
+                        googleAccounts[pendingGoogleRegistration.email] = {
+                            email: pendingGoogleRegistration.email,
+                            name: pendingGoogleRegistration.name,
+                            username: user,
+                            createdAt: Date.now()
+                        };
+                        saveGoogleAccounts(googleAccounts);
+                        pendingGoogleRegistration = null;
+                    }
+
+                    setCurrentUser(user, { via: 'password', uid: cred.user.uid });
+                    pendingNewAccountUid = cred.user.uid;
+                    showStep('terms');
+                } catch (err) {
+                    if (err.code === 'auth/email-already-in-use') {
+                        errEl.textContent = 'That username is already taken. Try another, or log in instead.';
+                    } else if (err.code === 'auth/weak-password') {
+                        errEl.textContent = 'Please choose a stronger password.';
+                    } else {
+                        errEl.textContent = 'Could not create account: ' + (err.message || 'unknown error');
+                    }
+                } finally {
+                    btn.disabled = false;
                 }
-
-                setCurrentUser(user, { via: 'password' });
-
-                document.getElementById('accessTitle').textContent = 'Welcome, ' + user + '!';
-                document.getElementById('accessSubtitle').textContent = 'Your account is ready. You now have access to Cavdo AI.';
-                showStep('access');
             });
+
+            // --- Terms & Agreement (mandatory, shown right after registration) ---
+            var pendingNewAccountUid = null;
+            var termsAgreeCheckbox = document.getElementById('termsAgreeCheckbox');
+            var termsAgreeBtn = document.getElementById('termsAgreeBtn');
+            if (termsAgreeCheckbox && termsAgreeBtn) {
+                termsAgreeCheckbox.addEventListener('change', function () {
+                    termsAgreeBtn.disabled = !termsAgreeCheckbox.checked;
+                });
+            }
+            if (termsAgreeBtn) {
+                termsAgreeBtn.addEventListener('click', async function () {
+                    if (pendingNewAccountUid) {
+                        try {
+                            await cavdoDb.collection('users').doc(pendingNewAccountUid).set(
+                                { termsAgreedAt: Date.now() }, { merge: true }
+                            );
+                        } catch (e) {}
+                    }
+                    var user = getCurrentSession() ? getCurrentSession().username : '';
+                    document.getElementById('accessTitle').textContent = 'Welcome, ' + user + '!';
+                    document.getElementById('accessSubtitle').textContent = 'Your account is ready. You now have access to Cavdo AI.';
+                    showStep('access');
+                });
+            }
 
             // --- Access granted ---
             document.getElementById('enterAppBtn').addEventListener('click', function () {

@@ -10524,6 +10524,20 @@
             // signed-in user (if any) as soon as it's ready to tell us — this
             // is what makes "still logged in" work across devices/browsers
             // too, not just across reloads of the same one.
+            //
+            // Kicked off immediately (not awaited yet) so it's already in
+            // flight by the time onAuthStateChanged fires below — otherwise
+            // the two race, and onAuthStateChanged (which has nothing to wait
+            // on) reliably wins, unlocking the app as a plain resume before
+            // this ever gets a chance to notice it was actually a brand-new
+            // Google sign-in that needs the username/age step.
+            var redirectResultPromise = cavdoAuth.getRedirectResult().catch(function (err) {
+                console.error('Google redirect sign-in failed:', err);
+                var errEl = document.getElementById('loginGoogleError');
+                if (errEl) errEl.textContent = 'Could not sign in with Google: ' + (err.message || 'unknown error');
+                return null;
+            });
+
             var resumedOnce = false;
             cavdoAuth.onAuthStateChanged(async function (fbUser) {
                 if (resumedOnce) return; // only auto-resume once, on first load
@@ -10531,6 +10545,16 @@
                 if (!fbUser) return;
 
                 try {
+                    var redirectResult = await redirectResultPromise;
+                    if (redirectResult && redirectResult.user) {
+                        // This resume IS a Google redirect completing — hand off
+                        // to finishGoogleSignIn so a first-time sign-in is routed
+                        // to the username/age step instead of being unlocked
+                        // straight into the app like a plain returning session.
+                        await finishGoogleSignIn(redirectResult, document.getElementById('loginGoogleError'));
+                        return;
+                    }
+
                     var raw = localStorage.getItem(SESSION_KEY);
                     var session = raw ? JSON.parse(raw) : null;
                     // Google sign-in now also produces a real Firebase Auth
@@ -10546,22 +10570,6 @@
                     setCurrentUser(username, { via: via, uid: fbUser.uid });
                     unlockApp();
                 } catch (e) {}
-            });
-
-            // Picks up the result of signInWithGoogleRedirect() above, once the
-            // browser navigates back here from accounts.google.com. Must run
-            // before/alongside the onAuthStateChanged resume below, and mark
-            // resumedOnce so that listener doesn't also try to handle the same
-            // sign-in a second time (it can't tell a fresh Google sign-in from
-            // a plain page reload — getRedirectResult can).
-            cavdoAuth.getRedirectResult().then(async function (result) {
-                if (!result || !result.user) return;
-                resumedOnce = true;
-                await finishGoogleSignIn(result, document.getElementById('loginGoogleError'));
-            }).catch(function (err) {
-                console.error('Google redirect sign-in failed:', err);
-                var errEl = document.getElementById('loginGoogleError');
-                if (errEl) errEl.textContent = 'Could not sign in with Google: ' + (err.message || 'unknown error');
             });
 
             var googleReadyPromise = null;

@@ -10091,8 +10091,20 @@
                 }
             };
 
+            // Wipes every locally-stored app key EXCEPT the per-device-only
+            // ones (LOCAL_ONLY_KEYS), so a fresh/different account never
+            // inherits whatever the previous account left behind in this
+            // browser's localStorage. Without this, switching accounts on
+            // the same device made every account "see" the same data.
+            function clearSyncedLocalData() {
+                Object.keys(localStorage).forEach(function (key) {
+                    if (!LOCAL_ONLY_KEYS.has(key)) nativeRemoveItem(key);
+                });
+            }
+
             async function hydrate(userId) {
                 uid = userId;
+                clearSyncedLocalData();
                 try {
                     const snap = await withTimeout(
                         cavdoDb.collection('users').doc(uid).collection('data').get(),

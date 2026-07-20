@@ -3478,13 +3478,15 @@
                     <label for="registerUsername">Username</label>
                     <input type="text" id="registerUsername" placeholder="Choose a username" autocomplete="username">
                 </div>
-                <div class="auth-field">
-                    <label for="registerPassword">Password</label>
-                    <input type="password" id="registerPassword" placeholder="Create a password" autocomplete="new-password">
-                </div>
-                <div class="auth-field">
-                    <label for="registerConfirmPassword">Confirm password</label>
-                    <input type="password" id="registerConfirmPassword" placeholder="Re-enter your password" autocomplete="new-password">
+                <div id="registerPasswordFields">
+                    <div class="auth-field">
+                        <label for="registerPassword">Password</label>
+                        <input type="password" id="registerPassword" placeholder="Create a password" autocomplete="new-password">
+                    </div>
+                    <div class="auth-field">
+                        <label for="registerConfirmPassword">Confirm password</label>
+                        <input type="password" id="registerConfirmPassword" placeholder="Re-enter your password" autocomplete="new-password">
+                    </div>
                 </div>
                 <div class="auth-field">
                     <label for="registerAge">Age</label>
@@ -10348,22 +10350,17 @@
                 try {
                     var raw = localStorage.getItem(SESSION_KEY);
                     var session = raw ? JSON.parse(raw) : null;
-
-                    if (session && session.via === 'google') {
-                        // Google-linked sessions aren't Firebase-Auth sessions;
-                        // keep the existing local check for those.
-                        var googleAccounts = getGoogleAccounts();
-                        var email = (session.email || '').toLowerCase();
-                        if (!email || !googleAccounts[email]) { localStorage.removeItem(SESSION_KEY); return; }
-                        applyProfileToUI(session.username);
-                        unlockApp();
-                        return;
-                    }
-
+                    // Google sign-in now also produces a real Firebase Auth
+                    // session (see handleGoogleCredential), so there's no need
+                    // for — and no safety in — a separate local-trust branch
+                    // here. Every resume goes through the same real hydrate,
+                    // keyed to fbUser.uid, whether the person originally
+                    // signed in with a password or with Google.
+                    var via = (session && session.via === 'google') ? 'google' : 'password';
                     var username = fbUser.displayName || (session && session.username) || fbUser.email.split('@')[0];
                     await CAVDO_SYNC.hydrate(fbUser.uid);
                     if (typeof toggleInterface === 'function') toggleInterface(false);
-                    setCurrentUser(username, { via: 'password', uid: fbUser.uid });
+                    setCurrentUser(username, { via: via, uid: fbUser.uid });
                     unlockApp();
                 } catch (e) {}
             });
@@ -10396,36 +10393,74 @@
                 return JSON.parse(json);
             }
 
-            // Holds the Google identity (email/name) while a first-time Google
-            // sign-in is waiting on the username/password/age step below.
+            // Holds the Google identity (uid/email/name) while a first-time
+            // Google sign-in is waiting on the username/age step below.
             var pendingGoogleRegistration = null;
 
-            function handleGoogleCredential(response, errEl) {
-                var payload = decodeGoogleJwt(response.credential);
-                var email = (payload.email || '').toLowerCase();
-
-                if (!email) {
-                    if (errEl) errEl.textContent = 'Could not read your Google account\'s email. Please try again.';
-                    return;
-                }
-
-                var googleAccounts = getGoogleAccounts();
-                var existing = googleAccounts[email];
-
-                if (existing) {
-                    // Already registered with this Google account — log straight in.
-                    if (errEl) errEl.textContent = '';
-                    setCurrentUser(existing.username || payload.name || payload.email, { email: email, via: 'google' });
-                    unlockApp();
-                    return;
-                }
-
-                // First time seeing this Google account — collect a username,
-                // password, and age before the account actually exists.
-                pendingGoogleRegistration = { email: email, name: payload.name || '' };
+            // ROOT FIX: this used to only check a LOCAL-ONLY map (cavdoGoogleAccounts)
+            // and, if "known", just unlock the app — it never actually signed the
+            // person into Firebase Auth and never called CAVDO_SYNC.hydrate(). That
+            // meant every Google account on a given browser kept reading/writing
+            // whatever data happened to already be sitting in that browser's
+            // localStorage — so 10 Gmail accounts on one PC all shared one set of
+            // chats: creating a chat in one "leaked" it to the rest, and deleting a
+            // chat in one deleted it for all of them.
+            //
+            // Fix: use the Google ID token to sign into REAL Firebase Auth
+            // (firebase.auth.GoogleAuthProvider). That gives each Google account a
+            // stable, unique Firebase uid — the same uid every time that same
+            // Google account signs in, on any device — and lets us call
+            // CAVDO_SYNC.hydrate(uid), which wipes this browser's local copy and
+            // loads ONLY that uid's data from Firestore before the app is unlocked.
+            async function handleGoogleCredential(response, errEl) {
                 if (errEl) errEl.textContent = '';
-                document.getElementById('registerDetailsError').textContent = '';
-                showStep('registerDetails');
+                try {
+                    var googleCredential = firebase.auth.GoogleAuthProvider.credential(response.credential);
+                    var cred = await cavdoAuth.signInWithCredential(googleCredential);
+                    var uid = cred.user.uid;
+                    var isNewUser = !!(cred.additionalUserInfo && cred.additionalUserInfo.isNewUser);
+
+                    if (isNewUser) {
+                        // First time this Google account has signed in anywhere —
+                        // collect a username + age before unlocking. No separate
+                        // password account is created: this Firebase Auth user
+                        // (tied to the Google account itself) IS the account.
+                        var payload = decodeGoogleJwt(response.credential);
+                        pendingGoogleRegistration = { uid: uid, email: (payload.email || '').toLowerCase(), name: payload.name || '' };
+                        document.getElementById('registerDetailsError').textContent = '';
+                        var pwFields = document.getElementById('registerPasswordFields');
+                        if (pwFields) pwFields.style.display = 'none';
+                        showStep('registerDetails');
+                        return;
+                    }
+
+                    // Returning user on this Google account — pull their saved
+                    // username (fast path: local cache; falls back to Firestore,
+                    // then to whatever Google itself gave us).
+                    var googleAccounts = getGoogleAccounts();
+                    var cached = googleAccounts[uid];
+                    var username = cached && cached.username;
+                    if (!username) {
+                        try {
+                            var profileSnap = await withTimeout(cavdoDb.collection('users').doc(uid).get(), 8000, 'Profile load');
+                            username = (profileSnap.exists && profileSnap.data().username) || cred.user.displayName || cred.user.email.split('@')[0];
+                        } catch (e) {
+                            username = cred.user.displayName || (cred.user.email || '').split('@')[0] || 'User';
+                        }
+                    }
+                    googleAccounts[uid] = { uid: uid, username: username, updatedAt: Date.now() };
+                    saveGoogleAccounts(googleAccounts);
+
+                    // This is the critical step the old code skipped entirely:
+                    // swap this browser's local data for THIS account's own data.
+                    await CAVDO_SYNC.hydrate(uid);
+                    if (typeof toggleInterface === 'function') toggleInterface(false);
+                    setCurrentUser(username, { via: 'google', uid: uid });
+                    unlockApp();
+                } catch (err) {
+                    console.error(err);
+                    if (errEl) errEl.textContent = 'Could not sign in with Google: ' + (err.message || 'unknown error');
+                }
             }
 
             var GOOGLE_REASON_MESSAGES = {
@@ -10509,7 +10544,15 @@
             // --- Register: details (username + password + age, reached only
             // after a first-time "Continue with Google" sign-in above) ---
             document.getElementById('backToRegisterStartBtn').addEventListener('click', function () {
+                // A Google-originated pending registration already has a real
+                // (but incomplete) Firebase Auth session — sign it back out so
+                // "Continue with Google" starts clean next time.
+                if (pendingGoogleRegistration && pendingGoogleRegistration.uid) {
+                    cavdoAuth.signOut().catch(function () {});
+                }
                 pendingGoogleRegistration = null;
+                var pwFields = document.getElementById('registerPasswordFields');
+                if (pwFields) pwFields.style.display = '';
                 document.getElementById('loginError').textContent = '';
                 showStep('login');
             });
@@ -10521,18 +10564,25 @@
                 var age = document.getElementById('registerAge').value.trim();
                 var errEl = document.getElementById('registerDetailsError');
                 var btn = this;
+                // Google-originated signups are already a real Firebase Auth
+                // session (see handleGoogleCredential) — no separate password
+                // account needed, and none should be created, or the person
+                // would end up with two disconnected accounts.
+                var isGoogleFlow = !!(pendingGoogleRegistration && pendingGoogleRegistration.uid);
 
                 if (!user) {
                     errEl.textContent = 'Please choose a username.';
                     return;
                 }
-                if (!pass || pass.length < 6) {
-                    errEl.textContent = 'Password must be at least 6 characters.';
-                    return;
-                }
-                if (pass !== confirmPass) {
-                    errEl.textContent = 'Passwords do not match.';
-                    return;
+                if (!isGoogleFlow) {
+                    if (!pass || pass.length < 6) {
+                        errEl.textContent = 'Password must be at least 6 characters.';
+                        return;
+                    }
+                    if (pass !== confirmPass) {
+                        errEl.textContent = 'Passwords do not match.';
+                        return;
+                    }
                 }
                 var ageNum = parseInt(age, 10);
                 if (!age || isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
@@ -10548,14 +10598,21 @@
                 btn.disabled = true;
                 var restoreBtn = cavdoSetLoading(btn, 'Creating account…');
                 try {
-                    var cred = await cavdoAuth.createUserWithEmailAndPassword(usernameToEmail(user), pass);
-                    await cred.user.updateProfile({ displayName: user });
+                    var uid;
+                    if (isGoogleFlow) {
+                        uid = pendingGoogleRegistration.uid;
+                        try { await cavdoAuth.currentUser.updateProfile({ displayName: user }); } catch (e) {}
+                    } else {
+                        var cred = await cavdoAuth.createUserWithEmailAndPassword(usernameToEmail(user), pass);
+                        await cred.user.updateProfile({ displayName: user });
+                        uid = cred.user.uid;
+                    }
 
-                    // Auth account is created at this point — don't let a slow
+                    // Auth account exists at this point — don't let a slow
                     // or failing cloud write block the person from continuing.
                     try {
                         await withTimeout(
-                            cavdoDb.collection('users').doc(cred.user.uid).set({
+                            cavdoDb.collection('users').doc(uid).set({
                                 username: user,
                                 age: ageNum,
                                 googleEmail: pendingGoogleRegistration ? pendingGoogleRegistration.email : null,
@@ -10569,23 +10626,22 @@
                         cavdoToast('⚠ Account created, but saving your profile to the cloud failed (' + (profileErr.code || profileErr.message || 'unknown error') + '). Check Firestore is created and its rules allow this.', 'warn');
                     }
 
-                    await CAVDO_SYNC.hydrate(cred.user.uid);
+                    await CAVDO_SYNC.hydrate(uid);
                     if (typeof toggleInterface === 'function') toggleInterface(false);
 
-                    if (pendingGoogleRegistration) {
-                        var googleAccounts = getGoogleAccounts();
-                        googleAccounts[pendingGoogleRegistration.email] = {
-                            email: pendingGoogleRegistration.email,
-                            name: pendingGoogleRegistration.name,
-                            username: user,
-                            createdAt: Date.now()
-                        };
-                        saveGoogleAccounts(googleAccounts);
-                        pendingGoogleRegistration = null;
-                    }
+                    var pwFields = document.getElementById('registerPasswordFields');
+                    if (pwFields) pwFields.style.display = '';
 
-                    setCurrentUser(user, { via: 'password', uid: cred.user.uid });
-                    pendingNewAccountUid = cred.user.uid;
+                    if (isGoogleFlow) {
+                        var googleAccounts = getGoogleAccounts();
+                        googleAccounts[uid] = { uid: uid, username: user, updatedAt: Date.now() };
+                        saveGoogleAccounts(googleAccounts);
+                        setCurrentUser(user, { via: 'google', uid: uid });
+                    } else {
+                        setCurrentUser(user, { via: 'password', uid: uid });
+                    }
+                    pendingGoogleRegistration = null;
+                    pendingNewAccountUid = uid;
                     showStep('terms');
                 } catch (err) {
                     if (err.code === 'auth/email-already-in-use') {

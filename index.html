@@ -9000,7 +9000,15 @@
             }
 
             const editIntentRegex = /\b(edit|remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add|this image|that image|the image|this photo|that photo|the photo|it,|to it|of it)\b/i;
-            const isImageEditRequest = !!(lastImageContext && selectedMode !== 'code' && editIntentRegex.test(lowerText));
+            // Words that mean the person is asking to edit something OTHER
+            // than the image (a document, PDF, webpage, plain text, code,
+            // or the AI's own written response) — even generic edit verbs
+            // like "add"/"change"/"remove" show up constantly in these
+            // requests too, so without this check any leftover image from
+            // earlier in the chat would wrongly hijack an unrelated
+            // text/code/PDF edit request into the "can't edit images" reply.
+            const nonImageEditContextRegex = /\b(pdf|document|doc|html|web ?page|website|text|response|message|paragraph|essay|article|file|code|script|sentence|title|heading|word|slide|presentation|spreadsheet)\b/i;
+            const isImageEditRequest = !!(lastImageContext && selectedMode !== 'code' && editIntentRegex.test(lowerText) && (hasImageWord || !nonImageEditContextRegex.test(lowerText)));
             if (isImageEditRequest) {
                 selectedMode = 'image';
             }

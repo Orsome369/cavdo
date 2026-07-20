@@ -10314,6 +10314,7 @@
 
                     var username = fbUser.displayName || (session && session.username) || fbUser.email.split('@')[0];
                     await CAVDO_SYNC.hydrate(fbUser.uid);
+                    if (typeof toggleInterface === 'function') toggleInterface(false);
                     setCurrentUser(username, { via: 'password', uid: fbUser.uid });
                     unlockApp();
                 } catch (e) {}
@@ -10441,6 +10442,7 @@
                 try {
                     var cred = await cavdoAuth.signInWithEmailAndPassword(usernameToEmail(user), pass);
                     await CAVDO_SYNC.hydrate(cred.user.uid);
+                    if (typeof toggleInterface === 'function') toggleInterface(false);
                     setCurrentUser(user, { via: 'password', uid: cred.user.uid });
                     unlockApp();
                 } catch (err) {
@@ -10520,6 +10522,7 @@
                     }
 
                     await CAVDO_SYNC.hydrate(cred.user.uid);
+                    if (typeof toggleInterface === 'function') toggleInterface(false);
 
                     if (pendingGoogleRegistration) {
                         var googleAccounts = getGoogleAccounts();

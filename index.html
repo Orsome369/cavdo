@@ -4181,6 +4181,18 @@
             localStorage.setItem(ACTIVE_TIER_STORAGE_KEY, MODEL_TIERS[0].key);
         }
 
+        // Same key rotation as advanceApiKey(), but keeps the currently
+        // active model tier instead of resetting to the top tier. Used so a
+        // paid-plan user who hasn't hit their own plan message limit keeps
+        // getting the model they're on (e.g. Ultimate) by trying the next
+        // built-in key, rather than being silently downgraded to a lower
+        // tier just because one key's real API quota ran out.
+        function advanceApiKeyKeepTier() {
+            activeKeyIndex = (activeKeyIndex + 1) % KEY_POOL.length;
+            localStorage.setItem(ACTIVE_KEY_STORAGE_KEY, String(activeKeyIndex));
+            localStorage.removeItem(EXHAUSTED_STORAGE_KEY);
+        }
+
         let activeTierIndex = getTierIndexByKey(localStorage.getItem(ACTIVE_TIER_STORAGE_KEY) || 'ultimate');
         if (isModelExhausted(MODEL_TIERS[activeTierIndex].key) || isFreeTierLocked(MODEL_TIERS[activeTierIndex].key)) {
             const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key) && !isFreeTierLocked(t.key));
@@ -9354,6 +9366,28 @@
                                 throw new Error("This Gemini API key's project has been denied access by Google — it isn't a rate limit, so switching model tiers won't help. Add a working key in Settings → API Keys, or fix/replace the key tied to the default project.");
                             }
                             if (isRateLimitResponse(response, responseData)) {
+                                // Paid plans: as long as the person's own plan
+                                // usage cap for this tier isn't reached yet,
+                                // try the next built-in key WITHOUT dropping
+                                // to a lower tier — they paid for e.g. Ultimate,
+                                // so a real API quota hiccup on one key
+                                // shouldn't silently swap them to Speed/Lite
+                                // when another key could still serve Ultimate.
+                                const activePlanKey = getActivePlanKey();
+                                const tierMsgLimit = getMessageLimitForTier(usedTier.key);
+                                const underPlanLimit = tierMsgLimit === null || tierMsgLimit === undefined
+                                    || getFreeUsageCount(usedTier.key) < tierMsgLimit;
+                                if (activePlanKey !== 'free' && underPlanLimit
+                                    && !sessionGeminiKeyOverride && keysRotatedThisRequest < KEY_POOL.length - 1) {
+                                    keysRotatedThisRequest++;
+                                    advanceApiKeyKeepTier();
+                                    const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                                    if (switchChat) {
+                                        switchChat.messages[aiMsgIndex].text = `✨ Switching API key to keep ${usedTier.label}, thinking`;
+                                        localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
+                                    }
+                                    continue;
+                                }
                                 const nextTier = downgradeAfterLimit();
                                 if (!nextTier) {
                                     // Every model tier is exhausted for the current key.

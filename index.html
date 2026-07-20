@@ -5123,7 +5123,8 @@
             if (!currentPass || !newPass) { statusEl.textContent = 'Please fill in both fields.'; return; }
             if (newPass.length < 6) { statusEl.textContent = 'New password must be at least 6 characters.'; return; }
 
-            statusEl.textContent = 'Updating…';
+            statusEl.textContent = '';
+            var restoreBtn = cavdoSetLoading(this, 'Updating…');
             try {
                 var cred = firebase.auth.EmailAuthProvider.credential(user.email, currentPass);
                 await user.reauthenticateWithCredential(cred);
@@ -5137,6 +5138,8 @@
                 } else {
                     statusEl.textContent = 'Could not update password: ' + (err.message || 'unknown error');
                 }
+            } finally {
+                restoreBtn();
             }
         };
 
@@ -5150,7 +5153,8 @@
             var pass = window.prompt('For security, please re-enter your password to confirm deletion:');
             if (!pass) return;
 
-            statusEl.textContent = 'Deleting…';
+            statusEl.textContent = '';
+            var restoreBtn = cavdoSetLoading(this, 'Deleting…');
             try {
                 var cred = firebase.auth.EmailAuthProvider.credential(user.email, pass);
                 await user.reauthenticateWithCredential(cred);
@@ -5173,6 +5177,7 @@
                 } else {
                     statusEl.textContent = 'Could not delete account: ' + (err.message || 'unknown error');
                 }
+                restoreBtn();
             }
         };
 
@@ -9915,6 +9920,77 @@
         }, 2000);
     </script>
 
+    <div id="cavdoToastHost" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
+    <style>
+        .cavdo-toast {
+            background: #241616;
+            border: 1px solid rgba(255,92,92,0.5);
+            color: #ffd7d7;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            max-width: 420px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+            pointer-events: auto;
+        }
+        .cavdo-toast.cavdo-toast-ok {
+            background: #14261a;
+            border-color: rgba(76,224,108,0.5);
+            color: #d7ffe1;
+        }
+        .cavdo-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.35);
+            border-top-color: rgba(255,255,255,0.95);
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: -2px;
+            animation: cavdo-spin 0.7s linear infinite;
+        }
+        @keyframes cavdo-spin { to { transform: rotate(360deg); } }
+    </style>
+    <script>
+        function cavdoToast(message, kind) {
+            var host = document.getElementById('cavdoToastHost');
+            if (!host) return;
+            var el = document.createElement('div');
+            el.className = 'cavdo-toast' + (kind === 'ok' ? ' cavdo-toast-ok' : '');
+            el.textContent = message;
+            host.appendChild(el);
+            setTimeout(function () {
+                el.style.transition = 'opacity 0.4s';
+                el.style.opacity = '0';
+                setTimeout(function () { el.remove(); }, 400);
+            }, 5000);
+        }
+
+        // Puts a button into a spinner+disabled "loading" state and returns a
+        // restore function to call in a finally block.
+        function cavdoSetLoading(btn, loadingText) {
+            var originalHTML = btn.innerHTML;
+            var originalDisabled = btn.disabled;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="cavdo-spinner"></span>' + (loadingText || 'Loading…');
+            return function restore() {
+                btn.innerHTML = originalHTML;
+                btn.disabled = originalDisabled;
+            };
+        }
+        // Wraps a promise so it never hangs the UI forever — if it doesn't
+        // settle within ms, this rejects with a timeout error instead (the
+        // original promise is left running in the background).
+        function withTimeout(promise, ms, label) {
+            return Promise.race([
+                promise,
+                new Promise(function (_, reject) {
+                    setTimeout(function () { reject(new Error((label || 'Request') + ' timed out')); }, ms);
+                })
+            ]);
+        }
+    </script>
+
     <script>
         // ============================================================================
         // CAVDO AI — FIREBASE (real accounts + cross-device data sync)
@@ -9990,7 +10066,12 @@
                         batch.set(ref, { key: key, value: value, updatedAt: Date.now() });
                     }
                 });
-                try { await batch.commit(); } catch (e) { console.warn('Cavdo sync: cloud save failed', e); }
+                try {
+                    await withTimeout(batch.commit(), 10000, 'Cloud save');
+                } catch (e) {
+                    console.warn('Cavdo sync: cloud save failed', e);
+                    cavdoToast('⚠ Could not save to your account in the cloud (' + (e.code || e.message || 'unknown error') + '). This device\'s data is safe, but it won\'t appear on other devices until this is fixed — check Firestore is created and its rules allow this.', 'warn');
+                }
             }
 
             // Wrap localStorage so every write the rest of the app already makes
@@ -10013,15 +10094,21 @@
             async function hydrate(userId) {
                 uid = userId;
                 try {
-                    const snap = await cavdoDb.collection('users').doc(uid).collection('data').get();
+                    const snap = await withTimeout(
+                        cavdoDb.collection('users').doc(uid).collection('data').get(),
+                        8000, 'Cloud sync'
+                    );
                     snap.forEach(function (doc) {
                         const data = doc.data();
                         if (data && typeof data.key === 'string') nativeSetItem(data.key, data.value);
                     });
+                    enabled = true;
+                    cavdoToast('✓ Synced with your account', 'ok');
                 } catch (e) {
                     console.warn('Cavdo sync: cloud load failed, continuing with local data only', e);
+                    cavdoToast('⚠ Could not reach cloud storage (' + (e.code || e.message || 'unknown error') + '). Continuing with this device\'s local data — check that Firestore is created for this Firebase project and its rules allow this account.', 'warn');
+                    enabled = true; // still mirror future writes; they'll retry on next flush
                 }
-                enabled = true;
             }
 
             async function flushNow() { await flush(); }
@@ -10338,6 +10425,7 @@
 
                 errEl.textContent = '';
                 btn.disabled = true;
+                var restoreBtn = cavdoSetLoading(btn, 'Logging in…');
                 try {
                     var cred = await cavdoAuth.signInWithEmailAndPassword(usernameToEmail(user), pass);
                     await CAVDO_SYNC.hydrate(cred.user.uid);
@@ -10352,7 +10440,7 @@
                         errEl.textContent = 'Could not log in: ' + (err.message || 'unknown error');
                     }
                 } finally {
-                    btn.disabled = false;
+                    restoreBtn();
                 }
             });
 
@@ -10396,16 +10484,29 @@
                 errEl.textContent = '';
 
                 btn.disabled = true;
+                var restoreBtn = cavdoSetLoading(btn, 'Creating account…');
                 try {
                     var cred = await cavdoAuth.createUserWithEmailAndPassword(usernameToEmail(user), pass);
                     await cred.user.updateProfile({ displayName: user });
-                    await cavdoDb.collection('users').doc(cred.user.uid).set({
-                        username: user,
-                        age: ageNum,
-                        googleEmail: pendingGoogleRegistration ? pendingGoogleRegistration.email : null,
-                        createdAt: Date.now(),
-                        termsAgreedAt: null
-                    });
+
+                    // Auth account is created at this point — don't let a slow
+                    // or failing cloud write block the person from continuing.
+                    try {
+                        await withTimeout(
+                            cavdoDb.collection('users').doc(cred.user.uid).set({
+                                username: user,
+                                age: ageNum,
+                                googleEmail: pendingGoogleRegistration ? pendingGoogleRegistration.email : null,
+                                createdAt: Date.now(),
+                                termsAgreedAt: null
+                            }),
+                            8000, 'Cloud profile save'
+                        );
+                    } catch (profileErr) {
+                        console.warn('Cavdo sync: profile save failed/timed out', profileErr);
+                        cavdoToast('⚠ Account created, but saving your profile to the cloud failed (' + (profileErr.code || profileErr.message || 'unknown error') + '). Check Firestore is created and its rules allow this.', 'warn');
+                    }
+
                     await CAVDO_SYNC.hydrate(cred.user.uid);
 
                     if (pendingGoogleRegistration) {
@@ -10432,7 +10533,7 @@
                         errEl.textContent = 'Could not create account: ' + (err.message || 'unknown error');
                     }
                 } finally {
-                    btn.disabled = false;
+                    restoreBtn();
                 }
             });
 
@@ -10447,6 +10548,7 @@
             }
             if (termsAgreeBtn) {
                 termsAgreeBtn.addEventListener('click', async function () {
+                    var restoreBtn = cavdoSetLoading(termsAgreeBtn, 'Saving…');
                     if (pendingNewAccountUid) {
                         try {
                             await cavdoDb.collection('users').doc(pendingNewAccountUid).set(
@@ -10457,6 +10559,7 @@
                     var user = getCurrentSession() ? getCurrentSession().username : '';
                     document.getElementById('accessTitle').textContent = 'Welcome, ' + user + '!';
                     document.getElementById('accessSubtitle').textContent = 'Your account is ready. You now have access to Cavdo AI.';
+                    restoreBtn();
                     showStep('access');
                 });
             }

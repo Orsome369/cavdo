@@ -8122,7 +8122,7 @@
         // entries into it) once, on page load.
         // ------------------------------------------------------------
         const CAVDO_DB_NAME = 'cavdo_media_db';
-        const CAVDO_DB_VERSION = 1;
+        const CAVDO_DB_VERSION = 2;
         let cavdoDbPromise = null;
         function openCavdoDb() {
             if (cavdoDbPromise) return cavdoDbPromise;
@@ -8133,11 +8133,34 @@
                     const db = req.result;
                     if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'id' });
                     if (!db.objectStoreNames.contains('songs')) db.createObjectStore('songs', { keyPath: 'id' });
+                    // Tracks which account's data this browser's local media
+                    // cache currently belongs to — lets hydrateMedia tell "same
+                    // account reconnecting after a network hiccup" (safe to keep
+                    // local data) apart from "a different account signed in on
+                    // this device" (must clear, or the new account would see the
+                    // previous one's images).
+                    if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
                 };
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(req.error);
             });
             return cavdoDbPromise;
+        }
+        function idbGetMeta(key) {
+            return openCavdoDb().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction('meta', 'readonly');
+                const req = tx.objectStore('meta').get(key);
+                req.onsuccess = () => resolve(req.result ? req.result.value : null);
+                req.onerror = () => reject(req.error);
+            }));
+        }
+        function idbSetMeta(key, value) {
+            return openCavdoDb().then(db => new Promise((resolve, reject) => {
+                const tx = db.transaction('meta', 'readwrite');
+                tx.objectStore('meta').put({ key: key, value: value });
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            }));
         }
         function idbPut(storeName, entry) {
             return openCavdoDb().then(db => new Promise((resolve, reject) => {
@@ -10237,6 +10260,25 @@
 
             async function hydrateMedia(userId) {
                 try {
+                    let owner = null;
+                    try { owner = await idbGetMeta('mediaOwnerUid'); } catch (e) { owner = null; }
+                    if (owner !== userId) {
+                        // This device's local media cache belongs to a different
+                        // account (or we don't know whose it is) — never show it
+                        // to this account. Clear it now, unconditionally, before
+                        // even trying the cloud fetch below. An empty gallery is
+                        // safe; a leaked one isn't.
+                        await idbClearStore('images');
+                        await idbClearStore('songs');
+                        if (typeof imageMemoryCache !== 'undefined') imageMemoryCache.clear();
+                        if (typeof songMemoryCache !== 'undefined') songMemoryCache.clear();
+                        try { await idbSetMeta('mediaOwnerUid', userId); } catch (e) {}
+                    }
+                    // From here, downloadMediaKind only re-clears once it has a
+                    // confirmed cloud listing to replace it with — so if this IS
+                    // the same account and the cloud fetch below fails, whatever
+                    // was already local (and already known to belong to this
+                    // account) is left in place instead of being wiped.
                     await downloadMediaKind(userId, 'images', typeof imageMemoryCache !== 'undefined' ? imageMemoryCache : null);
                     await downloadMediaKind(userId, 'songs', typeof songMemoryCache !== 'undefined' ? songMemoryCache : null);
                     if (typeof currentChatId !== 'undefined' && currentChatId && typeof renderActiveChatMessages === 'function') {
@@ -10506,7 +10548,22 @@
                 } catch (e) {}
             });
 
-            // ---------------- Google Identity Services (real sign-in, optional setup) ----------------
+            // Picks up the result of signInWithGoogleRedirect() above, once the
+            // browser navigates back here from accounts.google.com. Must run
+            // before/alongside the onAuthStateChanged resume below, and mark
+            // resumedOnce so that listener doesn't also try to handle the same
+            // sign-in a second time (it can't tell a fresh Google sign-in from
+            // a plain page reload — getRedirectResult can).
+            cavdoAuth.getRedirectResult().then(async function (result) {
+                if (!result || !result.user) return;
+                resumedOnce = true;
+                await finishGoogleSignIn(result, document.getElementById('loginGoogleError'));
+            }).catch(function (err) {
+                console.error('Google redirect sign-in failed:', err);
+                var errEl = document.getElementById('loginGoogleError');
+                if (errEl) errEl.textContent = 'Could not sign in with Google: ' + (err.message || 'unknown error');
+            });
+
             var googleReadyPromise = null;
             function loadGoogleScript() {
                 if (googleReadyPromise) return googleReadyPromise;
@@ -10616,16 +10673,21 @@
             // suppressed after a prior dismissal, third-party cookies blocked,
             // no active Google session in this browser, etc. None of those mean
             // sign-in itself is broken, so rather than leaving the person stuck
-            // on a dead button, open the standard OAuth popup instead. This flow
-            // isn't subject to One Tap's cooldown/suppression at all.
-            async function signInWithGooglePopup(errEl) {
+            // on a dead button, fall back to a full-page redirect flow instead.
+            // (This used to use signInWithPopup, but static hosts like GitHub
+            // Pages commonly send a Cross-Origin-Opener-Policy header that
+            // silently breaks the popup<->opener messaging that flow depends
+            // on — the popup closes but the result never reaches this page, so
+            // nothing happens and no error is shown either. Redirect doesn't
+            // rely on that messaging at all, so it isn't affected.)
+            async function signInWithGoogleRedirect(errEl) {
                 if (errEl) errEl.textContent = '';
                 try {
                     var provider = new firebase.auth.GoogleAuthProvider();
-                    var cred = await cavdoAuth.signInWithPopup(provider);
-                    await finishGoogleSignIn(cred, errEl);
+                    await cavdoAuth.signInWithRedirect(provider);
+                    // The page navigates away here. When the browser comes back,
+                    // the getRedirectResult() call further down picks up the result.
                 } catch (err) {
-                    if (err && (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request')) return;
                     console.error(err);
                     if (errEl) errEl.textContent = 'Could not sign in with Google: ' + (err.message || 'unknown error');
                 }
@@ -10660,15 +10722,15 @@
                             var reason = (notification.getNotDisplayedReason && notification.getNotDisplayedReason())
                                 || (notification.getSkippedReason && notification.getSkippedReason())
                                 || 'unknown_reason';
-                            console.warn('Google One Tap not shown (falling back to popup sign-in). Reason:', reason, '— current origin:', window.location.origin);
-                            signInWithGooglePopup(errEl);
+                            console.warn('Google One Tap not shown (falling back to redirect sign-in). Reason:', reason, '— current origin:', window.location.origin);
+                            signInWithGoogleRedirect(errEl);
                         }
                     });
                 } catch (err) {
                     console.error(err);
                     // Even the One Tap script itself failed to load/init — still
-                    // try the popup flow, since that doesn't depend on it.
-                    signInWithGooglePopup(errEl);
+                    // try the redirect flow, since that doesn't depend on it.
+                    signInWithGoogleRedirect(errEl);
                 }
             }
 

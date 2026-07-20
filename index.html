@@ -3467,6 +3467,7 @@
 
                 <div class="auth-error" id="loginError"></div>
                 <button type="button" class="auth-submit-btn" id="loginSubmitBtn">Log in</button>
+                <div class="auth-back-row" id="goToRegisterBtn">New here? Create an account</div>
             </div>
 
             <!-- STEP: REGISTER DETAILS (username + password + age, after Google verifies identity) -->
@@ -10796,8 +10797,29 @@
                 }
             });
 
-            // --- Register: details (username + password + age, reached only
-            // after a first-time "Continue with Google" sign-in above) ---
+            // --- Login step: link over to plain username/password registration ---
+            // (Previously the registerDetails step could only be reached via a
+            // first-time Google sign-in, so anyone without a Google account had
+            // no way to register — leading straight back into "log in" with an
+            // unregistered username, over and over. This is the missing entry
+            // point into that same step for a normal email/username signup.)
+            document.getElementById('goToRegisterBtn').addEventListener('click', function () {
+                pendingGoogleRegistration = null;
+                document.getElementById('registerUsername').value = '';
+                document.getElementById('registerPassword').value = '';
+                document.getElementById('registerConfirmPassword').value = '';
+                document.getElementById('registerAge').value = '';
+                document.getElementById('registerDetailsError').textContent = '';
+                var pwFields = document.getElementById('registerPasswordFields');
+                if (pwFields) pwFields.style.display = '';
+                document.getElementById('loginError').textContent = '';
+                showStep('registerDetails');
+            });
+
+            // --- Register: details (username + password + age, reached either
+            // via the link above, or after a first-time "Continue with Google"
+            // sign-in, which skips the password fields since Google already
+            // verified identity) ---
             document.getElementById('backToRegisterStartBtn').addEventListener('click', function () {
                 // A Google-originated pending registration already has a real
                 // (but incomplete) Firebase Auth session — sign it back out so

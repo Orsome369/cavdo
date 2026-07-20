@@ -3430,6 +3430,26 @@
             75% { content: '...'; }
             100% { content: ''; }
         }
+
+        /* ---- Initial "checking session" loading step ---- */
+        .auth-loading-spinner {
+            width: 34px;
+            height: 34px;
+            margin: 10px auto 2px;
+            border-radius: 50%;
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top-color: #2fd05c;
+            animation: cavdo-auth-spin 0.8s linear infinite;
+        }
+        @keyframes cavdo-auth-spin { to { transform: rotate(360deg); } }
+
+        /* ---- Small Cavdo logo shown inside the Google buttons ---- */
+        .auth-google-cavdo-logo {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
     </style>
     <!-- Firebase (Auth + Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -3461,8 +3481,15 @@
     <div id="authOverlay">
         <div class="auth-panel">
 
+            <!-- STEP: LOADING (shown first, while we check for an existing session) -->
+            <div class="auth-step active" id="authStepLoading">
+                <div class="auth-logo-row"><img id="authLoadingLogo" src="" alt="Cavdo AI logo"><span>CAVDO</span></div>
+                <div class="auth-loading-spinner"></div>
+                <div class="auth-subtitle">Checking your session<span class="auth-loading-dots"></span></div>
+            </div>
+
             <!-- STEP: LOGIN -->
-            <div class="auth-step active" id="authStepLogin">
+            <div class="auth-step" id="authStepLogin">
                 <div class="auth-logo-row"><img id="authLoginLogo" src="" alt="Cavdo AI logo"><span>CAVDO</span></div>
                 <div class="auth-title">Welcome back</div>
 
@@ -3470,6 +3497,7 @@
                     <button type="button" class="auth-google-btn" id="loginGoogleBtn">
                         <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.8-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.3 0-9.8-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3 5.5-5.9 7.2l6.4 5.4C39.9 37.7 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
                         Continue with Google
+                        <img class="auth-google-cavdo-logo" id="loginGoogleCavdoLogo" src="" alt="">
                     </button>
                     <div id="googleRealBtnHost"></div>
                 </div>
@@ -3488,7 +3516,6 @@
 
                 <div class="auth-error" id="loginError"></div>
                 <button type="button" class="auth-submit-btn" id="loginSubmitBtn">Log in</button>
-                <div class="auth-back-row" id="goToRegisterBtn">New here? Create an account</div>
             </div>
 
             <!-- STEP: REGISTER DETAILS (username + password + age, after Google verifies identity) -->
@@ -3501,6 +3528,7 @@
                     <button type="button" class="auth-google-btn" id="registerGoogleBtn">
                         <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.5 4 24 4c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.8-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.3 0-9.8-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.4 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3 5.5-5.9 7.2l6.4 5.4C39.9 37.7 44 31.4 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
                         Continue with Google
+                        <img class="auth-google-cavdo-logo" id="registerGoogleCavdoLogo" src="" alt="">
                     </button>
                     <div id="googleRealBtnHostRegister"></div>
                 </div>
@@ -10435,15 +10463,23 @@
         (function () {
             var overlay = document.getElementById('authOverlay');
             var steps = {
+                loading: document.getElementById('authStepLoading'),
                 login: document.getElementById('authStepLogin'),
                 registerDetails: document.getElementById('authStepRegisterDetails'),
                 terms: document.getElementById('authStepTerms'),
                 access: document.getElementById('authStepAccess')
             };
 
-            // Set the real app logo inside the auth panel.
+            // Set the real app logo inside the auth panel, the loading step,
+            // and both "Continue with Google" buttons.
             var loginLogo = document.getElementById('authLoginLogo');
             if (loginLogo) loginLogo.src = CAVDO_LOGO_DATA_URI;
+            var loadingLogo = document.getElementById('authLoadingLogo');
+            if (loadingLogo) loadingLogo.src = CAVDO_LOGO_DATA_URI;
+            var loginGoogleCavdoLogo = document.getElementById('loginGoogleCavdoLogo');
+            if (loginGoogleCavdoLogo) loginGoogleCavdoLogo.src = CAVDO_LOGO_DATA_URI;
+            var registerGoogleCavdoLogo = document.getElementById('registerGoogleCavdoLogo');
+            if (registerGoogleCavdoLogo) registerGoogleCavdoLogo.src = CAVDO_LOGO_DATA_URI;
 
             function showStep(name) {
                 Object.keys(steps).forEach(function (key) {
@@ -10580,12 +10616,32 @@
                 return null;
             });
 
+            // ---------------- Initial session check: minimum 2s loading splash ----------------
+            // The auth overlay opens on the "checking session" step, not the
+            // login step, so a returning user never sees the login panel
+            // flash on screen before being sent straight into the app. This
+            // enforces a short, deliberate minimum loading time (even if
+            // Firebase resolves faster) so the check doesn't feel like a
+            // jarring instant flicker either way.
+            var authCheckStartedAt = Date.now();
+            var MIN_AUTH_LOADING_MS = 2000;
+            function waitOutMinLoading() {
+                var remaining = MIN_AUTH_LOADING_MS - (Date.now() - authCheckStartedAt);
+                return remaining > 0 ? new Promise(function (resolve) { setTimeout(resolve, remaining); }) : Promise.resolve();
+            }
+
             var resumedOnce = false;
             cavdoAuth.onAuthStateChanged(async function (fbUser) {
                 if (resumedOnce) return; // only auto-resume once, on first load
                 resumedOnce = true;
                 console.log('Cavdo: onAuthStateChanged fired, fbUser =', fbUser && fbUser.uid);
-                if (!fbUser) return;
+                if (!fbUser) {
+                    // Not logged in — after the minimum loading window,
+                    // reveal the login panel (with its Google button).
+                    await waitOutMinLoading();
+                    showStep('login');
+                    return;
+                }
 
                 try {
                     var redirectResult = await redirectResultPromise;
@@ -10593,8 +10649,12 @@
                     if (redirectResult && redirectResult.user) {
                         // This resume IS a Google redirect completing — hand off
                         // to finishGoogleSignIn so a first-time sign-in is routed
-                        // to the username/age step instead of being unlocked
+                        // to the register-details step instead of being unlocked
                         // straight into the app like a plain returning session.
+                        // This is mid-flow from an explicit click a moment ago,
+                        // so it doesn't wait out the loading window below —
+                        // that's only for the silent "already logged in?" check.
+                        showStep('login');
                         await finishGoogleSignIn(redirectResult, document.getElementById('loginGoogleError'));
                         return;
                     }
@@ -10612,9 +10672,15 @@
                     await CAVDO_SYNC.hydrate(fbUser.uid);
                     if (typeof toggleInterface === 'function') toggleInterface(false);
                     setCurrentUser(username, { via: via, uid: fbUser.uid });
+                    // Already logged in — wait out the loading window (if it
+                    // hasn't elapsed yet) and go straight into the app,
+                    // skipping the login panel entirely.
+                    await waitOutMinLoading();
                     unlockApp();
                 } catch (e) {
                     console.error('Cavdo: sign-in resume failed:', e);
+                    await waitOutMinLoading();
+                    showStep('login');
                     var errEl = document.getElementById('loginGoogleError');
                     if (errEl) errEl.textContent = 'Something went wrong finishing sign-in: ' + (e.message || 'unknown error') + '. Check the browser console for details.';
                 }
@@ -10816,8 +10882,9 @@
             // Mount the login one as soon as the auth panel is on screen, so
             // the real button is ready to receive the click the instant
             // someone taps it — no visible delay, no need to click twice.
-            // The register one mounts lazily (see goToRegisterBtn below)
-            // since that screen isn't shown until it's needed.
+            // The register one mounts lazily, inside finishGoogleSignIn's
+            // first-time-user branch above, since that screen isn't shown
+            // until it's needed.
             mountGoogleButton(document.getElementById('loginGoogleError'), 'googleRealBtnHost', 'loginGoogleBtn');
 
             // --- Login step ---
@@ -10874,29 +10941,12 @@
                 }
             });
 
-            // --- Login step: link over to plain username/password registration ---
-            // (Previously the registerDetails step could only be reached via a
-            // first-time Google sign-in, so anyone without a Google account had
-            // no way to register — leading straight back into "log in" with an
-            // unregistered username, over and over. This is the missing entry
-            // point into that same step for a normal email/username signup.)
-            document.getElementById('goToRegisterBtn').addEventListener('click', function () {
-                pendingGoogleRegistration = null;
-                document.getElementById('registerUsername').value = '';
-                document.getElementById('registerPassword').value = '';
-                document.getElementById('registerConfirmPassword').value = '';
-                document.getElementById('registerAge').value = '';
-                document.getElementById('registerDetailsError').textContent = '';
-                var pwFields = document.getElementById('registerPasswordFields');
-                if (pwFields) pwFields.style.display = '';
-                var googleWrap = document.getElementById('registerGoogleBtnWrap');
-                var orDivider = document.getElementById('registerOrDivider');
-                if (googleWrap) googleWrap.style.display = '';
-                if (orDivider) orDivider.style.display = '';
-                mountGoogleButton(document.getElementById('registerGoogleError'), 'googleRealBtnHostRegister', 'registerGoogleBtn');
-                document.getElementById('loginError').textContent = '';
-                showStep('registerDetails');
-            });
+            // Registration now happens only through the Google sign-in flow:
+            // a first-time Google account is routed automatically to the
+            // register-details step by finishGoogleSignIn() above, which
+            // asks the "register" question (username + age) right there. The
+            // separate "New here? Create an account" entry point has been
+            // removed along with its manual-signup path.
 
             // --- Register: details (username + password + age, reached either
             // via the link above, or after a first-time "Continue with Google"

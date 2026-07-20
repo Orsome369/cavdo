@@ -10192,9 +10192,16 @@
                 try {
                     listing = await withTimeout(cavdoStorage.ref('users/' + userId + '/' + kind).listAll(), 8000, 'Media list');
                 } catch (e) {
-                    console.warn('Cavdo sync: could not list cloud ' + kind, e);
-                    return;
+                    console.warn('Cavdo sync: could not list cloud ' + kind + ', keeping this device\'s local copy', e);
+                    return; // bail out WITHOUT touching local storage — a network hiccup
+                            // here should never delete what's already on this device
                 }
+                // Only clear the local copy once we know the cloud list actually
+                // came back — clearing first and fetching second (the old order)
+                // meant any failed/slow request wiped local media with nothing
+                // to replace it.
+                await idbClearStore(kind);
+                if (cache) cache.clear();
                 for (const itemRef of listing.items) {
                     try {
                         const meta = await itemRef.getMetadata();
@@ -10220,10 +10227,6 @@
 
             async function hydrateMedia(userId) {
                 try {
-                    await idbClearStore('images');
-                    await idbClearStore('songs');
-                    if (typeof imageMemoryCache !== 'undefined') imageMemoryCache.clear();
-                    if (typeof songMemoryCache !== 'undefined') songMemoryCache.clear();
                     await downloadMediaKind(userId, 'images', typeof imageMemoryCache !== 'undefined' ? imageMemoryCache : null);
                     await downloadMediaKind(userId, 'songs', typeof songMemoryCache !== 'undefined' ? songMemoryCache : null);
                     if (typeof currentChatId !== 'undefined' && currentChatId && typeof renderActiveChatMessages === 'function') {

@@ -10543,56 +10543,84 @@
             // Google account signs in, on any device — and lets us call
             // CAVDO_SYNC.hydrate(uid), which wipes this browser's local copy and
             // loads ONLY that uid's data from Firestore before the app is unlocked.
+            async function finishGoogleSignIn(cred, errEl) {
+                var uid = cred.user.uid;
+                var isNewUser = !!(cred.additionalUserInfo && cred.additionalUserInfo.isNewUser);
+
+                if (isNewUser) {
+                    // First time this Google account has signed in anywhere —
+                    // collect a username + age before unlocking. No separate
+                    // password account is created: this Firebase Auth user
+                    // (tied to the Google account itself) IS the account.
+                    var profile = (cred.additionalUserInfo && cred.additionalUserInfo.profile) || {};
+                    pendingGoogleRegistration = {
+                        uid: uid,
+                        email: (profile.email || cred.user.email || '').toLowerCase(),
+                        name: profile.name || cred.user.displayName || ''
+                    };
+                    document.getElementById('registerDetailsError').textContent = '';
+                    var pwFields = document.getElementById('registerPasswordFields');
+                    if (pwFields) pwFields.style.display = 'none';
+                    showStep('registerDetails');
+                    return;
+                }
+
+                // Returning user on this Google account — pull their saved
+                // username (fast path: local cache; falls back to Firestore,
+                // then to whatever Google itself gave us).
+                var googleAccounts = getGoogleAccounts();
+                var cached = googleAccounts[uid];
+                var username = cached && cached.username;
+                if (!username) {
+                    try {
+                        var profileSnap = await withTimeout(cavdoDb.collection('users').doc(uid).get(), 8000, 'Profile load');
+                        username = (profileSnap.exists && profileSnap.data().username) || cred.user.displayName || cred.user.email.split('@')[0];
+                    } catch (e) {
+                        username = cred.user.displayName || (cred.user.email || '').split('@')[0] || 'User';
+                    }
+                }
+                googleAccounts[uid] = { uid: uid, username: username, updatedAt: Date.now() };
+                saveGoogleAccounts(googleAccounts);
+
+                // This is the critical step the old code skipped entirely:
+                // swap this browser's local data for THIS account's own data.
+                await CAVDO_SYNC.hydrate(uid);
+                if (typeof toggleInterface === 'function') toggleInterface(false);
+                setCurrentUser(username, { via: 'google', uid: uid });
+                unlockApp();
+            }
+
             async function handleGoogleCredential(response, errEl) {
                 if (errEl) errEl.textContent = '';
                 try {
                     var googleCredential = firebase.auth.GoogleAuthProvider.credential(response.credential);
                     var cred = await cavdoAuth.signInWithCredential(googleCredential);
-                    var uid = cred.user.uid;
-                    var isNewUser = !!(cred.additionalUserInfo && cred.additionalUserInfo.isNewUser);
-
-                    if (isNewUser) {
-                        // First time this Google account has signed in anywhere —
-                        // collect a username + age before unlocking. No separate
-                        // password account is created: this Firebase Auth user
-                        // (tied to the Google account itself) IS the account.
-                        var payload = decodeGoogleJwt(response.credential);
-                        pendingGoogleRegistration = { uid: uid, email: (payload.email || '').toLowerCase(), name: payload.name || '' };
-                        document.getElementById('registerDetailsError').textContent = '';
-                        var pwFields = document.getElementById('registerPasswordFields');
-                        if (pwFields) pwFields.style.display = 'none';
-                        showStep('registerDetails');
-                        return;
-                    }
-
-                    // Returning user on this Google account — pull their saved
-                    // username (fast path: local cache; falls back to Firestore,
-                    // then to whatever Google itself gave us).
-                    var googleAccounts = getGoogleAccounts();
-                    var cached = googleAccounts[uid];
-                    var username = cached && cached.username;
-                    if (!username) {
-                        try {
-                            var profileSnap = await withTimeout(cavdoDb.collection('users').doc(uid).get(), 8000, 'Profile load');
-                            username = (profileSnap.exists && profileSnap.data().username) || cred.user.displayName || cred.user.email.split('@')[0];
-                        } catch (e) {
-                            username = cred.user.displayName || (cred.user.email || '').split('@')[0] || 'User';
-                        }
-                    }
-                    googleAccounts[uid] = { uid: uid, username: username, updatedAt: Date.now() };
-                    saveGoogleAccounts(googleAccounts);
-
-                    // This is the critical step the old code skipped entirely:
-                    // swap this browser's local data for THIS account's own data.
-                    await CAVDO_SYNC.hydrate(uid);
-                    if (typeof toggleInterface === 'function') toggleInterface(false);
-                    setCurrentUser(username, { via: 'google', uid: uid });
-                    unlockApp();
+                    await finishGoogleSignIn(cred, errEl);
                 } catch (err) {
                     console.error(err);
                     if (errEl) errEl.textContent = 'Could not sign in with Google: ' + (err.message || 'unknown error');
                 }
             }
+
+            // Fallback for when Google's One Tap prompt can't be shown at all —
+            // suppressed after a prior dismissal, third-party cookies blocked,
+            // no active Google session in this browser, etc. None of those mean
+            // sign-in itself is broken, so rather than leaving the person stuck
+            // on a dead button, open the standard OAuth popup instead. This flow
+            // isn't subject to One Tap's cooldown/suppression at all.
+            async function signInWithGooglePopup(errEl) {
+                if (errEl) errEl.textContent = '';
+                try {
+                    var provider = new firebase.auth.GoogleAuthProvider();
+                    var cred = await cavdoAuth.signInWithPopup(provider);
+                    await finishGoogleSignIn(cred, errEl);
+                } catch (err) {
+                    if (err && (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request')) return;
+                    console.error(err);
+                    if (errEl) errEl.textContent = 'Could not sign in with Google: ' + (err.message || 'unknown error');
+                }
+            }
+
 
             var GOOGLE_REASON_MESSAGES = {
                 'unregistered_origin': 'This page\'s URL isn\'t in the Client ID\'s "Authorized JavaScript origins" list in Google Cloud Console. Add this exact origin (scheme + domain, no path) and try again.',
@@ -10622,14 +10650,15 @@
                             var reason = (notification.getNotDisplayedReason && notification.getNotDisplayedReason())
                                 || (notification.getSkippedReason && notification.getSkippedReason())
                                 || 'unknown_reason';
-                            console.error('Google Sign-In not shown. Reason:', reason, '— current origin:', window.location.origin);
-                            errEl.textContent = GOOGLE_REASON_MESSAGES[reason]
-                                || ('Google sign-in was blocked (' + reason + '). Check the browser console for details.');
+                            console.warn('Google One Tap not shown (falling back to popup sign-in). Reason:', reason, '— current origin:', window.location.origin);
+                            signInWithGooglePopup(errEl);
                         }
                     });
                 } catch (err) {
                     console.error(err);
-                    errEl.textContent = 'Could not reach Google Sign-In. Check your connection and try again.';
+                    // Even the One Tap script itself failed to load/init — still
+                    // try the popup flow, since that doesn't depend on it.
+                    signInWithGooglePopup(errEl);
                 }
             }
 

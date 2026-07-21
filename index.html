@@ -10644,6 +10644,10 @@
                     var el = document.getElementById(id);
                     if (el) el.value = '';
                 });
+                var regBtn = document.getElementById('registerDetailsSubmitBtn');
+                if (regBtn) regBtn.disabled = false;
+                var regErr = document.getElementById('registerDetailsError');
+                if (regErr) regErr.textContent = '';
             }
             clearAuthInputs();
             window.addEventListener('pageshow', clearAuthInputs);
@@ -11142,6 +11146,46 @@
                 document.getElementById('loginError').textContent = '';
                 showStep('login');
             });
+
+            // --- Register: live username-availability check. Debounced so we
+            // don't fire a lookup on every keystroke; disables Continue and
+            // shows a red error the moment we confirm the username is taken,
+            // and clears both the instant the person changes the field again
+            // (the *new* value gets its own check once they pause typing). ---
+            (function () {
+                var input = document.getElementById('registerUsername');
+                var submitBtn = document.getElementById('registerDetailsSubmitBtn');
+                var errEl = document.getElementById('registerDetailsError');
+                var checkTimer = null;
+                var checkToken = 0;
+
+                function setTakenState(taken) {
+                    submitBtn.disabled = taken;
+                    errEl.textContent = taken ? 'That username is already taken.' : '';
+                }
+
+                input.addEventListener('input', function () {
+                    setTakenState(false);
+                    var value = input.value.trim();
+                    if (checkTimer) clearTimeout(checkTimer);
+                    if (!value) return;
+                    var myToken = ++checkToken;
+                    checkTimer = setTimeout(async function () {
+                        try {
+                            var methods = await cavdoAuth.fetchSignInMethodsForEmail(usernameToEmail(value));
+                            // Bail if the person kept typing since this check started —
+                            // an older, slower check finishing late shouldn't override
+                            // whatever's true for the current value.
+                            if (myToken !== checkToken) return;
+                            if (methods && methods.length > 0) setTakenState(true);
+                        } catch (e) {
+                            // Network hiccup or similar — don't block the person over a
+                            // failed check; the submit handler still catches a real
+                            // collision when they hit Continue.
+                        }
+                    }, 500);
+                });
+            })();
 
             document.getElementById('registerDetailsSubmitBtn').addEventListener('click', async function () {
                 var user = document.getElementById('registerUsername').value.trim();

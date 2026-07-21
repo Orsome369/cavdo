@@ -10691,6 +10691,28 @@
                 try { localStorage.setItem(GOOGLE_ACCOUNTS_KEY, JSON.stringify(accounts)); } catch (e) {}
             }
 
+            // Local, fast cache of "this uid has fully finished onboarding on
+            // this device before" (profile saved + Terms agreed). Firestore
+            // is still the source of truth for a brand-new device/browser,
+            // but for the common case — refreshing right after registering,
+            // or the terms-agreed write not having propagated yet — this
+            // lets a resume trust what already happened here instead of
+            // racing a fresh read against an in-flight write.
+            var ONBOARDED_KEY = 'cavdoOnboardedUids';
+            function getOnboardedUids() {
+                try { return JSON.parse(localStorage.getItem(ONBOARDED_KEY) || '{}'); }
+                catch (e) { return {}; }
+            }
+            function markOnboarded(uid) {
+                if (!uid) return;
+                var set = getOnboardedUids();
+                set[uid] = true;
+                try { localStorage.setItem(ONBOARDED_KEY, JSON.stringify(set)); } catch (e) {}
+            }
+            function isOnboarded(uid) {
+                return !!(uid && getOnboardedUids()[uid]);
+            }
+
             // Real SHA-256 hashing via the browser's native WebCrypto API.
             // The plaintext password is never written to storage — only this digest is.
             async function hashPassword(password) {
@@ -10847,7 +10869,81 @@
                     // keyed to fbUser.uid, whether the person originally
                     // signed in with a password or with Google.
                     var via = (session && session.via === 'google') ? 'google' : 'password';
-                    var username = fbUser.displayName || (session && session.username) || fbUser.email.split('@')[0];
+
+                    // A signed-in Firebase session on its own doesn't mean
+                    // registration was actually finished — someone can get a
+                    // real session (e.g. from clicking "Continue with
+                    // Google") and then abandon or fail the "Tell us about
+                    // you" step, or refresh before agreeing to the Terms.
+                    // That session persists across reloads, so check what's
+                    // actually saved for this uid before unlocking anything.
+                    //
+                    // The local cache is checked first: it's written the
+                    // moment onboarding actually finishes on this device (see
+                    // markOnboarded calls below), so it can't lose a race
+                    // against the Firestore write it's describing — unlike a
+                    // fresh read, which can land before that write has
+                    // propagated and wrongly look "incomplete".
+                    var alreadyOnboarded = isOnboarded(fbUser.uid);
+                    var profileData = null;
+                    if (!alreadyOnboarded) {
+                        var profileSnap = null;
+                        try {
+                            profileSnap = await withTimeout(cavdoDb.collection('users').doc(fbUser.uid).get(), 8000, 'Profile check');
+                        } catch (e) {
+                            console.warn('Cavdo: profile completeness check failed', e);
+                            // Couldn't confirm either way (network hiccup,
+                            // timeout, etc). If this device has a matching
+                            // prior session for this exact uid, trust it
+                            // rather than punishing a real user for a failed
+                            // network check; otherwise fall back to login so
+                            // nothing gets silently unlocked.
+                            if (session && session.uid === fbUser.uid) {
+                                alreadyOnboarded = true;
+                            } else {
+                                cavdoAuth.signOut().catch(function () {});
+                                await waitOutMinLoading();
+                                showStep('login');
+                                var gErrEl = document.getElementById('loginGoogleError');
+                                if (gErrEl) gErrEl.textContent = 'Could not verify your session. Please try logging in again.';
+                                return;
+                            }
+                        }
+                        if (profileSnap) profileData = profileSnap.exists ? profileSnap.data() : null;
+                    }
+
+                    if (!alreadyOnboarded && !profileData) {
+                        // No profile at all — a Google sign-in that never
+                        // finished the details step (or a profile write that
+                        // failed earlier). Send them back to finish it
+                        // instead of unlocking a half-created account.
+                        pendingGoogleRegistration = {
+                            uid: fbUser.uid,
+                            email: (fbUser.email || '').toLowerCase(),
+                            name: fbUser.displayName || ''
+                        };
+                        document.getElementById('registerDetailsError').textContent = '';
+                        var googleWrap = document.getElementById('registerGoogleBtnWrap');
+                        var orDivider = document.getElementById('registerOrDivider');
+                        if (googleWrap) googleWrap.style.display = 'none';
+                        if (orDivider) orDivider.style.display = 'none';
+                        await waitOutMinLoading();
+                        showStep('registerDetails');
+                        return;
+                    }
+
+                    if (!alreadyOnboarded && !profileData.termsAgreedAt) {
+                        // Profile exists but the Terms were never agreed to —
+                        // that's the last mandatory step, so send them there
+                        // instead of unlocking.
+                        pendingNewAccountUid = fbUser.uid;
+                        await waitOutMinLoading();
+                        showStep('terms');
+                        return;
+                    }
+
+                    markOnboarded(fbUser.uid);
+                    var username = (profileData && profileData.username) || fbUser.displayName || (session && session.username) || fbUser.email.split('@')[0];
                     await CAVDO_SYNC.hydrate(fbUser.uid);
                     if (typeof toggleInterface === 'function') toggleInterface(false);
                     setCurrentUser(username, { via: via, uid: fbUser.uid });
@@ -10957,6 +11053,7 @@
                 await CAVDO_SYNC.hydrate(uid);
                 if (typeof toggleInterface === 'function') toggleInterface(false);
                 setCurrentUser(username, { via: 'google', uid: uid });
+                markOnboarded(uid);
                 unlockApp();
             }
 
@@ -11104,6 +11201,7 @@
                     await CAVDO_SYNC.hydrate(cred.user.uid);
                     if (typeof toggleInterface === 'function') toggleInterface(false);
                     setCurrentUser(user, { via: 'password', uid: cred.user.uid });
+                    markOnboarded(cred.user.uid);
                     unlockApp();
                 } catch (err) {
                     if (err.code === 'auth/user-not-found') {
@@ -11317,6 +11415,12 @@
                 termsAgreeBtn.addEventListener('click', async function () {
                     var restoreBtn = cavdoSetLoading(termsAgreeBtn, 'Saving…');
                     if (pendingNewAccountUid) {
+                        // Record locally *first* and immediately — this is
+                        // what a resume checks before ever touching
+                        // Firestore, so a refresh a split second from now
+                        // can't race the cloud write below and wrongly
+                        // conclude the Terms were never agreed to.
+                        markOnboarded(pendingNewAccountUid);
                         // Don't make the person wait on this write — it's just
                         // a timestamp for records, not something that should
                         // hold up getting into the app.

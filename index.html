@@ -10872,8 +10872,6 @@
                         name: profile.name || cred.user.displayName || ''
                     };
                     document.getElementById('registerDetailsError').textContent = '';
-                    var pwFields = document.getElementById('registerPasswordFields');
-                    if (pwFields) pwFields.style.display = 'none';
                     var googleWrap = document.getElementById('registerGoogleBtnWrap');
                     var orDivider = document.getElementById('registerOrDivider');
                     if (googleWrap) googleWrap.style.display = 'none';
@@ -11101,25 +11099,25 @@
                 var age = document.getElementById('registerAge').value.trim();
                 var errEl = document.getElementById('registerDetailsError');
                 var btn = this;
-                // Google-originated signups are already a real Firebase Auth
-                // session (see handleGoogleCredential) — no separate password
-                // account needed, and none should be created, or the person
-                // would end up with two disconnected accounts.
+                // Google-originated signups already have a real Firebase Auth
+                // session (see handleGoogleCredential). We don't create a
+                // second, separate account for them — instead the password
+                // entered here is *linked* onto that same Google-backed
+                // account (see linkWithCredential below), so the person can
+                // also log back in later with just their username + password.
                 var isGoogleFlow = !!(pendingGoogleRegistration && pendingGoogleRegistration.uid);
 
                 if (!user) {
                     errEl.textContent = 'Please choose a username.';
                     return;
                 }
-                if (!isGoogleFlow) {
-                    if (!pass || pass.length < 6) {
-                        errEl.textContent = 'Password must be at least 6 characters.';
-                        return;
-                    }
-                    if (pass !== confirmPass) {
-                        errEl.textContent = 'Passwords do not match.';
-                        return;
-                    }
+                if (!pass || pass.length < 6) {
+                    errEl.textContent = 'Password must be at least 6 characters.';
+                    return;
+                }
+                if (pass !== confirmPass) {
+                    errEl.textContent = 'Passwords do not match.';
+                    return;
                 }
                 var ageNum = parseInt(age, 10);
                 if (!age || isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
@@ -11139,6 +11137,24 @@
                     if (isGoogleFlow) {
                         uid = pendingGoogleRegistration.uid;
                         try { await cavdoAuth.currentUser.updateProfile({ displayName: user }); } catch (e) {}
+                        // Link a username/password credential onto this same
+                        // Google-authenticated account (not a separate user),
+                        // so the person can also log in later with just their
+                        // username + password, no Google popup required.
+                        try {
+                            var pwCred = firebase.auth.EmailAuthProvider.credential(usernameToEmail(user), pass);
+                            await cavdoAuth.currentUser.linkWithCredential(pwCred);
+                        } catch (linkErr) {
+                            if (linkErr.code === 'auth/email-already-in-use' || linkErr.code === 'auth/credential-already-in-use') {
+                                errEl.textContent = 'That username is already taken. Try another.';
+                                btn.disabled = false;
+                                restoreBtn();
+                                return;
+                            }
+                            if (linkErr.code !== 'auth/provider-already-linked') {
+                                console.warn('Cavdo: could not link password credential', linkErr);
+                            }
+                        }
                     } else {
                         var cred = await cavdoAuth.createUserWithEmailAndPassword(usernameToEmail(user), pass);
                         await cred.user.updateProfile({ displayName: user });

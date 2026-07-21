@@ -3481,6 +3481,8 @@
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <!-- Razorpay Checkout — real payment popup (cards/UPI/netbanking), replaces the old static QR image -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body class="pre-auth">
     <script>
@@ -4007,27 +4009,15 @@
                 </button>
             </div>
             <div class="plans-modal-body">
-                <p class="plans-page-subtitle">Scan the QR code to subscribe, and unlock more messages the moment your payment is confirmed.</p>
+                <p class="plans-page-subtitle">Choose a plan to subscribe — pay securely by card, UPI, or netbanking, and unlock more messages the moment your payment is confirmed.</p>
                 <div class="plan-cards-grid" id="planCardsGrid"></div>
             </div>
         </div>
     </div>
 
-    <div class="modal-overlay" id="qrPaymentModalOverlay">
-        <div class="modal-box qr-payment-box">
-            <h3>Scan &amp; Pay</h3>
-            <div class="qr-payment-plan-name" id="qrPlanName">Lite Plan</div>
-            <div class="qr-payment-amount" id="qrPlanAmount">₹100</div>
-            <div class="qr-payment-image-wrap">
-                <img src="" id="qrPaymentImage" alt="Payment QR code">
-            </div>
-            <div class="qr-payment-note">Scan this code with any UPI app and complete the payment. Once you've paid, tap "I've Paid" below to activate your plan.</div>
-            <div class="qr-payment-actions">
-                <button class="qr-cancel-btn" id="qrCancelBtn" type="button">Cancel</button>
-                <button class="qr-confirm-btn" id="qrConfirmBtn" type="button">✅ I've Paid</button>
-            </div>
-        </div>
-    </div>
+    <!-- Old fake-QR payment modal removed: Razorpay Checkout now renders its
+         own payment popup directly (see startRazorpayCheckout() below), so
+         no custom modal is needed for the payment step itself. -->
 
     <div class="image-preview-overlay" id="imagePreviewOverlay">
         <div class="preview-window-topbar">
@@ -4402,17 +4392,28 @@
         }
 
         // ==========================================
-        // 💳 PAID PLANS + QR PAYMENT
+        // 💳 PAID PLANS + REAL RAZORPAY PAYMENT
         // ==========================================
         // Three paid plans on top of the free plan above. Each paid plan
         // grants the SAME flat message limit across all three models (unlike
         // the free plan, which has a different cap per model), plus a
-        // number of image generations included. Payment is confirmed via a
-        // QR code the user scans and pays through their own UPI app — there
-        // is no backend here to verify the payment automatically, so the
-        // "I've Paid" button is a manual confirmation. Wiring this to a real
-        // payment gateway (Razorpay/UPI intent + webhook) so activation is
-        // automatic instead of self-reported is a follow-up step.
+        // number of image generations included.
+        //
+        // Payment is real: choosing a plan opens Razorpay Checkout (cards,
+        // UPI, netbanking). The client NEVER activates a plan itself — it
+        // only ever creates an order (server picks the price) and hands the
+        // resulting payment to /api/verify-payment for HMAC verification.
+        // The actual activation happens server-side, writing billing/{uid}
+        // in Firestore, which the client can only read (see
+        // firestore-billing-rules.txt). CAVDO_SYNC.watchBilling (below, in
+        // the sync script block) listens to that doc in real time and calls
+        // setActivePlan() the moment the server confirms payment — so the
+        // UI unlocks automatically, without the user needing to refresh or
+        // click anything like the old "I've Paid" button.
+        //
+        // Set this to your deployed Vercel backend's /api base URL.
+        const PAYMENT_API_BASE = 'https://vercel-backend-umber-mu.vercel.app/api';
+
         const PLAN_LIST = [
             {
                 key: 'free', label: 'Free', priceLabel: 'Free', price: 0,
@@ -4420,17 +4421,17 @@
                 features: ['Smaller chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: false }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }]
             },
             {
-                key: 'plan_lite', label: 'Lite Plan', priceLabel: '₹100', price: 100,
+                key: 'plan_lite', backendKey: 'lite', label: 'Lite Plan', priceLabel: '₹100', price: 100,
                 messageLimit: 26, generationLimit: 10,
                 features: ['Longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }]
             },
             {
-                key: 'plan_speed', label: 'Speed Plan', priceLabel: '₹200', price: 200,
+                key: 'plan_speed', backendKey: 'speed', label: 'Speed Plan', priceLabel: '₹200', price: 200,
                 messageLimit: 40, generationLimit: 15,
                 features: ['Even longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: false }]
             },
             {
-                key: 'plan_ultimate', label: 'Ultimate Plan', priceLabel: '₹500', price: 500,
+                key: 'plan_ultimate', backendKey: 'ultimate', label: 'Ultimate Plan', priceLabel: '₹500', price: 500,
                 messageLimit: 80, generationLimit: 30,
                 features: ['Very long chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: true }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: true }]
             }
@@ -4542,9 +4543,11 @@
             return { allowed: true };
         }
 
-        // Activates a plan after the user confirms payment on the QR
-        // screen. Clears existing free-tier usage/locks and resets the
-        // generation counter so the new plan starts with a clean slate.
+        // Activates a plan — called by CAVDO_SYNC.watchBilling() the moment
+        // the server confirms a real payment (or manually for the free
+        // plan, which has no payment step). Clears existing free-tier
+        // usage/locks and resets the generation counter so the new plan
+        // starts with a clean slate.
         function setActivePlan(planKey) {
             localStorage.setItem(ACTIVE_PLAN_STORAGE_KEY, planKey);
             if (planKey === 'free') {
@@ -4596,7 +4599,7 @@
                             setActivePlan('free');
                             closePlansModal();
                         } else {
-                            openQrPaymentModal(plan);
+                            startRazorpayCheckout(plan);
                         }
                     };
                 }
@@ -4614,38 +4617,105 @@
             document.getElementById('plansModalOverlay').classList.remove('show');
         }
 
-        let pendingPlanPurchase = null;
+        // ------------------------------------------------------------
+        // Real payment flow (Razorpay), replacing the old fake QR modal.
+        // The old #qrPaymentModalOverlay / #qrPlanName / #qrPlanAmount /
+        // #qrPaymentImage / #qrCancelBtn / #qrConfirmBtn elements in the
+        // HTML are no longer used by this flow and can be removed from the
+        // markup whenever convenient — Razorpay Checkout renders its own
+        // popup, so nothing here needs them.
+        // ------------------------------------------------------------
+        let checkoutInFlight = false;
 
-        function openQrPaymentModal(plan) {
-            pendingPlanPurchase = plan;
-            document.getElementById('qrPlanName').textContent = plan.label;
-            document.getElementById('qrPlanAmount').textContent = plan.priceLabel;
-            const upiString = `upi://pay?pa=cavdoai@upi&pn=Cavdo%20AI&am=${plan.price}&cu=INR&tn=${encodeURIComponent(plan.label + ' Subscription')}`;
-            document.getElementById('qrPaymentImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiString)}`;
+        async function startRazorpayCheckout(plan) {
+            if (checkoutInFlight) return;
+
+            const user = cavdoAuth.currentUser;
+            if (!user) {
+                cavdoToast('⚠ Please log in before purchasing a plan.', 'warn');
+                return;
+            }
+            if (typeof Razorpay === 'undefined') {
+                cavdoToast('⚠ Payment system failed to load. Check your connection and try again.', 'warn');
+                return;
+            }
+
+            checkoutInFlight = true;
             closePlansModal();
-            document.getElementById('qrPaymentModalOverlay').classList.add('show');
+            cavdoToast('Preparing checkout…', 'ok');
+
+            try {
+                const orderRes = await fetch(PAYMENT_API_BASE + '/create-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid: user.uid, planKey: plan.backendKey })
+                });
+                const orderData = await orderRes.json();
+                if (!orderRes.ok || !orderData.orderId) {
+                    throw new Error(orderData.error || 'Could not start checkout');
+                }
+
+                const rzp = new Razorpay({
+                    key: orderData.keyId,
+                    amount: orderData.amount,
+                    currency: orderData.currency,
+                    order_id: orderData.orderId,
+                    name: 'Cavdo AI',
+                    description: plan.label + ' Subscription',
+                    notes: { uid: user.uid, planKey: plan.backendKey },
+                    prefill: { email: user.email || '' },
+                    theme: { color: '#2fd05c' },
+                    handler: async function (response) {
+                        // Fast/optimistic confirmation path. The webhook
+                        // (api/webhook.js) is the authoritative fallback if
+                        // this call never fires (tab closed, network drop,
+                        // etc.) — either way, CAVDO_SYNC.watchBilling()
+                        // below picks up the Firestore change and flips the
+                        // plan on automatically, so nothing here needs to
+                        // call setActivePlan() directly.
+                        try {
+                            const verifyRes = await fetch(PAYMENT_API_BASE + '/verify-payment', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    uid: user.uid,
+                                    orderId: response.razorpay_order_id,
+                                    paymentId: response.razorpay_payment_id,
+                                    signature: response.razorpay_signature,
+                                    planKey: plan.backendKey
+                                })
+                            });
+                            if (!verifyRes.ok) {
+                                const verifyData = await verifyRes.json().catch(() => ({}));
+                                throw new Error(verifyData.error || 'Verification failed');
+                            }
+                            cavdoToast('✓ Payment received — activating your plan…', 'ok');
+                        } catch (e) {
+                            console.warn('Cavdo payment: verify-payment call failed, relying on webhook fallback', e);
+                            cavdoToast('Payment received — confirming with the server, this can take a moment.', 'ok');
+                        } finally {
+                            checkoutInFlight = false;
+                        }
+                    },
+                    modal: {
+                        ondismiss: function () {
+                            checkoutInFlight = false;
+                        }
+                    }
+                });
+
+                rzp.on('payment.failed', function (response) {
+                    checkoutInFlight = false;
+                    cavdoToast('⚠ Payment failed: ' + (response.error && response.error.description ? response.error.description : 'please try again.'), 'warn');
+                });
+
+                rzp.open();
+            } catch (e) {
+                checkoutInFlight = false;
+                console.error('Cavdo payment: checkout could not start', e);
+                cavdoToast('⚠ Could not start checkout (' + (e.message || 'unknown error') + '). Please try again.', 'warn');
+            }
         }
-
-        function closeQrPaymentModal() {
-            pendingPlanPurchase = null;
-            document.getElementById('qrPaymentModalOverlay').classList.remove('show');
-        }
-
-        document.getElementById('qrCancelBtn').onclick = closeQrPaymentModal;
-        document.getElementById('qrPaymentModalOverlay').addEventListener('click', (e) => {
-            if (e.target.id === 'qrPaymentModalOverlay') closeQrPaymentModal();
-        });
-
-        document.getElementById('qrConfirmBtn').onclick = () => {
-            if (!pendingPlanPurchase) return;
-            // No backend to verify the payment automatically — this is a
-            // manual, self-reported confirmation. Replace with a real
-            // payment-gateway callback/webhook for production use.
-            setActivePlan(pendingPlanPurchase.key);
-            const planLabel = pendingPlanPurchase.label;
-            closeQrPaymentModal();
-            alert(`Payment confirmed — you're now on the ${planLabel}! Your new limits are active immediately.`);
-        };
 
         document.getElementById('plansCloseBtn').onclick = closePlansModal;
         document.getElementById('plansModalOverlay').addEventListener('click', (e) => {
@@ -10282,6 +10352,7 @@
             let enabled = false;
             const pendingWrites = new Map(); // key -> value|null(delete)
             let flushTimer = null;
+            let billingUnsubscribe = null; // Firestore onSnapshot() unsubscribe fn for billing/{uid}
 
             // Keys we never want to push to the cloud (per-device/session only).
             const LOCAL_ONLY_KEYS = new Set([
@@ -10558,27 +10629,72 @@
                     hydrateMedia(userId).catch(function (e) {
                         console.warn('Cavdo sync: media hydrate failed, continuing with local media only', e);
                     });
+                    watchBilling(userId);
                     cavdoToast('✓ Synced with your account', 'ok');
                 } catch (e) {
                     console.warn('Cavdo sync: cloud load failed, continuing with local data only', e);
                     cavdoToast('⚠ Could not reach cloud storage (' + (e.code || e.message || 'unknown error') + '). Continuing with this device\'s local data — check that Firestore is created for this Firebase project and its rules allow this account.', 'warn');
                     enabled = true; // still mirror future writes; they'll retry on next flush
+                    watchBilling(userId); // still worth watching billing even if the rest of cloud sync failed
                 }
             }
 
             async function flushNow() { await flush(); }
+
+            // Listens to billing/{uid} in real time. This document is
+            // written ONLY by the Vercel backend's Admin SDK (see
+            // firestore-billing-rules.txt — the client has read-only
+            // access), so a change here means a real, server-verified
+            // payment was just confirmed (or a plan expired). The moment
+            // it changes, flip the locally-active plan to match — no
+            // manual "I've Paid" button, no page refresh needed.
+            function watchBilling(userId) {
+                if (billingUnsubscribe) { billingUnsubscribe(); billingUnsubscribe = null; }
+                if (!userId || typeof cavdoDb === 'undefined') return;
+
+                billingUnsubscribe = cavdoDb.collection('billing').doc(userId).onSnapshot(
+                    function (doc) {
+                        if (!doc.exists) return; // no purchase yet — stay on whatever plan is already active locally
+                        const data = doc.data() || {};
+
+                        // Expired or otherwise inactive server-side — drop to Free.
+                        if (data.status !== 'active' || (data.planEnd && Date.now() > data.planEnd)) {
+                            if (typeof setActivePlan === 'function' && getActivePlanKey() !== 'free') {
+                                setActivePlan('free');
+                            }
+                            return;
+                        }
+
+                        const matchedPlan = (typeof PLAN_LIST !== 'undefined')
+                            ? PLAN_LIST.find(function (p) { return p.backendKey === data.plan; })
+                            : null;
+                        if (!matchedPlan) return;
+
+                        if (typeof setActivePlan === 'function' && getActivePlanKey() !== matchedPlan.key) {
+                            setActivePlan(matchedPlan.key);
+                            if (typeof cavdoToast === 'function') {
+                                cavdoToast('✓ ' + matchedPlan.label + ' activated — enjoy!', 'ok');
+                            }
+                        }
+                    },
+                    function (err) {
+                        console.warn('Cavdo sync: billing listener error', err);
+                    }
+                );
+            }
 
             function stop() {
                 enabled = false;
                 uid = null;
                 pendingWrites.clear();
                 if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+                if (billingUnsubscribe) { billingUnsubscribe(); billingUnsubscribe = null; }
             }
 
             window.addEventListener('beforeunload', function () { if (pendingWrites.size) flush(); });
 
             return {
-                hydrate: hydrate, stop: stop, flushNow: flushNow,
+                hydrate: hydrate, stop: stop, flushNow: flushNow, watchBilling: watchBilling,
                 uploadImage: function (entry) { return uploadMedia('images', entry); },
                 deleteImage: function (id) { return deleteMedia('images', id); },
                 uploadSong: function (entry) { return uploadMedia('songs', entry); },

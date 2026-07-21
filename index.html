@@ -6722,8 +6722,24 @@
             setTimeout(() => { btn.innerText = 'copy'; }, 2000);
         }
 
+        // The model is instructed to write plain markdown, not HTML, but it
+        // occasionally slips and emits a literal HTML tag anyway (most often
+        // <br>, sometimes <p>/<div>). Since this renderer escapes text for
+        // safety, those used to show up as ugly literal text like "<br>"
+        // instead of doing what they look like they should do. This runs
+        // BEFORE escaping, and only on prose tokens (code fences are handled
+        // separately as plain text and never touch this), so it can't affect
+        // real code the model is showing.
+        function normalizeStrayHtmlBreaks(text) {
+            return text
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+                .replace(/<\/?p[^>]*>/gi, '\n')
+                .replace(/<\/?div[^>]*>/gi, '\n');
+        }
+
         function formatMarkdownToHTML(text) {
-            let html = escapeHtml(text);
+            let html = escapeHtml(normalizeStrayHtmlBreaks(text));
 
             html = html.replace(/^(?:###|###\s+)(.+)$/gm, '<span class="ai-heading">$1</span>');
             html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="ai-bold">$1</strong>');
@@ -9397,6 +9413,8 @@
                     let sysInstruction = (selectedMode === 'code') 
                         ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
+
+                    sysInstruction += " Outside of fenced code blocks, never write raw HTML tags like <br>, <br/>, <p>, or <div> in your reply text — this app renders your prose as plain markdown, not as live HTML, so a tag like that shows up as ugly literal text on screen instead of doing what it looks like it should do. For a line break, just start a new line; for a paragraph break, leave a blank line between paragraphs — that's all markdown needs.";
 
                     sysInstruction += " If the user's message is just a simple greeting or small talk (e.g. 'hi', 'hello', 'hey', 'good morning', 'how are you') with no actual request in it, reply with a short, warm, natural greeting back and nothing else. Do NOT list your capabilities, do NOT say what you can or cannot make/do/generate, and do NOT mention images, code, PDFs, or any other feature unless the user actually asked about it.";
 

@@ -10713,6 +10713,26 @@
                 return !!(uid && getOnboardedUids()[uid]);
             }
 
+            // Local, instant record of "this uid is a first-time Google
+            // sign-in that's mid-way through the 'Tell us about you' step"
+            // (Firebase session exists, but username/age/password haven't
+            // been submitted yet). Written the moment that step is shown,
+            // cleared the moment it's finished (or abandoned via "Back to
+            // log in"). A resume checks this *before* ever asking Firestore,
+            // so refreshing mid-fill lands back on the same step immediately
+            // — no network round-trip, so nothing to race or time out.
+            var PENDING_REG_KEY = 'cavdoPendingGoogleRegistration';
+            function savePendingGoogleRegistration(reg) {
+                try { localStorage.setItem(PENDING_REG_KEY, JSON.stringify(reg)); } catch (e) {}
+            }
+            function getPendingGoogleRegistration() {
+                try { return JSON.parse(localStorage.getItem(PENDING_REG_KEY) || 'null'); }
+                catch (e) { return null; }
+            }
+            function clearPendingGoogleRegistration() {
+                try { localStorage.removeItem(PENDING_REG_KEY); } catch (e) {}
+            }
+
             // Real SHA-256 hashing via the browser's native WebCrypto API.
             // The plaintext password is never written to storage — only this digest is.
             async function hashPassword(password) {
@@ -10886,6 +10906,27 @@
                     // propagated and wrongly look "incomplete".
                     var alreadyOnboarded = isOnboarded(fbUser.uid);
                     var profileData = null;
+
+                    if (!alreadyOnboarded) {
+                        var pendingReg = getPendingGoogleRegistration();
+                        if (pendingReg && pendingReg.uid === fbUser.uid) {
+                            // Confirmed locally, instantly, with no network
+                            // call: this is a first-time Google sign-in
+                            // that's mid-way through "Tell us about you".
+                            // Send them straight back — no Firestore round
+                            // trip needed (or possible to race/time out).
+                            pendingGoogleRegistration = pendingReg;
+                            document.getElementById('registerDetailsError').textContent = '';
+                            var googleWrap0 = document.getElementById('registerGoogleBtnWrap');
+                            var orDivider0 = document.getElementById('registerOrDivider');
+                            if (googleWrap0) googleWrap0.style.display = 'none';
+                            if (orDivider0) orDivider0.style.display = 'none';
+                            await waitOutMinLoading();
+                            showStep('registerDetails');
+                            return;
+                        }
+                    }
+
                     if (!alreadyOnboarded) {
                         var profileSnap = null;
                         try {
@@ -10922,6 +10963,7 @@
                             email: (fbUser.email || '').toLowerCase(),
                             name: fbUser.displayName || ''
                         };
+                        savePendingGoogleRegistration(pendingGoogleRegistration);
                         document.getElementById('registerDetailsError').textContent = '';
                         var googleWrap = document.getElementById('registerGoogleBtnWrap');
                         var orDivider = document.getElementById('registerOrDivider');
@@ -11022,6 +11064,7 @@
                         email: (profile.email || cred.user.email || '').toLowerCase(),
                         name: profile.name || cred.user.displayName || ''
                     };
+                    savePendingGoogleRegistration(pendingGoogleRegistration);
                     document.getElementById('registerDetailsError').textContent = '';
                     var googleWrap = document.getElementById('registerGoogleBtnWrap');
                     var orDivider = document.getElementById('registerOrDivider');
@@ -11235,6 +11278,7 @@
                     cavdoAuth.signOut().catch(function () {});
                 }
                 pendingGoogleRegistration = null;
+                clearPendingGoogleRegistration();
                 var pwFields = document.getElementById('registerPasswordFields');
                 if (pwFields) pwFields.style.display = '';
                 var googleWrap = document.getElementById('registerGoogleBtnWrap');
@@ -11387,6 +11431,7 @@
                         setCurrentUser(user, { via: 'password', uid: uid });
                     }
                     pendingGoogleRegistration = null;
+                    clearPendingGoogleRegistration();
                     pendingNewAccountUid = uid;
                     showStep('terms');
                 } catch (err) {

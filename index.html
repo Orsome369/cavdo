@@ -5560,6 +5560,24 @@
 
         document.getElementById('modalDeleteConfirm').onclick = () => {
             if (modalActiveTargetChatId) {
+                // Best-effort: free up the IndexedDB space used by this chat's
+                // uploaded image attachments too, so deleting old chats to make
+                // room (as the storage-full warning suggests) actually helps.
+                try {
+                    const deletedChat = JSON.parse(localStorage.getItem(modalActiveTargetChatId));
+                    if (deletedChat && Array.isArray(deletedChat.messages)) {
+                        deletedChat.messages.forEach(m => {
+                            if (Array.isArray(m.files)) {
+                                m.files.forEach(f => {
+                                    if (f.attachmentId) {
+                                        attachmentMemoryCache.delete(f.attachmentId);
+                                        idbDelete('attachments', f.attachmentId).catch(() => {});
+                                    }
+                                });
+                            }
+                        });
+                    }
+                } catch (e) { /* non-critical cleanup; ignore */ }
                 localStorage.removeItem(modalActiveTargetChatId);
                 if (currentChatId === modalActiveTargetChatId) {
                     toggleInterface(false);
@@ -7180,10 +7198,11 @@
                     const attWrap = document.createElement('div');
                     attWrap.className = 'msg-attachments-wrap';
                     attachmentsForMsg.forEach(f => {
-                        if (f.isImage && f.base64) {
+                        const fBase64 = resolveAttachmentBase64(f);
+                        if (f.isImage && fBase64) {
                             const img = document.createElement('img');
                             img.className = 'chat-img-preview';
-                            const srcStr = `data:${f.type || 'image/png'};base64,${f.base64}`;
+                            const srcStr = `data:${f.type || 'image/png'};base64,${fBase64}`;
                             img.src = srcStr;
                             img.title = "Click to enlarge";
                             img.onclick = () => window.openImageLightbox(srcStr, f.name || "Uploaded Attachment");
@@ -8197,7 +8216,7 @@
         // entries into it) once, on page load.
         // ------------------------------------------------------------
         const CAVDO_DB_NAME = 'cavdo_media_db';
-        const CAVDO_DB_VERSION = 2;
+        const CAVDO_DB_VERSION = 3;
         let cavdoDbPromise = null;
         function openCavdoDb() {
             if (cavdoDbPromise) return cavdoDbPromise;
@@ -8208,6 +8227,15 @@
                     const db = req.result;
                     if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'id' });
                     if (!db.objectStoreNames.contains('songs')) db.createObjectStore('songs', { keyPath: 'id' });
+                    // User-uploaded image attachments (as opposed to AI-generated
+                    // images above). These used to be embedded as base64 directly
+                    // inside each chat's message JSON, which lives in localStorage
+                    // (capped ~5-10MB) and gets mirrored whole into a single
+                    // Firestore document (capped ~1MB) — a couple of photos in one
+                    // conversation was enough to blow past both. Storing the bytes
+                    // here instead, referenced from the chat by a small id, keeps
+                    // the chat JSON itself tiny.
+                    if (!db.objectStoreNames.contains('attachments')) db.createObjectStore('attachments', { keyPath: 'id' });
                     // Tracks which account's data this browser's local media
                     // cache currently belongs to — lets hydrateMedia tell "same
                     // account reconnecting after a network hiccup" (safe to keep
@@ -8264,6 +8292,30 @@
 
         const imageMemoryCache = new Map();
         const songMemoryCache = new Map();
+        const attachmentMemoryCache = new Map(); // attachmentId -> { id, base64 }
+
+        // Reads an attachment's base64 the same way regardless of whether
+        // it's a live in-memory attachment (still has .base64 straight from
+        // the file reader) or one restored from a saved chat (only has
+        // .attachmentId, with the actual bytes living in IndexedDB/cache).
+        function resolveAttachmentBase64(f) {
+            if (!f) return null;
+            if (f.base64) return f.base64;
+            if (f.attachmentId) {
+                const cached = attachmentMemoryCache.get(f.attachmentId);
+                if (cached) return cached.base64;
+            }
+            return null;
+        }
+
+        // Saves an uploaded image's bytes to IndexedDB (persistent) and the
+        // in-memory cache (instant, synchronous reads elsewhere), fire-and-
+        // forget like the generated-image cache below — the chat message
+        // object itself only ever stores the small attachmentId reference.
+        function persistAttachmentImage(id, base64) {
+            attachmentMemoryCache.set(id, { id: id, base64: base64 });
+            idbPut('attachments', { id: id, base64: base64 }).catch(e => console.error('Could not persist attachment image to IndexedDB:', e));
+        }
 
         // One-time startup: migrate any pre-existing localStorage entries
         // (from before this app used IndexedDB) into IndexedDB and remove
@@ -8299,6 +8351,9 @@
             try {
                 (await idbGetAll('songs')).forEach(e => songMemoryCache.set(e.id, e));
             } catch (e) { console.error('Could not load song memory from IndexedDB:', e); }
+            try {
+                (await idbGetAll('attachments')).forEach(e => attachmentMemoryCache.set(e.id, e));
+            } catch (e) { console.error('Could not load attachment memory from IndexedDB:', e); }
 
             if (typeof currentChatId !== 'undefined' && currentChatId && typeof renderActiveChatMessages === 'function') {
                 renderActiveChatMessages(false);
@@ -8900,13 +8955,17 @@
             }
 
             if (pendingAttachments.length > 0) {
-                userMsg.files = pendingAttachments.map(att => ({
-                    name: att.name,
-                    type: att.type,
-                    isImage: att.isImage,
-                    base64: att.base64,
-                    textContent: att.textContent
-                }));
+                userMsg.files = pendingAttachments.map(att => {
+                    if (att.isImage && att.base64) {
+                        // The image bytes go to IndexedDB, not into the chat
+                        // JSON itself — that's what used to blow past both
+                        // localStorage's quota and Firestore's per-document
+                        // size cap after just a photo or two.
+                        persistAttachmentImage(att.id, att.base64);
+                        return { name: att.name, type: att.type, isImage: true, attachmentId: att.id, textContent: null };
+                    }
+                    return { name: att.name, type: att.type, isImage: att.isImage, base64: att.base64, textContent: att.textContent };
+                });
             }
 
             chatData.messages.push(userMsg);
@@ -8928,7 +8987,7 @@
                 console.error('Failed to save message (likely storage full):', storageErr);
                 const isQuota = storageErr.name === 'QuotaExceededError' || /quota/i.test(storageErr.message || '');
                 alert(isQuota
-                    ? "Couldn't send: your browser's local storage is full (this happens fast with image attachments). Open \"My Images\" and delete a few older generated images, or clear some old chats, then try again."
+                    ? "Couldn't send: your browser's local storage is full. Try clearing a few old chats, then try again."
                     : "Couldn't send that message — something went wrong saving it locally. Please try again.");
                 // Roll back the isGeneratingInBg flag we set above so the UI
                 // doesn't get stuck thinking a send is still in progress.
@@ -9068,9 +9127,9 @@
             // Check that before looking backward at all.
             const currentUserMsgForEdit = chatData.messages[chatData.messages.length - 1];
             if (currentUserMsgForEdit && currentUserMsgForEdit.role === 'user' && Array.isArray(currentUserMsgForEdit.files)) {
-                const attachedImg = currentUserMsgForEdit.files.find(f => f.isImage && f.base64);
+                const attachedImg = currentUserMsgForEdit.files.find(f => f.isImage && resolveAttachmentBase64(f));
                 if (attachedImg) {
-                    lastImageContext = { prompt: '', base64: attachedImg.base64, mimeType: attachedImg.type, sourceUrl: null };
+                    lastImageContext = { prompt: '', base64: resolveAttachmentBase64(attachedImg), mimeType: attachedImg.type, sourceUrl: null };
                 }
             }
 
@@ -9107,9 +9166,9 @@
                 for (let i = chatData.messages.length - 2; i >= 0; i--) {
                     const m = chatData.messages[i];
                     if (m.role === 'user' && Array.isArray(m.files)) {
-                        const attachedImg = m.files.find(f => f.isImage && f.base64);
+                        const attachedImg = m.files.find(f => f.isImage && resolveAttachmentBase64(f));
                         if (attachedImg) {
-                            lastImageContext = { prompt: m.text || '', base64: attachedImg.base64, mimeType: attachedImg.type, sourceUrl: null };
+                            lastImageContext = { prompt: m.text || '', base64: resolveAttachmentBase64(attachedImg), mimeType: attachedImg.type, sourceUrl: null };
                             break;
                         }
                     }
@@ -9583,7 +9642,7 @@
                         if (!alreadyHasRealContent) {
                             const isQuotaMsg = err.name === 'QuotaExceededError' || /quota/i.test(err.message || '');
                             existingMsg.text = isQuotaMsg
-                                ? `⚠️ Your browser's local storage is full. Open "My Images" and delete a few older generated images, then try again.`
+                                ? `⚠️ Your browser's local storage is full. Try clearing a few old chats, then try again.`
                                 : `⚠️ Our servers are a little busy right now. Please try again in a moment.`;
                         }
                         existingMsg.isThinking = false;
@@ -9614,8 +9673,9 @@
                 
                 if (Array.isArray(msg.files)) {
                     msg.files.forEach(f => {
-                        if (f.isImage && f.base64) {
-                            parts.push({ inlineData: { data: f.base64, mimeType: f.type || 'image/png' } });
+                        const fBase64 = resolveAttachmentBase64(f);
+                        if (f.isImage && fBase64) {
+                            parts.push({ inlineData: { data: fBase64, mimeType: f.type || 'image/png' } });
                         } else if (f.textContent) {
                             parts.push({ text: `[Context File Attachment: ${f.name}]\n${f.textContent}` });
                         }

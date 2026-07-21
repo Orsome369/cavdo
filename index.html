@@ -3333,6 +3333,22 @@
         .auth-field input:focus { border-color: #2fd05c; }
         .auth-field input::placeholder { color: rgba(255,255,255,0.3); }
 
+        /* Detect the browser's own autofill (saved username/password) so the
+           script below can immediately clear it — see the animationstart
+           listener near clearAuthInputs. Autofilled inputs get a harmless,
+           invisible animation kicked off by the browser; plain inputs get a
+           different (also invisible) one, so listening for the "start" name
+           tells us autofill just happened, without any visual side effect. */
+        @keyframes cavdoAutoFillStart { from {} to {} }
+        @keyframes cavdoAutoFillCancel { from {} to {} }
+        #loginUsername, #loginPassword, #registerUsername, #registerPassword, #registerConfirmPassword {
+            animation-name: cavdoAutoFillCancel;
+        }
+        #loginUsername:-webkit-autofill, #loginPassword:-webkit-autofill,
+        #registerUsername:-webkit-autofill, #registerPassword:-webkit-autofill, #registerConfirmPassword:-webkit-autofill {
+            animation-name: cavdoAutoFillStart;
+        }
+
         .auth-error {
             font-size: 12px;
             color: #ff6b6b;
@@ -10609,7 +10625,42 @@
                 Object.keys(steps).forEach(function (key) {
                     steps[key].classList.toggle('active', key === name);
                 });
+                if (name === 'login' || name === 'registerDetails') clearAuthInputs();
             }
+
+            // Browsers (especially on refresh, or back/forward navigation
+            // served from bfcache) can silently restore whatever was last
+            // typed into a text field, even though nothing in this app's own
+            // code put that value there. That's not what we want for a
+            // login/register form, so every field the person types into here
+            // gets forced back to empty — on first load, whenever the tab is
+            // shown again, and whenever we switch to one of these steps.
+            var AUTH_INPUT_IDS = [
+                'loginUsername', 'loginPassword',
+                'registerUsername', 'registerPassword', 'registerConfirmPassword', 'registerAge'
+            ];
+            function clearAuthInputs() {
+                AUTH_INPUT_IDS.forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+            }
+            clearAuthInputs();
+            window.addEventListener('pageshow', clearAuthInputs);
+            // Autofill from a browser's saved-password store can land in the
+            // field *after* the clears above already ran (it's not instant).
+            // Re-clear a few more times shortly after load to catch that —
+            // covers browsers where the animation trick below doesn't apply.
+            [50, 200, 500, 1000].forEach(function (ms) { setTimeout(clearAuthInputs, ms); });
+            // Chrome/Safari/Edge trigger a CSS animation on inputs the instant
+            // they're autofilled (see the cavdoAutoFillStart keyframes above).
+            // Listening for that lets us clear the exact field the moment it
+            // happens, rather than guessing at a delay.
+            document.addEventListener('animationstart', function (e) {
+                if (e.animationName === 'cavdoAutoFillStart' && AUTH_INPUT_IDS.indexOf(e.target.id) !== -1) {
+                    e.target.value = '';
+                }
+            });
 
             // ---------------- Account store (real persistence, hashed passwords) ----------------
             var ACCOUNTS_KEY = 'cavdoAccounts';

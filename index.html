@@ -3455,7 +3455,6 @@
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 </head>
 <body class="pre-auth">
     <script>
@@ -10162,7 +10161,6 @@
         firebase.initializeApp(firebaseConfig);
         const cavdoAuth = firebase.auth();
         const cavdoDb = firebase.firestore();
-        const cavdoStorage = firebase.storage();
 
         // Firebase Auth needs an email format — this app uses usernames, so we
         // derive a stable, private pseudo-email from the username. It's never
@@ -10254,9 +10252,13 @@
             // switching accounts on the SAME browser never cleared them,
             // so one account could still see another's generated images.
             // This mirrors them the same way localStorage is mirrored,
-            // using Firebase Storage instead of Firestore because
-            // base64 image/audio data routinely exceeds Firestore's 1MB
-            // per-document limit.
+            // using Firestore instead of Firebase Storage — Cloud Storage
+            // for Firebase now requires the paid Blaze plan just to be
+            // turned on at all, while Firestore works on the free Spark
+            // plan. Each image/song document only holds metadata; the
+            // base64 bytes are split into ~700KB chunks in a `chunks`
+            // subcollection, since a single Firestore document is capped
+            // at 1MB and generated media routinely exceeds that.
             // ------------------------------------------------------------
             function idbClearStore(storeName) {
                 return openCavdoDb().then(db => new Promise((resolve, reject) => {
@@ -10267,23 +10269,18 @@
                 }));
             }
 
-            function blobToBase64(blob) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        const result = reader.result || '';
-                        const comma = result.indexOf(',');
-                        resolve(comma >= 0 ? result.slice(comma + 1) : result);
-                    };
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-            }
+            // Firestore documents are capped at 1MB (including field-name
+            // overhead), so base64 media is split into chunks safely under
+            // that limit before being written.
+            const MEDIA_CHUNK_SIZE = 700000;
 
             async function downloadMediaKind(userId, kind, cache) {
-                let listing;
+                let metaSnap;
                 try {
-                    listing = await withTimeout(cavdoStorage.ref('users/' + userId + '/' + kind).listAll(), 8000, 'Media list');
+                    metaSnap = await withTimeout(
+                        cavdoDb.collection('users').doc(userId).collection('media').where('kind', '==', kind).get(),
+                        8000, 'Media list'
+                    );
                 } catch (e) {
                     console.warn('Cavdo sync: could not list cloud ' + kind + ', keeping this device\'s local copy', e);
                     return; // bail out WITHOUT touching local storage — a network hiccup
@@ -10295,21 +10292,23 @@
                 // to replace it.
                 await idbClearStore(kind);
                 if (cache) cache.clear();
-                for (const itemRef of listing.items) {
+                for (const doc of metaSnap.docs) {
                     try {
-                        const meta = await itemRef.getMetadata();
-                        const url = await itemRef.getDownloadURL();
-                        const blob = await (await fetch(url)).blob();
-                        const base64 = await blobToBase64(blob);
-                        const custom = meta.customMetadata || {};
+                        const meta = doc.data();
+                        const chunksSnap = await withTimeout(
+                            doc.ref.collection('chunks').orderBy('i').get(),
+                            15000, 'Media chunk download'
+                        );
+                        let base64 = '';
+                        chunksSnap.forEach(function (c) { base64 += (c.data().d || ''); });
                         const entry = {
-                            id: itemRef.name,
-                            prompt: custom.prompt || '',
+                            id: doc.id,
+                            prompt: meta.prompt || '',
                             base64: base64,
-                            mimeType: meta.contentType || (kind === 'images' ? 'image/png' : 'audio/wav'),
-                            ts: custom.ts ? parseInt(custom.ts, 10) : Date.now()
+                            mimeType: meta.mimeType || (kind === 'images' ? 'image/png' : 'audio/wav'),
+                            ts: meta.ts || Date.now()
                         };
-                        if (kind === 'images') entry.aspectRatio = custom.aspectRatio || null;
+                        if (kind === 'images') entry.aspectRatio = meta.aspectRatio || null;
                         await idbPut(kind, entry);
                         if (cache) cache.set(entry.id, entry);
                     } catch (e) {
@@ -10352,19 +10351,63 @@
 
             async function uploadMedia(kind, entry) {
                 if (!enabled || !uid) return;
-                try {
-                    const meta = {
-                        contentType: entry.mimeType || (kind === 'images' ? 'image/png' : 'audio/wav'),
-                        customMetadata: {
-                            prompt: String(entry.prompt || '').slice(0, 900),
-                            ts: String(entry.ts || Date.now()),
-                            aspectRatio: entry.aspectRatio || ''
-                        }
+
+                async function attempt() {
+                    const base64 = entry.base64 || '';
+                    const chunks = [];
+                    for (let i = 0; i < base64.length; i += MEDIA_CHUNK_SIZE) {
+                        chunks.push(base64.slice(i, i + MEDIA_CHUNK_SIZE));
+                    }
+                    const docRef = cavdoDb.collection('users').doc(uid).collection('media').doc(entry.id);
+                    const metadata = {
+                        kind: kind,
+                        prompt: String(entry.prompt || '').slice(0, 900),
+                        mimeType: entry.mimeType || (kind === 'images' ? 'image/png' : 'audio/wav'),
+                        aspectRatio: entry.aspectRatio || null,
+                        ts: entry.ts || Date.now(),
+                        chunkCount: chunks.length
                     };
-                    await withTimeout(
-                        cavdoStorage.ref('users/' + uid + '/' + kind + '/' + entry.id).putString(entry.base64, 'base64', meta),
-                        20000, 'Media upload'
-                    );
+
+                    // entry.id is always a freshly-generated id (see
+                    // saveImageToMemory/saveSongToMemory), so there is never
+                    // an existing chunk set to clean up first — the old
+                    // "list, then clear" step before every upload was pure
+                    // overhead (and pure timeout risk) for a case that never
+                    // actually happens in practice, so it's gone.
+                    if (chunks.length === 0) {
+                        await withTimeout(docRef.set(metadata), 20000, 'Media upload');
+                        return;
+                    }
+
+                    // Firestore batched writes cap out at 500 operations; a
+                    // generated image/song realistically never needs more
+                    // than a handful of 700KB chunks, but this stays correct
+                    // even if one ever did. The metadata doc rides along in
+                    // the FIRST batch, so a typical upload (everything fits
+                    // in one batch) is a single network round trip instead
+                    // of the two-or-more it used to take.
+                    for (let start = 0; start < chunks.length; start += 400) {
+                        const batch = cavdoDb.batch();
+                        chunks.slice(start, start + 400).forEach(function (c, idx) {
+                            const i = start + idx;
+                            batch.set(docRef.collection('chunks').doc(String(i)), { i: i, d: c });
+                        });
+                        if (start === 0) batch.set(docRef, metadata);
+                        await withTimeout(batch.commit(), 30000, 'Media upload');
+                    }
+                }
+
+                try {
+                    try {
+                        await attempt();
+                    } catch (firstErr) {
+                        // One automatic retry — covers a single slow or
+                        // dropped request, which is the far more common
+                        // cause of a timeout here than an actual permissions
+                        // or setup problem (those fail instantly, not slowly).
+                        console.warn('Cavdo sync: ' + kind + ' upload failed once, retrying', firstErr);
+                        await attempt();
+                    }
                 } catch (e) {
                     console.warn('Cavdo sync: could not upload ' + kind + ' to the cloud (kept on this device only)', e);
                     cavdoToast('⚠ Could not save this ' + (kind === 'images' ? 'image' : 'song') + ' to your account in the cloud — it\'ll stay on this device only. (' + (e.code || e.message || 'unknown error') + ')', 'warn');
@@ -10374,11 +10417,14 @@
             async function deleteMedia(kind, id) {
                 if (!enabled || !uid) return;
                 try {
-                    await cavdoStorage.ref('users/' + uid + '/' + kind + '/' + id).delete();
+                    const docRef = cavdoDb.collection('users').doc(uid).collection('media').doc(id);
+                    const chunksSnap = await docRef.collection('chunks').get();
+                    const batch = cavdoDb.batch();
+                    chunksSnap.forEach(function (d) { batch.delete(d.ref); });
+                    batch.delete(docRef);
+                    await batch.commit();
                 } catch (e) {
-                    if (e && e.code !== 'storage/object-not-found') {
-                        console.warn('Cavdo sync: could not delete ' + kind + ' from the cloud', e);
-                    }
+                    console.warn('Cavdo sync: could not delete ' + kind + ' from the cloud', e);
                 }
             }
 

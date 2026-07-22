@@ -2979,6 +2979,99 @@
             }
         }
 
+        /* ---- Split View (desktop-only multi-chat) ---- */
+        .split-view-toggle-btn {
+            position: absolute;
+            top: calc(20px + var(--safe-top));
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 60;
+            padding: 8px 18px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            transition: background 0.2s, transform 0.15s, border-color 0.2s, color 0.2s;
+        }
+        .split-view-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(47, 208, 92, 0.4);
+        }
+        .split-view-toggle-btn.active {
+            background: rgba(47, 208, 92, 0.18);
+            border-color: rgba(47, 208, 92, 0.5);
+            color: #2fd05c;
+        }
+
+        .split-view-pane {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            height: 100%;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(10, 14, 11, 0.6);
+        }
+        body.split-view-active .split-view-pane {
+            display: flex;
+        }
+        .split-view-pane-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: calc(12px + var(--safe-top)) 14px 12px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .split-view-chat-picker {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #fff;
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .split-view-chat-picker option { background: #131a15; color: #fff; }
+        .split-view-close-btn {
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.06);
+            border: none;
+            color: rgba(255, 255, 255, 0.7);
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.2s;
+        }
+        .split-view-close-btn:hover {
+            background: rgba(255, 74, 74, 0.2);
+            color: #ff6b6b;
+        }
+        .split-view-iframe {
+            flex: 1;
+            width: 100%;
+            border: none;
+            background: transparent;
+        }
+
+        /* Desktop-only feature — fully hidden on mobile/small screens */
+        @media (max-width: 900px) {
+            .split-view-toggle-btn, .split-view-pane { display: none !important; }
+        }
+
         /* ---- Grayed-out "thinking" status text ---- */
         .thinking-status-text {
             color: rgba(255, 255, 255, 0.45);
@@ -3710,6 +3803,7 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
         <button class="global-upgrade-btn" id="upgradePlanBtn" title="Upgrade your plan" type="button">⭐ Upgrade</button>
+        <button class="split-view-toggle-btn" id="splitViewToggleBtn" title="Split screen — chat with two conversations side by side (desktop only)" type="button">⧉ Split View</button>
         <div class="welcome-box" id="welcomeBox">
             <img class="welcome-logo-mark" src="" id="welcomeLogoMark" alt="Cavdo AI logo">
             <div class="badge">✨ Ready to help</div>
@@ -3776,6 +3870,14 @@
 
             <div class="composer-disclaimer">Cavdo AI can make mistakes. Please double-check important information.</div>
         </div>
+    </div>
+
+    <div class="split-view-pane" id="splitViewPane">
+        <div class="split-view-pane-header">
+            <select class="split-view-chat-picker" id="splitViewChatPicker" title="Choose a chat for this pane"></select>
+            <button class="split-view-close-btn" id="splitViewCloseBtn" title="Close split view" type="button">✕</button>
+        </div>
+        <iframe class="split-view-iframe" id="splitViewFrame" title="Second chat"></iframe>
     </div>
 
     <div class="modal-overlay" id="customModalOverlay">
@@ -5711,6 +5813,110 @@
         planLimitModalOverlay.onclick = (e) => {
             if (e.target === planLimitModalOverlay) closePlanLimitModal();
         };
+
+        // ---- Split View (desktop-only multi-chat) ----
+        // Second pane is a same-origin iframe pointed at this exact app with
+        // a different #/c/<chatId> hash — it reuses all existing chat logic,
+        // auth, and localStorage/IndexedDB (same origin) with zero changes
+        // to the primary chat code. Toggle button is CSS-hidden below 900px
+        // and this code no-ops on narrow viewports as a second guard.
+        const splitViewToggleBtn = document.getElementById('splitViewToggleBtn');
+        const splitViewPane = document.getElementById('splitViewPane');
+        const splitViewFrame = document.getElementById('splitViewFrame');
+        const splitViewChatPicker = document.getElementById('splitViewChatPicker');
+        const splitViewCloseBtn = document.getElementById('splitViewCloseBtn');
+
+        function isDesktopViewport() {
+            return window.innerWidth > 900;
+        }
+
+        function populateSplitViewChatPicker() {
+            const keys = Object.keys(localStorage).filter(k => k.startsWith('cavdo_chat_'));
+            const chats = keys.map(key => {
+                let title = 'Untitled Conversation';
+                try {
+                    const chat = JSON.parse(localStorage.getItem(key));
+                    if (chat && chat.title) title = chat.title;
+                } catch (e) { /* skip unparsable entries */ }
+                const updatedAt = (() => {
+                    try { return JSON.parse(localStorage.getItem(key)).updatedAt || 0; }
+                    catch (e) { return 0; }
+                })();
+                return { key, title, updatedAt };
+            }).sort((a, b) => b.updatedAt - a.updatedAt);
+
+            const previousValue = splitViewChatPicker.value;
+            splitViewChatPicker.innerHTML = '';
+
+            const newOpt = document.createElement('option');
+            newOpt.value = '';
+            newOpt.textContent = '+ New Chat';
+            splitViewChatPicker.appendChild(newOpt);
+
+            chats.forEach(chat => {
+                const opt = document.createElement('option');
+                opt.value = chat.key;
+                opt.textContent = chat.title;
+                splitViewChatPicker.appendChild(opt);
+            });
+
+            if (previousValue && chats.some(c => c.key === previousValue)) {
+                splitViewChatPicker.value = previousValue;
+            }
+        }
+
+        function loadSplitViewChat(chatKey) {
+            const base = location.origin + location.pathname;
+            if (!chatKey) {
+                splitViewFrame.src = base;
+                return;
+            }
+            try {
+                const chat = JSON.parse(localStorage.getItem(chatKey));
+                if (!chat) { splitViewFrame.src = base; return; }
+                if (!chat.slug) {
+                    chat.slug = randomSlug();
+                    localStorage.setItem(chatKey, JSON.stringify(chat));
+                }
+                splitViewFrame.src = `${base}#/c/${chat.slug}`;
+            } catch (e) {
+                splitViewFrame.src = base;
+            }
+        }
+
+        function openSplitView() {
+            if (!isDesktopViewport()) return;
+            populateSplitViewChatPicker();
+            document.body.classList.add('split-view-active');
+            splitViewToggleBtn.classList.add('active');
+            if (!splitViewFrame.src) loadSplitViewChat('');
+        }
+
+        function closeSplitView() {
+            document.body.classList.remove('split-view-active');
+            splitViewToggleBtn.classList.remove('active');
+        }
+
+        splitViewToggleBtn.onclick = () => {
+            if (document.body.classList.contains('split-view-active')) {
+                closeSplitView();
+            } else {
+                openSplitView();
+            }
+        };
+
+        splitViewCloseBtn.onclick = closeSplitView;
+
+        splitViewChatPicker.onchange = () => {
+            loadSplitViewChat(splitViewChatPicker.value);
+        };
+
+        // Refresh the picker list whenever it's opened, and force-close split
+        // view if the window is resized down to a mobile-sized viewport.
+        splitViewChatPicker.addEventListener('mousedown', populateSplitViewChatPicker);
+        window.addEventListener('resize', () => {
+            if (!isDesktopViewport()) closeSplitView();
+        });
 
         document.getElementById('modalRenameSave').onclick = () => {
             const updatedTitle = modalRenameInput.value.trim();

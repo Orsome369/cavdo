@@ -6453,6 +6453,15 @@
                 iconBox.style.display = 'none';
                 thumb.style.display = 'block';
                 if (att.previewSrc) thumb.src = att.previewSrc;
+            } else if (att.isVideo) {
+                if (att.previewSrc) {
+                    iconBox.style.display = 'none';
+                    thumb.style.display = 'block';
+                    thumb.src = att.previewSrc;
+                } else {
+                    iconBox.style.display = 'flex';
+                    iconBox.innerText = '🎬';
+                }
             } else {
                 iconBox.style.display = 'flex';
                 iconBox.innerText = iconForFile(att.name, att.type);
@@ -6504,7 +6513,50 @@
 
         // Accepts any number of files (multi-select, drag-drop, paste) and appends
         // each one to pendingAttachments as it finishes reading.
-        const MAX_ATTACHMENT_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB hard limit
+        const MAX_ATTACHMENT_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB hard limit for non-video files
+        const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB hard limit for videos specifically
+
+        // Grabs a single frame from partway through a video Blob and returns it as a
+        // data URL, purely so the attachment tray can show a real thumbnail instead
+        // of a generic file icon. Best-effort only — if it fails for any reason the
+        // pill just falls back to the icon.
+        function generateVideoThumbnail(file) {
+            return new Promise((resolve) => {
+                try {
+                    const videoEl = document.createElement('video');
+                    videoEl.preload = 'metadata';
+                    videoEl.muted = true;
+                    videoEl.playsInline = true;
+                    const objectUrl = URL.createObjectURL(file);
+                    videoEl.src = objectUrl;
+
+                    const cleanup = () => URL.revokeObjectURL(objectUrl);
+
+                    videoEl.onloadeddata = function() {
+                        try {
+                            videoEl.currentTime = Math.min(0.5, (videoEl.duration || 1) / 4);
+                        } catch (e) { resolve(null); cleanup(); }
+                    };
+                    videoEl.onseeked = function() {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = videoEl.videoWidth || 320;
+                            canvas.height = videoEl.videoHeight || 180;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                            resolve(canvas.toDataURL('image/jpeg', 0.8));
+                        } catch (e) {
+                            resolve(null);
+                        } finally {
+                            cleanup();
+                        }
+                    };
+                    videoEl.onerror = function() { resolve(null); cleanup(); };
+                } catch (e) {
+                    resolve(null);
+                }
+            });
+        }
 
         function handleSelectedFiles(files) {
             const fileList = Array.from(files || []);
@@ -6512,21 +6564,25 @@
 
             fileList.forEach(file => {
                 const isImage = file.type.startsWith('image/');
+                const isVideo = file.type.startsWith('video/');
+                const sizeLimit = isVideo ? MAX_VIDEO_SIZE_BYTES : MAX_ATTACHMENT_SIZE_BYTES;
+                const limitLabel = isVideo ? '100MB' : '500MB';
 
-                // Reject anything over the 500MB limit up front — show an
+                // Reject anything over the size limit up front — show an
                 // inline error pill instead of attempting to read the file.
-                if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+                if (file.size > sizeLimit) {
                     const errAtt = {
                         id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                         name: file.name,
                         type: file.type,
                         size: file.size,
                         isImage: isImage,
+                        isVideo: isVideo,
                         base64: null,
                         textContent: null,
                         previewSrc: null,
                         isError: true,
-                        status: `Too large (${formatFileSize(file.size)}) · 500MB limit`
+                        status: `Too large (${formatFileSize(file.size)}) · ${limitLabel} limit${isVideo ? ' for video' : ''}`
                     };
                     pendingAttachments.push(errAtt);
                     renderAttachmentTray();
@@ -6539,22 +6595,30 @@
                     type: file.type,
                     size: file.size,
                     isImage: isImage,
+                    isVideo: isVideo,
                     base64: null,
                     textContent: null,
                     previewSrc: null,
                     isLoading: true,
-                    status: 'Reading file…'
+                    status: isVideo ? 'Reading video…' : 'Reading file…'
                 };
                 pendingAttachments.push(att);
                 renderAttachmentTray();
 
+                if (isVideo) {
+                    // Kick off a thumbnail in parallel — doesn't block the base64 read below.
+                    generateVideoThumbnail(file).then(thumb => {
+                        if (thumb) { att.previewSrc = thumb; renderAttachmentTray(); }
+                    });
+                }
+
                 const reader = new FileReader();
-                if (isImage) {
+                if (isImage || isVideo) {
                     reader.onload = function(evt) {
                         att.base64 = evt.target.result.split(',')[1];
-                        att.previewSrc = evt.target.result;
+                        if (isImage) att.previewSrc = evt.target.result;
                         att.isLoading = false;
-                        att.status = `Image · ${formatFileSize(file.size)} · attached`;
+                        att.status = `${isVideo ? 'Video' : 'Image'} · ${formatFileSize(file.size)} · attached`;
                         renderAttachmentTray();
                     };
                     reader.onerror = function() {
@@ -7706,6 +7770,15 @@
                             img.title = "Click to enlarge";
                             img.onclick = () => window.openImageLightbox(srcStr, f.name || "Uploaded Attachment");
                             attWrap.appendChild(img);
+                        } else if (f.isVideo && fBase64) {
+                            const vid = document.createElement('video');
+                            vid.className = 'chat-img-preview';
+                            vid.src = `data:${f.type || 'video/mp4'};base64,${fBase64}`;
+                            vid.controls = true;
+                            vid.playsInline = true;
+                            vid.style.maxWidth = '260px';
+                            vid.style.borderRadius = '12px';
+                            attWrap.appendChild(vid);
                         } else {
                             const fileTag = document.createElement('div');
                             fileTag.className = 'file-attachment-tag';
@@ -9455,15 +9528,15 @@
 
             if (pendingAttachments.length > 0) {
                 userMsg.files = pendingAttachments.map(att => {
-                    if (att.isImage && att.base64) {
-                        // The image bytes go to IndexedDB, not into the chat
-                        // JSON itself — that's what used to blow past both
+                    if ((att.isImage || att.isVideo) && att.base64) {
+                        // The bytes go to IndexedDB, not into the chat JSON
+                        // itself — that's what used to blow past both
                         // localStorage's quota and Firestore's per-document
-                        // size cap after just a photo or two.
+                        // size cap after just a photo (or video) or two.
                         persistAttachmentImage(att.id, att.base64);
-                        return { name: att.name, type: att.type, isImage: true, attachmentId: att.id, textContent: null };
+                        return { name: att.name, type: att.type, isImage: !!att.isImage, isVideo: !!att.isVideo, attachmentId: att.id, textContent: null };
                     }
-                    return { name: att.name, type: att.type, isImage: att.isImage, base64: att.base64, textContent: att.textContent };
+                    return { name: att.name, type: att.type, isImage: att.isImage, isVideo: att.isVideo, base64: att.base64, textContent: att.textContent };
                 });
             }
 
@@ -9523,11 +9596,6 @@
             const imageGenPhrases = ['generate an image', 'generate image', 'create image', 'make an image', 'make me an image', 'draw me', 'paint me', 'create a picture', 'create a logo', 'make me a logo', 'make me a picture'];
             const codeKeywords = ['code', 'script', 'program', 'html', 'css', 'javascript', 'python', 'java', 'c++', 'function', 'ui like', 'make a web', 'build a site', 'write a function'];
 
-            // Words/phrases that mean "generate a piece of music" — mirrors
-            // the image detection above.
-            const songNouns = ['song', 'music', 'track', 'tune', 'melody', 'soundtrack', 'jingle'];
-            const songVerbs = ['compose'];
-            const songGenPhrases = ['generate a song', 'generate music', 'make a song', 'make me a song', 'create a song', 'create music', 'compose a song', 'compose music', 'generate a track', 'make a track', 'make a beat', 'generate a beat'];
 
             // Match whole words only — a plain substring check (lowerText.includes('pic'))
             // wrongly fires on words like "topic" or "epic".
@@ -9582,17 +9650,11 @@
             const hasImageWord = imageNouns.some(noun => containsKeyword(lowerText, noun)) || hasImageTypo(lowerText);
             const looksLikeTroubleshooting = troubleshootingRegex.test(lowerText);
 
-            const hasExplicitSongAsk = songGenPhrases.some(phrase => lowerText.includes(phrase))
-                || songVerbs.some(verb => containsKeyword(lowerText, verb));
-            const hasSongWord = songNouns.some(noun => containsKeyword(lowerText, noun));
 
             if (hasExplicitImageAsk) {
                 // Unambiguous generation intent ("draw...", "paint...",
                 // "generate an image...") wins regardless of anything else.
                 selectedMode = 'image';
-            } else if (hasExplicitSongAsk) {
-                // Unambiguous song-generation intent wins next.
-                selectedMode = 'song';
             } else if (hasCodeSignal) {
                 // A clear code/HTML/script request wins over a bare image
                 // noun — "make html for my logo" means build a page, not
@@ -9602,10 +9664,6 @@
                 // Just a bare noun ("logo", "photo") with no code context and
                 // not describing a problem — still read as a request for one.
                 selectedMode = 'image';
-            } else if (hasSongWord && !looksLikeTroubleshooting) {
-                // Bare noun ("song", "music") with no code/image context —
-                // still read as a request for a generated track.
-                selectedMode = 'song';
             }
 
             // ------------------------------------------------------------
@@ -9707,7 +9765,7 @@
                 if (m.role === 'user') break; // only look at the immediately preceding AI turn's code
             }
             const codeEditIntentRegex = /\b(nice|nicer|nicely|better|clean(?:er)?|cleanup|improve|improved|polish|prettier|refactor|optimi[sz]e|shorten|shorter|simplify|rewrite|comment|document|fix (it|this|that)|update (it|this|that)|modify (it|this|that)|change (it|this|that)|the code|this code|that code|make it|make this)\b/i;
-            const isCodeEditRequest = !!(lastCodeContext && selectedMode !== 'image' && selectedMode !== 'song' && !hasExplicitImageAsk && codeEditIntentRegex.test(lowerText));
+            const isCodeEditRequest = !!(lastCodeContext && selectedMode !== 'image' && !hasExplicitImageAsk && codeEditIntentRegex.test(lowerText));
             if (isCodeEditRequest) {
                 selectedMode = 'code';
             }
@@ -9723,36 +9781,6 @@
             // turn, since lyrics are often pasted well before the actual
             // "generate the song" request.
             // ------------------------------------------------------------
-            function looksLikeLyrics(str) {
-                if (!str || typeof str !== 'string') return false;
-                const trimmed = str.trim();
-                if (/```/.test(trimmed)) return false; // don't confuse code blocks with lyrics
-                const lineCount = trimmed.split(/\n+/).filter(l => l.trim()).length;
-                const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
-                // Several short-ish lines plus a decent amount of text reads
-                // as a lyrics/verse block rather than an ordinary chat message.
-                return lineCount >= 4 && wordCount >= 25;
-            }
-            let lastLyricsContext = null;
-            for (let i = chatData.messages.length - 1; i >= 0; i--) {
-                const m = chatData.messages[i];
-                if (m.role === 'user' && looksLikeLyrics(m.text)) {
-                    lastLyricsContext = m.text.trim();
-                    break;
-                }
-            }
-            const lyricsRecallRegex = /\b(those lyrics|that lyrics|the lyrics|remember (that|those|this|it)|use (that|those|it)|earlier lyrics|lyrics i (sent|gave|pasted|wrote|shared))\b/i;
-            const currentMessageIsLyrics = looksLikeLyrics(text);
-            const isLyricsRecallRequest = !!(lastLyricsContext && !currentMessageIsLyrics && (hasSongWord || selectedMode === 'song') && lyricsRecallRegex.test(lowerText));
-            if (isLyricsRecallRequest) {
-                selectedMode = 'song';
-            }
-            // The lyrics to actually send to the song generator: prefer
-            // lyrics pasted directly in *this* message, otherwise fall back
-            // to the remembered block above (only when in song mode).
-            const lyricsForSong = (selectedMode === 'song')
-                ? (currentMessageIsLyrics ? text.trim() : lastLyricsContext)
-                : null;
 
             // 18+ / explicit-content guard: never attempt to generate sexual,
             // nude, or otherwise adult imagery, regardless of mode detection above.
@@ -9765,9 +9793,7 @@
                 ? ['✨ Looking into that', '✨ Searching for related images', '✨ Checking sources', '✨ Almost there']
                 : (selectedMode === 'code')
                     ? ['✨ Reading your request', '✨ Planning the code', '✨ Writing the implementation', '✨ Double-checking syntax']
-                    : (selectedMode === 'song')
-                        ? ['🎵 Reading your request', '🎵 Composing the track', '🎵 Rendering the audio', '🎵 Almost there']
-                        : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
+                    : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
 
             const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true };
             chatData.messages.push(aiMsg);
@@ -9952,21 +9978,6 @@
                         renderActiveChatMessages();
                     }
 
-                } else if (selectedMode === 'song') {
-                    // Song generation is disabled — decline immediately,
-                    // no quota check and no API calls to ElevenLabs/MusicGen.
-                    const updatedSongChat = JSON.parse(localStorage.getItem(requestContextChatId));
-                    updatedSongChat.messages[aiMsgIndex].text = "I can't generate songs right now — that feature's turned off.";
-                    updatedSongChat.messages[aiMsgIndex].isThinking = false;
-                    updatedSongChat.isGeneratingInBg = false;
-                    localStorage.setItem(requestContextChatId, JSON.stringify(updatedSongChat));
-
-                    if (currentChatId === requestContextChatId) {
-                        isGenerating = false;
-                        renderActiveChatMessages();
-                    }
-                    clearInterval(internalThinkingInterval);
-
                 } else {
                     let sysInstruction = (selectedMode === 'code') 
                         ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
@@ -9986,6 +9997,11 @@
                     const hasAttachedFile = chatData.messages.some(m => m.fileText || (Array.isArray(m.files) && m.files.some(f => f.textContent)));
                     if (hasAttachedFile) {
                         sysInstruction += " The conversation history includes one or more file attachments marked '[Context File Attachment: <filename>]' followed by their full content — a single message may include several such attachments if the user uploaded multiple files at once. Remember this content for the rest of the conversation. If the user later asks you to 'edit that file', 'edit the file', or refers to 'that file' without re-uploading it, use the most recently attached file's content as the source of truth and return the complete, fully edited file content in a single markdown code fence, preserving the original structure and format unless told otherwise.";
+                    }
+
+                    const hasAttachedVideo = chatData.messages.some(m => Array.isArray(m.files) && m.files.some(f => f.isVideo));
+                    if (hasAttachedVideo) {
+                        sysInstruction += " The user has attached one or more video files. You can actually see and hear the video's real content (visual frames over time plus any audio) — don't just acknowledge that a video was received, and never say you 'can't view videos'. Watch it closely and respond to what is actually happening in it. Most of the time a user attaches a video because something is going wrong and they want help — a bug, an error message, a crash, a device or app misbehaving, a broken product, an unexpected sound, etc. In that case act like a support engineer who was just handed a screen recording: describe specifically what you observed going wrong (what appears on screen, what action triggered it, at roughly what point in the video), explain the most likely cause, and give clear, concrete troubleshooting steps or a fix — as if the user is genuinely stuck on a problem shown in the clip. If the video isn't about a problem, just describe what happens in it and answer whatever the user actually asked. Reference concrete details from the footage (what's visible, what's said, what changes) rather than vague generalities, so it's clear you actually watched it.";
                     }
 
                     if (isCodeEditRequest && lastCodeContext) {
@@ -10120,7 +10136,7 @@
                 }
 
                 const finalRecord = JSON.parse(localStorage.getItem(requestContextChatId));
-                if (finalRecord && finalRecord.messages.length <= 4 && selectedMode !== 'image' && selectedMode !== 'song') {
+                if (finalRecord && finalRecord.messages.length <= 4 && selectedMode !== 'image') {
                     generateDynamicTitle(requestContextChatId, text, finalRecord.messages[aiMsgIndex].text);
                 } else {
                     loadHistoryList();
@@ -10175,6 +10191,11 @@
                         const fBase64 = resolveAttachmentBase64(f);
                         if (f.isImage && fBase64) {
                             parts.push({ inlineData: { data: fBase64, mimeType: f.type || 'image/png' } });
+                        } else if (f.isVideo && fBase64) {
+                            // The model reads video natively (visual + audio, sampled
+                            // across the timeline) the same way it reads an image —
+                            // no manual frame extraction needed on our end.
+                            parts.push({ inlineData: { data: fBase64, mimeType: f.type || 'video/mp4' } });
                         } else if (f.textContent) {
                             parts.push({ text: `[Context File Attachment: ${f.name}]\n${f.textContent}` });
                         }

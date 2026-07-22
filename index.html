@@ -3995,6 +3995,22 @@
                     <div id="freeUsageList"></div>
                 </div>
 
+                <div class="settings-section-title">Redeem Code</div>
+                <div class="api-key-card">
+                    <div class="api-key-card-top">
+                        <div>
+                            <div class="api-key-name">Have a redeem code?</div>
+                            <div class="api-key-value">Enter a valid code below to unlock a plan selection for free.</div>
+                        </div>
+                    </div>
+                    <div class="own-key-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+                        <input type="text" id="redeemCodeInput" placeholder="Enter redeem code" autocomplete="off" spellcheck="false">
+                        <button class="own-key-use-btn" id="redeemCodeSubmitBtn" style="align-self:flex-start;">Redeem</button>
+                    </div>
+                    <div class="own-key-note" id="redeemCodeStatus"></div>
+                    <div class="plan-cards-grid" id="redeemPlanCardsGrid" style="display:none; margin-top:14px;"></div>
+                </div>
+
                 <div class="settings-section-title">About</div>
                 <div class="api-key-card">
                     <div class="api-key-card-top">
@@ -4761,6 +4777,94 @@
             });
         }
 
+        // ---- Redeem Code (Settings → General) ----
+        // A single hard-coded founder/promo code. Entering it correctly
+        // reveals a plan-picker (same visual style as the Upgrade modal)
+        // where every plan — including paid ones — activates instantly via
+        // setActivePlan(), with no payment step. Wrong codes just show an
+        // inline error and keep the picker hidden.
+        const REDEEM_FOUNDER_CODE = 'Cavdo@samyakCeo_officail!-founder';
+
+        function renderRedeemPlanCards() {
+            const grid = document.getElementById('redeemPlanCardsGrid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            const activeKey = getActivePlanKey();
+
+            PLAN_LIST.forEach(plan => {
+                const isCurrent = plan.key === activeKey;
+                const card = document.createElement('div');
+                card.className = 'plan-card' + (isCurrent ? ' current' : '') + (plan.key === 'plan_ultimate' ? ' highlight' : '');
+
+                const featuresHtml = plan.features.map(f => {
+                    if (typeof f === 'object' && f !== null) {
+                        return `<li class="${f.included ? '' : 'excluded'}">${f.text}</li>`;
+                    }
+                    return `<li>${f}</li>`;
+                }).join('');
+                card.innerHTML = `
+                    ${isCurrent ? '<div class="plan-card-current-badge">CURRENT</div>' : ''}
+                    <div class="plan-card-name">${plan.label}</div>
+                    <div class="plan-card-price">${plan.price > 0 ? plan.priceLabel : 'Free'}${plan.price > 0 ? '<span> / month</span>' : ''}</div>
+                    <ul class="plan-card-features">${featuresHtml}</ul>
+                    <button class="plan-choose-btn" ${isCurrent ? 'disabled' : ''} type="button">${isCurrent ? 'Current Plan' : 'Redeem this plan'}</button>
+                `;
+
+                if (!isCurrent) {
+                    card.querySelector('.plan-choose-btn').onclick = () => {
+                        setActivePlan(plan.key);
+                        renderRedeemPlanCards();
+                        const statusEl = document.getElementById('redeemCodeStatus');
+                        if (statusEl) {
+                            statusEl.textContent = `✅ ${plan.label} activated — enjoy!`;
+                            statusEl.style.color = '#2fd05c';
+                        }
+                    };
+                }
+
+                grid.appendChild(card);
+            });
+        }
+
+        function resetRedeemCodeUI() {
+            const input = document.getElementById('redeemCodeInput');
+            const btn = document.getElementById('redeemCodeSubmitBtn');
+            const statusEl = document.getElementById('redeemCodeStatus');
+            const grid = document.getElementById('redeemPlanCardsGrid');
+            if (input) { input.value = ''; input.disabled = false; }
+            if (btn) btn.disabled = false;
+            if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; }
+            if (grid) { grid.style.display = 'none'; grid.innerHTML = ''; }
+        }
+
+        function submitRedeemCode() {
+            const input = document.getElementById('redeemCodeInput');
+            const statusEl = document.getElementById('redeemCodeStatus');
+            const grid = document.getElementById('redeemPlanCardsGrid');
+            const code = (input && input.value || '').trim();
+
+            if (!code) {
+                if (statusEl) { statusEl.textContent = 'Enter a code first.'; statusEl.style.color = '#ff5c5c'; }
+                return;
+            }
+
+            if (code === REDEEM_FOUNDER_CODE) {
+                if (statusEl) { statusEl.textContent = '✅ Code accepted — choose a plan below to activate it for free.'; statusEl.style.color = '#2fd05c'; }
+                if (grid) grid.style.display = 'grid';
+                if (input) { input.value = ''; input.disabled = true; }
+                document.getElementById('redeemCodeSubmitBtn').disabled = true;
+                renderRedeemPlanCards();
+            } else {
+                if (statusEl) { statusEl.textContent = '❌ Invalid code.'; statusEl.style.color = '#ff5c5c'; }
+                if (grid) { grid.style.display = 'none'; grid.innerHTML = ''; }
+            }
+        }
+
+        document.getElementById('redeemCodeSubmitBtn').addEventListener('click', submitRedeemCode);
+        document.getElementById('redeemCodeInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); submitRedeemCode(); }
+        });
+
         function openPlansModal() {
             renderPlanCards();
             document.getElementById('plansModalOverlay').classList.add('show');
@@ -5407,6 +5511,7 @@
             refreshPollinationsKeyUI();
             renderAccountTab();
             renderBillingTab();
+            resetRedeemCodeUI();
             document.getElementById('settingsModalOverlay').classList.add('show');
         }
 

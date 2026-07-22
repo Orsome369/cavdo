@@ -4979,12 +4979,62 @@
             if (e.target.id === 'plansModalOverlay') closePlansModal();
         });
 
+        // A tier is unavailable to send on for either reason: the
+        // simulated free/paid plan message cap locked it, OR the real
+        // underlying Gemini API key actually hit its quota/rate limit on
+        // it. Both need to block sending — previously only the first one
+        // did, so a real API rate-limit across all three tiers (shown in
+        // the dropdown as "Limit reached") didn't stop the send button at
+        // all; it just let the message through to fail deep inside the
+        // generation call instead.
+        function isTierUnavailable(tierKey) {
+            return isFreeTierLocked(tierKey) || isModelExhausted(tierKey);
+        }
+
+        // True once every model tier (Ultimate, Speed, and Lite) is
+        // unavailable — i.e. there is genuinely nothing left to fall back to.
+        function allTiersLocked() {
+            return MODEL_TIERS.every(t => isTierUnavailable(t.key));
+        }
+
+        // Soonest of the three reset windows to expire — used so the
+        // "all models exhausted" message can tell the user the real
+        // earliest time they can send again, not just the tier they
+        // happened to be on.
+        function earliestTierResetAt() {
+            let earliest = null;
+            MODEL_TIERS.forEach(t => {
+                const resetAt = isFreeTierLocked(t.key)
+                    ? getFreeTierLockResetAt(t.key)
+                    : (isModelExhausted(t.key) ? getModelResetInfo(t.key).resetAt : null);
+                if (resetAt && (earliest === null || resetAt < earliest)) earliest = resetAt;
+            });
+            return earliest;
+        }
+
         // Checked right before a message is sent on the currently active
         // tier. Returns { allowed: true } to proceed, or
-        // { allowed: false, reason: '...' } to block the send (the caller
-        // shows `reason` to the user and does not send).
+        // { allowed: false, reason: '...', title: '...' } to block the send
+        // (the caller shows `reason`/`title` to the user and does not send).
         function checkFreeTierBeforeSend(tierKey) {
+            // Real API quota/rate-limit exhaustion on this tier — check this
+            // BEFORE the simulated plan-limit counters below, since a tier
+            // that's genuinely out of real API quota should never be
+            // offered as "still sendable" just because its simulated
+            // message counter hasn't run out yet.
+            if (isModelExhausted(tierKey)) {
+                if (allTiersLocked()) {
+                    return { allowed: false, title: 'All models exhausted', reason: `You've reached the limit for all models — Cavdo Ultimate, Speed, and Lite are all on cooldown right now (${formatTimeRemaining(earliestTierResetAt())}). Upgrade for more messages, or wait for a limit to reset.` };
+                }
+                const resetInfo = getModelResetInfo(tierKey);
+                const tier = MODEL_TIERS[getTierIndexByKey(tierKey)];
+                return { allowed: false, reason: `${tier.label} is temporarily unavailable — ${formatTimeRemaining(resetInfo.resetAt)}. Try another model.` };
+            }
+
             if (isFreeTierLocked(tierKey)) {
+                if (allTiersLocked()) {
+                    return { allowed: false, title: 'All models exhausted', reason: `You've reached the limit for all models — Cavdo Ultimate, Speed, and Lite are all on cooldown right now (${formatTimeRemaining(earliestTierResetAt())}). Upgrade for more messages, or wait for a limit to reset.` };
+                }
                 const resetAt = getFreeTierLockResetAt(tierKey);
                 const tier = MODEL_TIERS[getTierIndexByKey(tierKey)];
                 return { allowed: false, reason: `Plan limit reached for ${tier.label} — ${formatTimeRemaining(resetAt)}. Upgrade for more messages, or try another model.` };
@@ -5009,6 +5059,9 @@
                 }
                 lockFreeTier(tierKey);
                 renderModelDropdown();
+                if (allTiersLocked()) {
+                    return { allowed: false, title: 'All models exhausted', reason: `You've reached the limit for all models — Cavdo Ultimate, Speed, and Lite are all on cooldown right now (${formatTimeRemaining(earliestTierResetAt())}). Upgrade for more messages, or wait for a limit to reset.` };
+                }
                 const tier = MODEL_TIERS[getTierIndexByKey(tierKey)];
                 return { allowed: false, reason: `Plan limit reached for ${tier.label} — locked for ${FREE_TIER_LOCK_HOURS[tierKey]}h. Upgrade for more messages, or try another model.` };
             }
@@ -9484,7 +9537,7 @@
             // added to the chat so a blocked send doesn't waste a turn.
             const freeTierCheck = checkFreeTierBeforeSend(getActiveTier().key);
             if (!freeTierCheck.allowed) {
-                showPlanLimitModal(freeTierCheck.reason);
+                showPlanLimitModal(freeTierCheck.reason, freeTierCheck.title);
                 return;
             }
             recordFreeTierUsage(getActiveTier().key);

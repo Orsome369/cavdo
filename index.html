@@ -4571,22 +4571,22 @@
             {
                 key: 'free', label: 'Free', priceLabel: 'Free', price: 0,
                 messageLimit: null, generationLimit: 5,
-                features: ['Smaller chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: false }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }]
+                features: ['Smaller chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: false }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }, { text: 'Split Screen Chat', included: false }]
             },
             {
                 key: 'plan_lite', backendKey: 'lite', label: 'Lite Plan', priceLabel: '₹100', price: 100,
                 messageLimit: 26, generationLimit: 10,
-                features: ['Longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }]
+                features: ['Longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: false }, { text: 'Early access to new features', included: false }, { text: 'Split Screen Chat', included: true }]
             },
             {
                 key: 'plan_speed', backendKey: 'speed', label: 'Speed Plan', priceLabel: '₹200', price: 200,
                 messageLimit: 40, generationLimit: 15,
-                features: ['Even longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: false }]
+                features: ['Even longer chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: false }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: false }, { text: 'Split Screen Chat', included: true }]
             },
             {
                 key: 'plan_ultimate', backendKey: 'ultimate', label: 'Ultimate Plan', priceLabel: '₹500', price: 500,
                 messageLimit: 80, generationLimit: 30,
-                features: ['Very long chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: true }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: true }]
+                features: ['Very long chats', 'Image Generation', 'HTML & document file preview', 'Math problem solving', 'Question answering', { text: 'Ultra nice coding', included: true }, { text: 'Faster response speed', included: true }, { text: 'Priority support', included: true }, { text: 'Early access to new features', included: true }, { text: 'Split Screen Chat', included: true }]
             }
         ];
 
@@ -5803,8 +5803,10 @@
         // modal look instead of the default OS alert box.
         const planLimitModalOverlay = document.getElementById('planLimitModalOverlay');
         const planLimitModalMessage = document.getElementById('planLimitModalMessage');
+        const planLimitModalTitleEl = document.getElementById('planLimitModalTitle');
 
-        function showPlanLimitModal(message) {
+        function showPlanLimitModal(message, title) {
+            planLimitModalTitleEl.textContent = title || 'Plan limit reached';
             planLimitModalMessage.textContent = message;
             planLimitModalOverlay.classList.add('show');
         }
@@ -5908,7 +5910,7 @@
 
         splitViewToggleBtn.onclick = () => {
             if (typeof getActivePlanKey === 'function' && getActivePlanKey() === 'free') {
-                if (typeof openPlansModal === 'function') openPlansModal();
+                showPlanLimitModal('This feature is only for paid plan. Upgrade to Lite, Speed, or Ultimate to unlock Split Screen.', 'Split Screen — Paid feature');
                 return;
             }
             if (document.body.classList.contains('split-view-active')) {

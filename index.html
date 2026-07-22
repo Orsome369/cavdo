@@ -10738,6 +10738,14 @@
         firebase.initializeApp(firebaseConfig);
         const cavdoAuth = firebase.auth();
         const cavdoDb = firebase.firestore();
+        // Firestore's default transport (WebChannel streaming) gets silently
+        // blocked by some ad-blockers/privacy extensions and restrictive
+        // networks — requests don't error, they just hang until our own
+        // withTimeout() kills them at 10s, which looks exactly like what
+        // you're seeing ("Cloud save timed out" firing repeatedly). Forcing
+        // auto-detected long-polling makes Firestore fall back to a
+        // transport that survives those environments.
+        cavdoDb.settings({ experimentalAutoDetectLongPolling: true, useFetchStreams: false });
 
         // Firebase Auth needs an email format — this app uses usernames, so we
         // derive a stable, private pseudo-email from the username. It's never
@@ -10793,13 +10801,28 @@
                 }
             }
 
+            // Firestore caps a single document at ~1MB including field
+            // names/overhead. A value bigger than that will never sync as
+            // a plain doc (unlike images/songs, which are chunked below) —
+            // so skip it instead of burning 10s on a doomed write attempt
+            // and showing a misleading "timed out" toast every time.
+            const FIRESTORE_SAFE_VALUE_BYTES = 900000; // ~900KB, leaves headroom under the 1MB cap
+            function isTooLargeForFirestore(value) {
+                return typeof value === 'string' && value.length > FIRESTORE_SAFE_VALUE_BYTES;
+            }
+
             // Wrap localStorage so every write the rest of the app already makes
             // also gets mirrored to Firestore in the background.
             Storage.prototype.setItem = function (key, value) {
                 nativeSetItem(key, value);
                 if (enabled && !LOCAL_ONLY_KEYS.has(key)) {
-                    pendingWrites.set(key, value);
-                    queueFlush();
+                    if (isTooLargeForFirestore(value)) {
+                        console.warn('Cavdo sync: skipping cloud sync for "' + key + '" — value too large for a single Firestore document (' + value.length + ' bytes). Kept locally only.');
+                        pendingWrites.delete(key);
+                    } else {
+                        pendingWrites.set(key, value);
+                        queueFlush();
+                    }
                 }
             };
             Storage.prototype.removeItem = function (key) {

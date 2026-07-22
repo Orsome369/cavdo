@@ -3798,6 +3798,17 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="planLimitModalOverlay">
+        <div class="modal-box" id="planLimitModalContent">
+            <h3 id="planLimitModalTitle">Plan limit reached</h3>
+            <p id="planLimitModalMessage"></p>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" id="planLimitModalClose">Not now</button>
+                <button class="modal-btn confirm" id="planLimitModalUpgrade">Upgrade</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="searchModalOverlay">
         <div class="modal-box search-modal-box">
             <h3>Search Chats</h3>
@@ -5675,6 +5686,30 @@
         
         customModalOverlay.onclick = (e) => {
             if (e.target === customModalOverlay) closeAppModal();
+        };
+
+        // Styled replacement for the native browser alert() used when a
+        // free-tier message/plan limit is hit — matches the app's existing
+        // modal look instead of the default OS alert box.
+        const planLimitModalOverlay = document.getElementById('planLimitModalOverlay');
+        const planLimitModalMessage = document.getElementById('planLimitModalMessage');
+
+        function showPlanLimitModal(message) {
+            planLimitModalMessage.textContent = message;
+            planLimitModalOverlay.classList.add('show');
+        }
+
+        function closePlanLimitModal() {
+            planLimitModalOverlay.classList.remove('show');
+        }
+
+        document.getElementById('planLimitModalClose').onclick = closePlanLimitModal;
+        document.getElementById('planLimitModalUpgrade').onclick = () => {
+            closePlanLimitModal();
+            if (typeof openPlansModal === 'function') openPlansModal();
+        };
+        planLimitModalOverlay.onclick = (e) => {
+            if (e.target === planLimitModalOverlay) closePlanLimitModal();
         };
 
         document.getElementById('modalRenameSave').onclick = () => {
@@ -9050,7 +9085,7 @@
             // added to the chat so a blocked send doesn't waste a turn.
             const freeTierCheck = checkFreeTierBeforeSend(getActiveTier().key);
             if (!freeTierCheck.allowed) {
-                alert(freeTierCheck.reason);
+                showPlanLimitModal(freeTierCheck.reason);
                 return;
             }
             recordFreeTierUsage(getActiveTier().key);

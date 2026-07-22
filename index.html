@@ -4928,6 +4928,14 @@
             if (planBadgeEl) planBadgeEl.textContent = plan.key === 'free' ? 'FREE' : plan.priceLabel;
             if (planNameEl) planNameEl.textContent = plan.label;
 
+            const splitBtn = document.getElementById('splitViewToggleBtn');
+            if (splitBtn) {
+                splitBtn.innerHTML = plan.key === 'free' ? '🔒 Split View' : '⧉ Split View';
+                splitBtn.title = plan.key === 'free'
+                    ? 'Split View is a Lite/Speed/Ultimate feature — click to upgrade'
+                    : 'Split screen — chat with two conversations side by side (desktop only)';
+            }
+
             if (!list) return;
             list.innerHTML = '';
             MODEL_TIERS.forEach(tier => {
@@ -5886,6 +5894,7 @@
 
         function openSplitView() {
             if (!isDesktopViewport()) return;
+            if (typeof getActivePlanKey === 'function' && getActivePlanKey() === 'free') return;
             populateSplitViewChatPicker();
             document.body.classList.add('split-view-active');
             splitViewToggleBtn.classList.add('active');
@@ -5898,6 +5907,10 @@
         }
 
         splitViewToggleBtn.onclick = () => {
+            if (typeof getActivePlanKey === 'function' && getActivePlanKey() === 'free') {
+                if (typeof openPlansModal === 'function') openPlansModal();
+                return;
+            }
             if (document.body.classList.contains('split-view-active')) {
                 closeSplitView();
             } else {

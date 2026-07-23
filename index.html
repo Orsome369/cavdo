@@ -7925,7 +7925,7 @@
                     editBtn.className = 'edit-msg-btn';
                     editBtn.innerHTML = editSvg;
                     editBtn.title = "Edit message";
-                    editBtn.onclick = () => openInlineMessageEditor(msgNode, index, msg.text);
+                    editBtn.onclick = () => openInlineMessageEditor(msgNode, index, msg.text, msg.files || null);
                     
                     const copyBtn = document.createElement('button');
                     copyBtn.className = 'copy-msg-btn';
@@ -9337,7 +9337,7 @@
             renderActiveChatMessages();
         };
 
-        function openInlineMessageEditor(msgNode, index, currentText) {
+        function openInlineMessageEditor(msgNode, index, currentText, currentFiles) {
             const textDiv = msgNode.querySelector('.text-container-node');
             const actionsBar = msgNode.querySelector('.user-actions');
             
@@ -9368,6 +9368,21 @@
                         chat.messages = chat.messages.slice(0, index);
                         localStorage.setItem(currentChatId, JSON.stringify(chat));
                         userInput.value = updatedText;
+                        // Carry the original attachment(s) back into the composer
+                        // tray before resending — otherwise sendMessage() sees an
+                        // empty pendingAttachments and the edited message loses
+                        // whatever image/file was on it.
+                        if (Array.isArray(currentFiles) && currentFiles.length > 0) {
+                            pendingAttachments = currentFiles.map(f => ({
+                                id: f.attachmentId || ('carried_' + Math.random().toString(36).slice(2)),
+                                name: f.name,
+                                type: f.type,
+                                isImage: !!f.isImage,
+                                isVideo: !!f.isVideo,
+                                base64: resolveAttachmentBase64(f),
+                                textContent: f.textContent || null
+                            }));
+                        }
                         sendMessage();
                     }
                 }

@@ -4505,7 +4505,42 @@
         const FREE_TIER_LOCK_HOURS = { ultimate: 2, speed: 2, lite: 2 };
         const FREE_USAGE_STORAGE_KEY = 'cavdo_free_tier_usage';
         const FREE_LOCK_STORAGE_KEY = 'cavdo_free_tier_lock';
-        const FREE_ULTIMATE_ROTATED_KEY = 'cavdo_free_ultimate_rotated';
+        const FREE_ULTIMATE_ROTATED_KEY = 'cavdo_free_ultimate_rotated'; // legacy, no longer used — kept only so any old localStorage value gets cleaned up below
+
+        // Per-tier count of how many built-in keys have already been tried
+        // during the CURRENT lock cycle for that tier's message cap. Lets
+        // every tier (not just free+Ultimate) rotate through the rest of
+        // KEY_POOL before actually locking — hitting this app-side message
+        // cap isn't a real API quota problem, so there's no reason to lock
+        // the user out while spare keys still sit unused in the pool.
+        const MSG_LIMIT_KEY_ROTATIONS_STORAGE_KEY = 'cavdo_msg_limit_key_rotations';
+
+        function getMsgLimitKeyRotations(tierKey) {
+            try {
+                const map = JSON.parse(localStorage.getItem(MSG_LIMIT_KEY_ROTATIONS_STORAGE_KEY)) || {};
+                return Number.isInteger(map[tierKey]) ? map[tierKey] : 0;
+            } catch (e) { return 0; }
+        }
+
+        function incrementMsgLimitKeyRotations(tierKey) {
+            let map;
+            try { map = JSON.parse(localStorage.getItem(MSG_LIMIT_KEY_ROTATIONS_STORAGE_KEY)) || {}; }
+            catch (e) { map = {}; }
+            map[tierKey] = (Number.isInteger(map[tierKey]) ? map[tierKey] : 0) + 1;
+            localStorage.setItem(MSG_LIMIT_KEY_ROTATIONS_STORAGE_KEY, JSON.stringify(map));
+        }
+
+        function resetMsgLimitKeyRotations(tierKey) {
+            try {
+                const map = JSON.parse(localStorage.getItem(MSG_LIMIT_KEY_ROTATIONS_STORAGE_KEY)) || {};
+                delete map[tierKey];
+                localStorage.setItem(MSG_LIMIT_KEY_ROTATIONS_STORAGE_KEY, JSON.stringify(map));
+            } catch (e) {}
+        }
+
+        function resetAllMsgLimitKeyRotations() {
+            localStorage.removeItem(MSG_LIMIT_KEY_ROTATIONS_STORAGE_KEY);
+        }
 
         function loadFreeUsageMap() {
             try {
@@ -4611,7 +4646,7 @@
             map[tierKey] = Date.now() + hours * 3600000;
             localStorage.setItem(FREE_LOCK_STORAGE_KEY, JSON.stringify(map));
             resetFreeUsageCount(tierKey);
-            if (tierKey === 'ultimate') localStorage.removeItem(FREE_ULTIMATE_ROTATED_KEY);
+            resetMsgLimitKeyRotations(tierKey);
         }
 
         // ==========================================
@@ -4783,7 +4818,8 @@
             }
             localStorage.removeItem(FREE_USAGE_STORAGE_KEY);
             localStorage.removeItem(FREE_LOCK_STORAGE_KEY);
-            localStorage.removeItem(FREE_ULTIMATE_ROTATED_KEY);
+            localStorage.removeItem(FREE_ULTIMATE_ROTATED_KEY); // legacy cleanup
+            resetAllMsgLimitKeyRotations();
             localStorage.setItem(GENERATION_USAGE_STORAGE_KEY, '0');
             localStorage.removeItem(SONG_USAGE_STORAGE_KEY);
             renderModelDropdown();
@@ -5099,14 +5135,17 @@
             const used = getFreeUsageCount(tierKey);
 
             if (used >= limit) {
-                // Only the free plan's Ultimate tier gets one grace rotation
-                // to another built-in API key before the cooldown kicks in —
-                // everything else (and every paid plan) locks immediately
-                // once its cap is hit.
-                if (plan.key === 'free' && tierKey === 'ultimate' && KEY_POOL.length > 1 && localStorage.getItem(FREE_ULTIMATE_ROTATED_KEY) !== '1') {
-                    advanceApiKey();
-                    localStorage.setItem(FREE_ULTIMATE_ROTATED_KEY, '1');
-                    resetFreeUsageCount('ultimate');
+                // Hitting this app-side message cap is NOT a real API quota
+                // problem — so before locking the user out, rotate through
+                // every remaining key in KEY_POOL (all 6, not just one) on
+                // ANY tier/plan, giving each fresh key a clean usage window.
+                // Only once every key has been tried for this lock cycle do
+                // we actually lock the tier.
+                const rotationsSoFar = getMsgLimitKeyRotations(tierKey);
+                if (KEY_POOL.length > 1 && rotationsSoFar < KEY_POOL.length - 1) {
+                    advanceApiKeyKeepTier();
+                    incrementMsgLimitKeyRotations(tierKey);
+                    resetFreeUsageCount(tierKey);
                     renderModelDropdown();
                     updateModelSelectorLabel();
                     return { allowed: true };

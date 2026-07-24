@@ -4502,7 +4502,7 @@
         // cooldown period. Paid plans use a flat per-model limit instead
         // (see PLAN_LIST below).
         const FREE_TIER_LIMITS = { ultimate: 5, speed: 6, lite: 20 };
-        const FREE_TIER_LOCK_HOURS = { ultimate: 6, speed: 5, lite: 2 };
+        const FREE_TIER_LOCK_HOURS = { ultimate: 2, speed: 2, lite: 2 };
         const FREE_USAGE_STORAGE_KEY = 'cavdo_free_tier_usage';
         const FREE_LOCK_STORAGE_KEY = 'cavdo_free_tier_lock';
         const FREE_ULTIMATE_ROTATED_KEY = 'cavdo_free_ultimate_rotated';
@@ -10141,18 +10141,19 @@
                                 throw new Error("This Gemini API key's project has been denied access by Google — it isn't a rate limit, so switching model tiers won't help. Add a working key in Settings → API Keys, or fix/replace the key tied to the default project.");
                             }
                             if (isRateLimitResponse(response, responseData)) {
-                                // Paid plans: as long as the person's own plan
-                                // usage cap for this tier isn't reached yet,
-                                // try the next built-in key WITHOUT dropping
-                                // to a lower tier — they paid for e.g. Ultimate,
-                                // so a real API quota hiccup on one key
-                                // shouldn't silently swap them to Speed/Lite
-                                // when another key could still serve Ultimate.
-                                const activePlanKey = getActivePlanKey();
+                                // As long as the person's own plan/free usage cap
+                                // for this tier isn't reached yet, try the next
+                                // built-in key WITHOUT dropping to a lower tier —
+                                // they haven't hit their own message limit for
+                                // e.g. Ultimate, so one built-in key's real API
+                                // quota running out shouldn't silently swap them
+                                // to Speed/Lite (or show a "servers busy" error)
+                                // when another key in the pool could still serve
+                                // Ultimate. Applies to free and paid plans alike.
                                 const tierMsgLimit = getMessageLimitForTier(usedTier.key);
                                 const underPlanLimit = tierMsgLimit === null || tierMsgLimit === undefined
                                     || getFreeUsageCount(usedTier.key) < tierMsgLimit;
-                                if (activePlanKey !== 'free' && underPlanLimit
+                                if (underPlanLimit
                                     && !sessionGeminiKeyOverride && keysRotatedThisRequest < KEY_POOL.length - 1) {
                                     keysRotatedThisRequest++;
                                     advanceApiKeyKeepTier();

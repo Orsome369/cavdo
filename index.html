@@ -4508,8 +4508,32 @@
         const FREE_ULTIMATE_ROTATED_KEY = 'cavdo_free_ultimate_rotated';
 
         function loadFreeUsageMap() {
-            try { return JSON.parse(localStorage.getItem(FREE_USAGE_STORAGE_KEY)) || {}; }
-            catch (e) { return {}; }
+            try {
+                const raw = JSON.parse(localStorage.getItem(FREE_USAGE_STORAGE_KEY)) || {};
+                const now = Date.now();
+                let changed = false;
+                for (const tierKey of Object.keys(raw)) {
+                    const entry = raw[tierKey];
+                    // Backward-compat: earlier versions stored a plain number
+                    // with no window, so a partial count (never hitting the
+                    // full cap) just sat there forever with nothing to expire
+                    // it — only a full lockout ever reset it. Give it a fresh
+                    // window here so it starts expiring like every count
+                    // going forward.
+                    if (typeof entry === 'number') {
+                        raw[tierKey] = { count: entry, windowStart: now };
+                        changed = true;
+                        continue;
+                    }
+                    const hours = FREE_TIER_LOCK_HOURS[tierKey] || 2;
+                    if (entry && now >= entry.windowStart + hours * 3600000) {
+                        delete raw[tierKey];
+                        changed = true;
+                    }
+                }
+                if (changed) localStorage.setItem(FREE_USAGE_STORAGE_KEY, JSON.stringify(raw));
+                return raw;
+            } catch (e) { return {}; }
         }
 
         function saveFreeUsageMap(map) {
@@ -4538,21 +4562,25 @@
         }
 
         function getFreeUsageCount(tierKey) {
-            return loadFreeUsageMap()[tierKey] || 0;
+            const entry = loadFreeUsageMap()[tierKey];
+            return entry ? entry.count : 0;
         }
 
         function incrementFreeUsageCount(tierKey) {
             const map = loadFreeUsageMap();
-            map[tierKey] = (map[tierKey] || 0) + 1;
+            const now = Date.now();
+            if (!map[tierKey]) map[tierKey] = { count: 0, windowStart: now };
+            map[tierKey].count += 1;
             saveFreeUsageMap(map);
-            return map[tierKey];
+            return map[tierKey].count;
         }
 
         function resetFreeUsageCount(tierKey) {
             const map = loadFreeUsageMap();
-            map[tierKey] = 0;
+            delete map[tierKey];
             saveFreeUsageMap(map);
         }
+
 
         function loadFreeLockMap() {
             try {

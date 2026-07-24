@@ -5760,11 +5760,18 @@
         });
         refreshPollinationsKeyUI();
 
+        // Covers both "out of quota" (429) and "model temporarily overloaded"
+        // (503, e.g. Gemini's "currently experiencing high demand" error) —
+        // both are transient, this-particular-key/model issues where trying
+        // another key or tier is the right move, rather than surfacing a
+        // hard failure straight away.
         function isRateLimitResponse(response, data) {
-            if (response && response.status === 429) return true;
+            if (response && (response.status === 429 || response.status === 503)) return true;
             const msg = (data && data.error && (data.error.message || data.error.status)) || '';
             const lowered = String(msg).toLowerCase();
-            return lowered.includes('quota') || lowered.includes('rate limit') || lowered.includes('resource_exhausted') || lowered.includes('resource exhausted');
+            return lowered.includes('quota') || lowered.includes('rate limit') || lowered.includes('resource_exhausted')
+                || lowered.includes('resource exhausted') || lowered.includes('overloaded') || lowered.includes('high demand')
+                || lowered.includes('unavailable');
         }
 
         // A 403 "denied access" / permission error means the API key's

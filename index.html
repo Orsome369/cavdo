@@ -1603,16 +1603,6 @@
             border-radius: 6px;
         }
 
-        .ai-link {
-            color: #8bf0a5;
-            text-decoration: underline;
-            text-underline-offset: 2px;
-            word-break: break-word;
-        }
-        .ai-link:hover {
-            color: #b6ffca;
-        }
-
         .ai-list-container {
             margin: 8px 0 12px 16px;
             padding-left: 6px;
@@ -4483,7 +4473,6 @@
             const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key) && !isFreeTierLocked(t.key));
             activeTierIndex = firstFree === -1 ? activeTierIndex : firstFree;
         }
-        if (!cavdoIsLoggedIn()) activeTierIndex = 0; // guests are always on Cavdo Ultimate
 
         function getActiveTier() {
             return MODEL_TIERS[activeTierIndex];
@@ -4502,47 +4491,6 @@
             const dotEl = document.getElementById('modelDot');
             if (labelEl) labelEl.textContent = tier.label;
             if (dotEl) dotEl.style.background = tier.key === 'lite' ? '#8fd0a0' : (tier.key === 'speed' ? '#2fd05c' : '#2fe0c0');
-        }
-
-        // ==========================================
-        // 👤 GUEST FREE-TRIAL MESSAGE LIMIT (pre-login)
-        // ==========================================
-        // Lets a brand-new visitor send a handful of messages before ever
-        // creating an account or logging in. The count lives in
-        // localStorage (not sessionStorage) specifically so it survives a
-        // refresh/new tab on the same device/browser — a refresh must NOT
-        // hand out a fresh batch of free messages.
-        const CAVDO_GUEST_TRIAL_LIMIT = 5;
-        const CAVDO_GUEST_COUNT_KEY = 'cavdoGuestMsgCount';
-
-        function getGuestMsgCount() {
-            try { return parseInt(sessionStorage.getItem(CAVDO_GUEST_COUNT_KEY) || '0', 10) || 0; }
-            catch (e) { return 0; }
-        }
-        function incrementGuestMsgCount() {
-            try { sessionStorage.setItem(CAVDO_GUEST_COUNT_KEY, String(getGuestMsgCount() + 1)); } catch (e) {}
-        }
-        function guestMsgsRemaining() {
-            return Math.max(0, CAVDO_GUEST_TRIAL_LIMIT - getGuestMsgCount());
-        }
-        function guestTrialExhausted() {
-            return getGuestMsgCount() >= CAVDO_GUEST_TRIAL_LIMIT;
-        }
-        // True once someone is actually signed in (real Firebase session,
-        // or the locally-cached "cavdoCurrentUser" session written on
-        // login/register). Checked from plain top-level localStorage keys
-        // rather than the auth overlay's internal closures so it works
-        // from anywhere in the app, including before that script block
-        // below has finished running.
-        function cavdoIsLoggedIn() {
-            try {
-                if (typeof cavdoAuth !== 'undefined' && cavdoAuth && cavdoAuth.currentUser) return true;
-            } catch (e) {}
-            try {
-                return !!localStorage.getItem('cavdoCurrentUser');
-            } catch (e) {
-                return false;
-            }
         }
 
         // ==========================================
@@ -5288,24 +5236,8 @@
             if (!dropdown) return;
             dropdown.innerHTML = '';
 
-            if (!cavdoIsLoggedIn()) {
-                activeTierIndex = 0;
-                const tier = MODEL_TIERS[0];
-                dropdown.innerHTML = `
-                    <div class="model-option active" title="Log in to unlock Speed and Lite">
-                        <div class="model-option-icon">${tier.icon}</div>
-                        <div class="model-option-text">
-                            <div class="model-option-name">${tier.label}</div>
-                            <div class="model-option-desc">Log in to switch models</div>
-                        </div>
-                        <div class="model-option-check">✓</div>
-                    </div>
-                `;
-                return;
-            }
-
             MODEL_TIERS.forEach((tier, index) => {
-                            const apiExhausted = isModelExhausted(tier.key);
+                const apiExhausted = isModelExhausted(tier.key);
                 const freeLocked = isFreeTierLocked(tier.key);
                 const exhausted = apiExhausted || freeLocked;
                 const isActive = index === activeTierIndex;
@@ -5338,26 +5270,10 @@
             });
         }
 
-function updateUpgradeButtonForAuth() {
-            const btn = document.getElementById('upgradePlanBtn');
-            if (!btn) return;
-            if (cavdoIsLoggedIn()) {
-                btn.textContent = '⭐ Upgrade';
-                btn.title = 'Upgrade your plan';
-            } else {
-                btn.textContent = '🔑 Login';
-                btn.title = 'Log in to your account';
-            }
-        }
-
         document.getElementById('upgradePlanBtn').addEventListener('click', () => {
-            if (!cavdoIsLoggedIn()) {
-                if (typeof cavdoShowLogin === 'function') cavdoShowLogin();
-                return;
-            }
             openPlansModal();
         });
-        updateUpgradeButtonForAuth();
+
         function openModelDropdown() {
             document.getElementById('modelDropdown').classList.add('show');
             document.getElementById('modelSelector').classList.add('open');
@@ -5778,13 +5694,7 @@ function updateUpgradeButtonForAuth() {
             document.getElementById('settingsModalOverlay').classList.remove('show');
         }
 
-        document.getElementById('settingsBtn').onclick = function () {
-            if (!cavdoIsLoggedIn()) {
-                if (typeof cavdoShowLogin === 'function') cavdoShowLogin();
-                return;
-            }
-            openSettingsModal();
-        };
+        document.getElementById('settingsBtn').onclick = openSettingsModal;
         document.getElementById('settingsCloseBtn').onclick = closeSettingsModal;
         document.getElementById('settingsModalOverlay').addEventListener('click', (e) => {
             if (e.target.id === 'settingsModalOverlay') closeSettingsModal();
@@ -7600,22 +7510,6 @@ function updateUpgradeButtonForAuth() {
             // distinct from full ```fenced``` code blocks handled in renderAIContent.
             html = html.replace(/`([^`\n]+?)`/g, '<code class="ai-inline-code">$1</code>');
 
-            // Markdown links: [label](https://example.com) → a real,
-            // clickable <a> tag. The text was already run through
-            // escapeHtml() above, so a literal "&" inside a URL now reads
-            // as "&amp;" — that's fine, browsers decode HTML entities in
-            // an href just like anywhere else in HTML.
-            html = html.replace(/\[([^\[\]]+)\]\((https?:\/\/[^\s()]+)\)/g, function (match, label, url) {
-                return '<a class="ai-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
-            });
-            // Bare URLs the model didn't wrap in markdown link syntax still
-            // become clickable, instead of sitting there as inert text.
-            // Skip anything already inside an href="..." from the
-            // replacement just above (negative lookbehind on the quote).
-            html = html.replace(/(^|[^"'>=])(https?:\/\/[^\s<]+[^\s<.,;:!?'")\]])/g, function (match, pre, url) {
-                return pre + '<a class="ai-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
-            });
-
             const lines = html.split('\n');
             let insideList = false;
             let finalOutput = [];
@@ -9174,7 +9068,6 @@ function updateUpgradeButtonForAuth() {
         // object itself only ever stores the small attachmentId reference.
         function persistAttachmentImage(id, base64) {
             attachmentMemoryCache.set(id, { id: id, base64: base64 });
-            if (!cavdoIsLoggedIn()) return; // guests: image stays in this tab only
             idbPut('attachments', { id: id, base64: base64 }).catch(e => console.error('Could not persist attachment image to IndexedDB:', e));
         }
 
@@ -9224,11 +9117,9 @@ function updateUpgradeButtonForAuth() {
         function saveImageToMemory({ prompt, base64, mimeType, sourceUrl, aspectRatio }) {
             const id = 'cavdo_img_' + Date.now() + '_' + Math.random().toString(16).slice(2, 8);
             const entry = { id, prompt, base64, mimeType: mimeType || 'image/png', sourceUrl: sourceUrl || null, aspectRatio: aspectRatio || null, ts: Date.now() };
-            iimageMemoryCache.set(id, entry); // available to the UI immediately
-            if (cavdoIsLoggedIn()) {
-                idbPut('images', entry).catch(e => console.error('Could not persist image to IndexedDB (kept in this tab only):', e));
-                if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.uploadImage(entry);
-            }
+            imageMemoryCache.set(id, entry); // available to the UI immediately
+            idbPut('images', entry).catch(e => console.error('Could not persist image to IndexedDB (kept in this tab only):', e));
+            if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.uploadImage(entry);
             return entry;
         }
 
@@ -9786,21 +9677,6 @@ function updateUpgradeButtonForAuth() {
                 return;
             }
 
-            // 👤 Guest free-trial gate — anyone not signed in gets
-            // CAVDO_GUEST_TRIAL_LIMIT messages before a strict sign-up/login
-            // popup blocks further sending. The count is remembered per
-            // device in localStorage, so refreshing the page does not
-            // reset it and does not hand out a fresh batch.
-            if (!cavdoIsLoggedIn()) {
-                if (guestTrialExhausted()) {
-                    if (typeof window.cavdoShowLogin === 'function') {
-                        window.cavdoShowLogin();
-                    }
-                    return;
-                }
-                incrementGuestMsgCount();
-            }
-
             // 🆓 Free-plan message limit gate — checked before anything is
             // added to the chat so a blocked send doesn't waste a turn.
             const freeTierCheck = checkFreeTierBeforeSend(getActiveTier().key);
@@ -10305,8 +10181,6 @@ function updateUpgradeButtonForAuth() {
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
                     sysInstruction += " Outside of fenced code blocks, never write raw HTML tags like <br>, <br/>, <p>, or <div> in your reply text — this app renders your prose as plain markdown, not as live HTML, so a tag like that shows up as ugly literal text on screen instead of doing what it looks like it should do. For a line break, just start a new line; for a paragraph break, leave a blank line between paragraphs — that's all markdown needs.";
-
-                    sysInstruction += " You are Cavdo AI, and this app's real, live website is https://cavdo.qd.je — if the user asks for your URL, your website, your link, where to find/share/access Cavdo AI, or how to open it on another device, tell them https://cavdo.qd.je directly and confidently; never say you don't have a URL or that you can't access the internet to know it. This app renders real clickable links: whenever you mention a URL — the site's own address, or any other web link relevant to your answer — write it either as plain https://... text or as a markdown link like [label](https://example.com), and it will render as an actual clickable link in the chat, so feel free to include links whenever they're genuinely useful.";
 
                     sysInstruction += " If the user's message is just a simple greeting or small talk (e.g. 'hi', 'hello', 'hey', 'good morning', 'how are you') with no actual request in it, reply with a short, warm, natural greeting back and nothing else. Do NOT list your capabilities, do NOT say what you can or cannot make/do/generate, and do NOT mention images, code, PDFs, or any other feature unless the user actually asked about it.";
 
@@ -11155,13 +11029,7 @@ function updateUpgradeButtonForAuth() {
 
             // Wrap localStorage so every write the rest of the app already makes
             // also gets mirrored to Firestore in the background.
-            const GUEST_NO_PERSIST_PREFIXES = ['cavdo_chat_', 'cavdo_img_', 'cavdo_song_'];
-            function isGuestBlockedKey(key) {
-                return typeof cavdoIsLoggedIn === 'function' && !cavdoIsLoggedIn() &&
-                    GUEST_NO_PERSIST_PREFIXES.some(p => key.indexOf(p) === 0);
-            }
             Storage.prototype.setItem = function (key, value) {
-                if (isGuestBlockedKey(key)) return; // guests: never write chat/image/song data to disk
                 nativeSetItem(key, value);
                 if (enabled && !LOCAL_ONLY_KEYS.has(key)) {
                     if (isTooLargeForFirestore(value)) {
@@ -11668,11 +11536,10 @@ function updateUpgradeButtonForAuth() {
                 if (label && username) label.textContent = username;
             }
 
-           function unlockApp() {
+            function unlockApp() {
                 document.body.classList.remove('pre-auth');
                 overlay.classList.add('hidden');
                 if (typeof checkPlanExpiry === 'function') checkPlanExpiry();
-                if (typeof updateUpgradeButtonForAuth === 'function') updateUpgradeButtonForAuth();
             }
 
             function resetProfileUI() {
@@ -11680,7 +11547,6 @@ function updateUpgradeButtonForAuth() {
                 var label = document.querySelector('.user-profile .btn-label');
                 if (avatar) avatar.textContent = 'U';
                 if (label) label.textContent = 'User Account';
-                if (typeof updateUpgradeButtonForAuth === 'function') updateUpgradeButtonForAuth();
             }
 
             async function logOut() {
@@ -11703,30 +11569,18 @@ function updateUpgradeButtonForAuth() {
             }
             window.cavdoLogOut = logOut;
 
-            // Forces the strict, non-dismissable sign-up/login popup back on
-            // screen — used once a guest's free-trial messages run out.
-            // Reuses the real auth panel (same overlay, same login step) so
-            // it looks and behaves exactly like the normal login screen.
-            window.cavdoShowLogin = function () {
-                showStep('login');
-                overlay.classList.remove('hidden');
-                document.body.classList.add('pre-auth');
-            };
-
             // ---------------- Profile dropdown / logout ----------------
-document.getElementById('userProfileBtn').addEventListener('click', function (e) {
+            document.getElementById('userProfileBtn').addEventListener('click', function (e) {
                 e.stopPropagation();
-                if (!cavdoIsLoggedIn()) {
-                    cavdoShowLogin();
-                    return;
-                }
                 var dd = document.getElementById('userProfileDropdown');
                 var wasOpen = dd.classList.contains('show');
                 document.querySelectorAll('.chat-dropdown, .ai-more-dropdown').forEach(function (d) {
                     d.classList.remove('show');
                 });
                 if (!wasOpen) dd.classList.add('show');
-            });            document.getElementById('logoutBtn').addEventListener('click', function (e) {
+            });
+
+            document.getElementById('logoutBtn').addEventListener('click', function (e) {
                 e.stopPropagation();
                 document.getElementById('userProfileDropdown').classList.remove('show');
                 logOut();
@@ -11771,18 +11625,10 @@ document.getElementById('userProfileBtn').addEventListener('click', function (e)
                 resumedOnce = true;
                 console.log('Cavdo: onAuthStateChanged fired, fbUser =', fbUser && fbUser.uid);
                 if (!fbUser) {
-                    // Not logged in. If this device still has free-trial
-                    // guest messages left, skip the login panel entirely and
-                    // drop them straight into the app — they only need to
-                    // sign in once those run out. Otherwise (trial already
-                    // used up on this device), show the login panel like
-                    // before.
+                    // Not logged in — after the minimum loading window,
+                    // reveal the login panel (with its Google button).
                     await waitOutMinLoading();
-                    if (typeof guestTrialExhausted === 'function' && !guestTrialExhausted()) {
-                        unlockApp();
-                    } else {
-                        showStep('login');
-                    }
+                    showStep('login');
                     return;
                 }
 

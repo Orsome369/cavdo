@@ -4483,6 +4483,7 @@
             const firstFree = MODEL_TIERS.findIndex(t => !isModelExhausted(t.key) && !isFreeTierLocked(t.key));
             activeTierIndex = firstFree === -1 ? activeTierIndex : firstFree;
         }
+        if (!cavdoIsLoggedIn()) activeTierIndex = 0; // guests are always on Cavdo Ultimate
 
         function getActiveTier() {
             return MODEL_TIERS[activeTierIndex];
@@ -4515,11 +4516,11 @@
         const CAVDO_GUEST_COUNT_KEY = 'cavdoGuestMsgCount';
 
         function getGuestMsgCount() {
-            try { return parseInt(localStorage.getItem(CAVDO_GUEST_COUNT_KEY) || '0', 10) || 0; }
+            try { return parseInt(sessionStorage.getItem(CAVDO_GUEST_COUNT_KEY) || '0', 10) || 0; }
             catch (e) { return 0; }
         }
         function incrementGuestMsgCount() {
-            try { localStorage.setItem(CAVDO_GUEST_COUNT_KEY, String(getGuestMsgCount() + 1)); } catch (e) {}
+            try { sessionStorage.setItem(CAVDO_GUEST_COUNT_KEY, String(getGuestMsgCount() + 1)); } catch (e) {}
         }
         function guestMsgsRemaining() {
             return Math.max(0, CAVDO_GUEST_TRIAL_LIMIT - getGuestMsgCount());
@@ -5287,8 +5288,24 @@
             if (!dropdown) return;
             dropdown.innerHTML = '';
 
+            if (!cavdoIsLoggedIn()) {
+                activeTierIndex = 0;
+                const tier = MODEL_TIERS[0];
+                dropdown.innerHTML = `
+                    <div class="model-option active" title="Log in to unlock Speed and Lite">
+                        <div class="model-option-icon">${tier.icon}</div>
+                        <div class="model-option-text">
+                            <div class="model-option-name">${tier.label}</div>
+                            <div class="model-option-desc">Log in to switch models</div>
+                        </div>
+                        <div class="model-option-check">✓</div>
+                    </div>
+                `;
+                return;
+            }
+
             MODEL_TIERS.forEach((tier, index) => {
-                const apiExhausted = isModelExhausted(tier.key);
+                            const apiExhausted = isModelExhausted(tier.key);
                 const freeLocked = isFreeTierLocked(tier.key);
                 const exhausted = apiExhausted || freeLocked;
                 const isActive = index === activeTierIndex;
@@ -5321,10 +5338,26 @@
             });
         }
 
+function updateUpgradeButtonForAuth() {
+            const btn = document.getElementById('upgradePlanBtn');
+            if (!btn) return;
+            if (cavdoIsLoggedIn()) {
+                btn.textContent = '⭐ Upgrade';
+                btn.title = 'Upgrade your plan';
+            } else {
+                btn.textContent = '🔑 Login';
+                btn.title = 'Log in to your account';
+            }
+        }
+
         document.getElementById('upgradePlanBtn').addEventListener('click', () => {
+            if (!cavdoIsLoggedIn()) {
+                if (typeof cavdoShowLogin === 'function') cavdoShowLogin();
+                return;
+            }
             openPlansModal();
         });
-
+        updateUpgradeButtonForAuth();
         function openModelDropdown() {
             document.getElementById('modelDropdown').classList.add('show');
             document.getElementById('modelSelector').classList.add('open');
@@ -5745,7 +5778,13 @@
             document.getElementById('settingsModalOverlay').classList.remove('show');
         }
 
-        document.getElementById('settingsBtn').onclick = openSettingsModal;
+        document.getElementById('settingsBtn').onclick = function () {
+            if (!cavdoIsLoggedIn()) {
+                if (typeof cavdoShowLogin === 'function') cavdoShowLogin();
+                return;
+            }
+            openSettingsModal();
+        };
         document.getElementById('settingsCloseBtn').onclick = closeSettingsModal;
         document.getElementById('settingsModalOverlay').addEventListener('click', (e) => {
             if (e.target.id === 'settingsModalOverlay') closeSettingsModal();
@@ -9135,6 +9174,7 @@
         // object itself only ever stores the small attachmentId reference.
         function persistAttachmentImage(id, base64) {
             attachmentMemoryCache.set(id, { id: id, base64: base64 });
+            if (!cavdoIsLoggedIn()) return; // guests: image stays in this tab only
             idbPut('attachments', { id: id, base64: base64 }).catch(e => console.error('Could not persist attachment image to IndexedDB:', e));
         }
 
@@ -9184,9 +9224,11 @@
         function saveImageToMemory({ prompt, base64, mimeType, sourceUrl, aspectRatio }) {
             const id = 'cavdo_img_' + Date.now() + '_' + Math.random().toString(16).slice(2, 8);
             const entry = { id, prompt, base64, mimeType: mimeType || 'image/png', sourceUrl: sourceUrl || null, aspectRatio: aspectRatio || null, ts: Date.now() };
-            imageMemoryCache.set(id, entry); // available to the UI immediately
-            idbPut('images', entry).catch(e => console.error('Could not persist image to IndexedDB (kept in this tab only):', e));
-            if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.uploadImage(entry);
+            iimageMemoryCache.set(id, entry); // available to the UI immediately
+            if (cavdoIsLoggedIn()) {
+                idbPut('images', entry).catch(e => console.error('Could not persist image to IndexedDB (kept in this tab only):', e));
+                if (typeof CAVDO_SYNC !== 'undefined') CAVDO_SYNC.uploadImage(entry);
+            }
             return entry;
         }
 
@@ -11113,7 +11155,13 @@
 
             // Wrap localStorage so every write the rest of the app already makes
             // also gets mirrored to Firestore in the background.
+            const GUEST_NO_PERSIST_PREFIXES = ['cavdo_chat_', 'cavdo_img_', 'cavdo_song_'];
+            function isGuestBlockedKey(key) {
+                return typeof cavdoIsLoggedIn === 'function' && !cavdoIsLoggedIn() &&
+                    GUEST_NO_PERSIST_PREFIXES.some(p => key.indexOf(p) === 0);
+            }
             Storage.prototype.setItem = function (key, value) {
+                if (isGuestBlockedKey(key)) return; // guests: never write chat/image/song data to disk
                 nativeSetItem(key, value);
                 if (enabled && !LOCAL_ONLY_KEYS.has(key)) {
                     if (isTooLargeForFirestore(value)) {
@@ -11620,10 +11668,11 @@
                 if (label && username) label.textContent = username;
             }
 
-            function unlockApp() {
+           function unlockApp() {
                 document.body.classList.remove('pre-auth');
                 overlay.classList.add('hidden');
                 if (typeof checkPlanExpiry === 'function') checkPlanExpiry();
+                if (typeof updateUpgradeButtonForAuth === 'function') updateUpgradeButtonForAuth();
             }
 
             function resetProfileUI() {
@@ -11631,6 +11680,7 @@
                 var label = document.querySelector('.user-profile .btn-label');
                 if (avatar) avatar.textContent = 'U';
                 if (label) label.textContent = 'User Account';
+                if (typeof updateUpgradeButtonForAuth === 'function') updateUpgradeButtonForAuth();
             }
 
             async function logOut() {
@@ -11664,17 +11714,19 @@
             };
 
             // ---------------- Profile dropdown / logout ----------------
-            document.getElementById('userProfileBtn').addEventListener('click', function (e) {
+document.getElementById('userProfileBtn').addEventListener('click', function (e) {
                 e.stopPropagation();
+                if (!cavdoIsLoggedIn()) {
+                    cavdoShowLogin();
+                    return;
+                }
                 var dd = document.getElementById('userProfileDropdown');
                 var wasOpen = dd.classList.contains('show');
                 document.querySelectorAll('.chat-dropdown, .ai-more-dropdown').forEach(function (d) {
                     d.classList.remove('show');
                 });
                 if (!wasOpen) dd.classList.add('show');
-            });
-
-            document.getElementById('logoutBtn').addEventListener('click', function (e) {
+            });            document.getElementById('logoutBtn').addEventListener('click', function (e) {
                 e.stopPropagation();
                 document.getElementById('userProfileDropdown').classList.remove('show');
                 logOut();

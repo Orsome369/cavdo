@@ -2365,9 +2365,62 @@
             from { transform: scale(0.92); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
         }
-        .gallery-modal-box, .editor-modal-box {
+        .gallery-modal-box, .editor-modal-box, .admin-modal-box {
             max-width: 720px;
         }
+        .admin-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .admin-panel-header h3 { margin: 0; flex: 1; }
+        .admin-back-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #fff;
+            border-radius: 10px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .admin-back-btn:hover { background: rgba(255,255,255,0.12); }
+        .admin-user-list, .admin-chat-list {
+            max-height: 55vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.15) transparent;
+        }
+        .admin-user-row, .admin-chat-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 12px 14px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .admin-user-row:hover, .admin-chat-row:hover { background: rgba(47, 208, 92, 0.1); }
+        .admin-user-row-name { font-weight: 600; }
+        .admin-user-row-meta, .admin-chat-row-meta { font-size: 12px; color: rgba(255,255,255,0.55); }
+        .admin-empty-note { color: rgba(255,255,255,0.55); font-size: 13px; padding: 12px 2px; }
+        .admin-chat-transcript {
+            max-height: 55vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .admin-msg { border-radius: 12px; padding: 10px 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+        .admin-msg.user { background: rgba(47, 208, 92, 0.12); align-self: flex-end; max-width: 85%; }
+        .admin-msg.ai { background: rgba(255,255,255,0.05); align-self: flex-start; max-width: 85%; }
+        .admin-msg-role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(255,255,255,0.45); margin-bottom: 4px; }
         @media (max-width: 600px) {
             .modal-box {
                 width: 94%;
@@ -3824,6 +3877,7 @@
                 <span class="btn-label">User Account</span>
             </button>
             <div class="chat-dropdown user-dropdown" id="userProfileDropdown">
+                <button type="button" class="chat-dropdown-item" id="adminPanelBtn" style="display:none;">Admin Panel</button>
                 <button type="button" class="chat-dropdown-item delete" id="logoutBtn">Log out</button>
             </div>
             <button class="settings-btn" id="settingsBtn" title="Settings">
@@ -4006,6 +4060,41 @@
             <div class="modal-actions">
                 <button class="modal-btn cancel" id="imageEditorClose">Close</button>
                 <button class="modal-btn confirm" id="imageEditorSave">Save edited copy</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="adminPanelModalOverlay">
+        <div class="modal-box admin-modal-box">
+            <!-- View 1: all users -->
+            <div id="adminUsersView">
+                <div class="admin-panel-header">
+                    <h3>All Users</h3>
+                </div>
+                <div class="admin-user-list" id="adminUserList">
+                    <div class="admin-empty-note">Loading users…</div>
+                </div>
+            </div>
+            <!-- View 2: one user's chats -->
+            <div id="adminChatsView" style="display:none;">
+                <div class="admin-panel-header">
+                    <button type="button" class="admin-back-btn" id="adminBackToUsersBtn">← Users</button>
+                    <h3 id="adminChatsViewTitle">Chats</h3>
+                </div>
+                <div class="admin-chat-list" id="adminChatList">
+                    <div class="admin-empty-note">Loading chats…</div>
+                </div>
+            </div>
+            <!-- View 3: one chat's messages -->
+            <div id="adminTranscriptView" style="display:none;">
+                <div class="admin-panel-header">
+                    <button type="button" class="admin-back-btn" id="adminBackToChatsBtn">← Chats</button>
+                    <h3 id="adminTranscriptViewTitle">Chat</h3>
+                </div>
+                <div class="admin-chat-transcript" id="adminChatTranscript"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" id="adminPanelClose">Close</button>
             </div>
         </div>
     </div>
@@ -11713,6 +11802,178 @@
 
     <script>
         // ============================================================================
+        // CAVDO AI — ADMIN PANEL (view every user's chats)
+        // ----------------------------------------------------------------------------
+        // Client-only, same as the rest of this app — so the actual access control
+        // has to live in TWO places, both required:
+        //   1. This ADMIN_UIDS list, which just shows/hides the button in the UI.
+        //      Anyone could open devtools and call these functions directly, so this
+        //      alone does NOT protect the data.
+        //   2. Firestore Security Rules, which are what actually stop a non-admin
+        //      from reading another user's `data` subcollection. Add something like
+        //      this to your rules (adjust to match whatever else is already there):
+        //
+        //        match /users/{uid} {
+        //          allow read: if request.auth.uid == uid || request.auth.uid in ['8DmBhABjCncIGjuAb6IsmZNOKNN2'];
+        //          match /data/{doc} {
+        //            allow read: if request.auth.uid == uid || request.auth.uid in ['8DmBhABjCncIGjuAb6IsmZNOKNN2'];
+        //          }
+        //        }
+        //
+        //      Without that rule change, this panel will load for you but every
+        //      user's chats will fail to fetch with a "permission-denied" error.
+        // ============================================================================
+
+        // Replace with your own Firebase Auth UID(s) — found in Firebase Console →
+        // Authentication → Users, or by logging in once and checking
+        // cavdoAuth.currentUser.uid in the browser console.
+        const ADMIN_UIDS = ['8DmBhABjCncIGjuAb6IsmZNOKNN2'];
+
+        function applyAdminVisibility(uid) {
+            const btn = document.getElementById('adminPanelBtn');
+            if (btn) btn.style.display = (uid && ADMIN_UIDS.includes(uid)) ? '' : 'none';
+        }
+
+        (function setupAdminPanel() {
+            const overlay = document.getElementById('adminPanelModalOverlay');
+            const usersView = document.getElementById('adminUsersView');
+            const chatsView = document.getElementById('adminChatsView');
+            const transcriptView = document.getElementById('adminTranscriptView');
+            const userListEl = document.getElementById('adminUserList');
+            const chatListEl = document.getElementById('adminChatList');
+            const transcriptEl = document.getElementById('adminChatTranscript');
+            const chatsViewTitle = document.getElementById('adminChatsViewTitle');
+            const transcriptViewTitle = document.getElementById('adminTranscriptViewTitle');
+
+            function showView(view) {
+                usersView.style.display = view === 'users' ? '' : 'none';
+                chatsView.style.display = view === 'chats' ? '' : 'none';
+                transcriptView.style.display = view === 'transcript' ? '' : 'none';
+            }
+
+            async function openAdminPanel() {
+                overlay.classList.add('show');
+                showView('users');
+                userListEl.innerHTML = '<div class="admin-empty-note">Loading users…</div>';
+                try {
+                    const snap = await withTimeout(cavdoDb.collection('users').get(), 10000, 'Admin: user list');
+                    if (snap.empty) {
+                        userListEl.innerHTML = '<div class="admin-empty-note">No users found.</div>';
+                        return;
+                    }
+                    userListEl.innerHTML = '';
+                    snap.forEach(function (doc) {
+                        const data = doc.data() || {};
+                        const row = document.createElement('div');
+                        row.className = 'admin-user-row';
+                        const created = data.createdAt ? new Date(data.createdAt).toLocaleDateString() : 'unknown join date';
+                        row.innerHTML =
+                            '<div><div class="admin-user-row-name">' + escapeHtml(data.username || doc.id) + '</div>' +
+                            '<div class="admin-user-row-meta">' + escapeHtml(created) + '</div></div>' +
+                            '<div class="admin-user-row-meta">' + escapeHtml(doc.id) + '</div>';
+                        row.addEventListener('click', function () { openUserChats(doc.id, data.username || doc.id); });
+                        userListEl.appendChild(row);
+                    });
+                } catch (e) {
+                    console.warn('Admin panel: failed to load users', e);
+                    userListEl.innerHTML = '<div class="admin-empty-note">Could not load users (' +
+                        escapeHtml(e.code || e.message || 'unknown error') +
+                        '). If you\'re not seeing your own account\'s data either, check the Firestore rules note above.</div>';
+                }
+            }
+
+            async function openUserChats(uid, username) {
+                showView('chats');
+                chatsViewTitle.textContent = username + '\u2019s Chats';
+                chatListEl.innerHTML = '<div class="admin-empty-note">Loading chats…</div>';
+                try {
+                    // Prefix-range trick: matches every stored key starting with
+                    // "cavdo_chat_" (chat storage keys), same prefix used
+                    // throughout the rest of the app.
+                    const snap = await withTimeout(
+                        cavdoDb.collection('users').doc(uid).collection('data')
+                            .where('key', '>=', 'cavdo_chat_')
+                            .where('key', '<', 'cavdo_chat_\uf8ff')
+                            .get(),
+                        10000, 'Admin: chat list'
+                    );
+                    if (snap.empty) {
+                        chatListEl.innerHTML = '<div class="admin-empty-note">This user has no saved chats.</div>';
+                        return;
+                    }
+                    const chats = [];
+                    snap.forEach(function (doc) {
+                        const raw = doc.data();
+                        let parsed = null;
+                        try { parsed = JSON.parse(raw.value); } catch (e) { /* skip malformed entry */ }
+                        if (parsed) chats.push({ id: raw.key, data: parsed, updatedAt: raw.updatedAt || 0 });
+                    });
+                    chats.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+                    chatListEl.innerHTML = '';
+                    if (!chats.length) {
+                        chatListEl.innerHTML = '<div class="admin-empty-note">This user has no saved chats.</div>';
+                        return;
+                    }
+                    chats.forEach(function (chat) {
+                        const row = document.createElement('div');
+                        row.className = 'admin-chat-row';
+                        const msgCount = Array.isArray(chat.data.messages) ? chat.data.messages.length : 0;
+                        const when = chat.updatedAt ? new Date(chat.updatedAt).toLocaleString() : '';
+                        row.innerHTML =
+                            '<div><div class="admin-user-row-name">' + escapeHtml(chat.data.title || 'Untitled chat') + '</div>' +
+                            '<div class="admin-chat-row-meta">' + msgCount + ' messages</div></div>' +
+                            '<div class="admin-chat-row-meta">' + escapeHtml(when) + '</div>';
+                        row.addEventListener('click', function () { openChatTranscript(chat, username); });
+                        chatListEl.appendChild(row);
+                    });
+                } catch (e) {
+                    console.warn('Admin panel: failed to load chats for', uid, e);
+                    chatListEl.innerHTML = '<div class="admin-empty-note">Could not load this user\'s chats (' +
+                        escapeHtml(e.code || e.message || 'unknown error') + ').</div>';
+                }
+            }
+
+            function openChatTranscript(chat, username) {
+                showView('transcript');
+                transcriptViewTitle.textContent = chat.data.title || (username + '\u2019s chat');
+                transcriptEl.innerHTML = '';
+                const messages = Array.isArray(chat.data.messages) ? chat.data.messages : [];
+                if (!messages.length) {
+                    transcriptEl.innerHTML = '<div class="admin-empty-note">This chat has no messages.</div>';
+                    return;
+                }
+                messages.forEach(function (msg) {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'admin-msg ' + (msg.role === 'user' ? 'user' : 'ai');
+                    const roleLabel = document.createElement('div');
+                    roleLabel.className = 'admin-msg-role';
+                    roleLabel.textContent = msg.role === 'user' ? username : 'Cavdo AI';
+                    const body = document.createElement('div');
+                    // Read-only, plain-text rendering (no markdown parsing) — this
+                    // is a moderation/support view, not the live chat UI, so raw
+                    // text kept safely escaped is enough to review what was said.
+                    body.textContent = msg.text || '';
+                    wrap.appendChild(roleLabel);
+                    wrap.appendChild(body);
+                    transcriptEl.appendChild(wrap);
+                });
+            }
+
+            function closeAdminPanel() { overlay.classList.remove('show'); }
+
+            document.getElementById('adminPanelBtn').addEventListener('click', function () {
+                document.getElementById('userProfileDropdown').classList.remove('show');
+                openAdminPanel();
+            });
+            document.getElementById('adminPanelClose').addEventListener('click', closeAdminPanel);
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) closeAdminPanel(); });
+            document.getElementById('adminBackToUsersBtn').addEventListener('click', function () { showView('users'); });
+            document.getElementById('adminBackToChatsBtn').addEventListener('click', function () { showView('chats'); });
+        })();
+    </script>
+
+    <script>
+        // ============================================================================
         // CAVDO AI — AUTH SYSTEM
         // ----------------------------------------------------------------------------
         // Username/password: now backed by real Firebase Authentication, so an
@@ -11882,6 +12143,7 @@
                 var session = Object.assign({ username: username, at: Date.now() }, meta || {});
                 try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) {}
                 applyProfileToUI(username);
+                applyAdminVisibility(meta && meta.uid);
             }
 
             // Returns the active session (username + meta) if one exists, else null.
@@ -11914,6 +12176,7 @@
                 var label = document.querySelector('.user-profile .btn-label');
                 if (avatar) avatar.textContent = 'U';
                 if (label) label.textContent = 'User Account';
+                applyAdminVisibility(null);
             }
 
             async function logOut() {

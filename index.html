@@ -1944,6 +1944,17 @@
             transform: rotate(45deg);
         }
 
+        #micBtn.listening {
+            background: rgba(255, 59, 48, 0.18);
+            border-color: rgba(255, 59, 48, 0.5);
+            color: #ff3b30;
+            animation: cavdoMicPulse 1.1s ease-in-out infinite;
+        }
+        @keyframes cavdoMicPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.35); }
+            50% { box-shadow: 0 0 0 8px rgba(255, 59, 48, 0); }
+        }
+
         .attach-wrapper {
             position: relative;
             display: flex;
@@ -3879,6 +3890,10 @@
                 <input type="file" id="cameraInput" style="display: none;" accept="image/*" capture="environment">
 
                 <textarea id="userInput" rows="1" placeholder="Ask Cavdo anything..." autocomplete="off"></textarea>
+
+                <button class="attach-file-btn" id="micBtn" title="Voice input" type="button">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                </button>
 
                 <div class="model-selector" id="modelSelector">
                     <button class="model-selector-btn" id="modelSelectorBtn" type="button" title="Choose model">
@@ -5913,6 +5928,83 @@
         const photoInput = document.getElementById('photoInput');
         const cameraInput = document.getElementById('cameraInput');
         const previewTray = document.getElementById('previewTray');
+
+        // --- Voice input (mic button) ---
+        // Uses the browser's built-in Web Speech API to transcribe speech
+        // straight into the composer textarea — no server round-trip needed.
+        (function setupVoiceInput() {
+            const micBtn = document.getElementById('micBtn');
+            if (!micBtn) return;
+
+            const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognitionCtor) {
+                // Not supported (e.g. Firefox) — hide the button instead of
+                // leaving a dead control in the composer.
+                micBtn.style.display = 'none';
+                return;
+            }
+
+            let recognition = null;
+            let isListening = false;
+            let baseText = ''; // whatever was already typed before we started listening
+
+            function stopListening() {
+                isListening = false;
+                micBtn.classList.remove('listening');
+                micBtn.title = 'Voice input';
+                if (recognition) { try { recognition.stop(); } catch (e) {} }
+            }
+
+            function startListening() {
+                recognition = new SpeechRecognitionCtor();
+                recognition.lang = (navigator.language || 'en-US');
+                recognition.continuous = true;
+                recognition.interimResults = true;
+
+                baseText = userInput.value ? (userInput.value.trim() + ' ') : '';
+                isListening = true;
+                micBtn.classList.add('listening');
+                micBtn.title = 'Listening… click to stop';
+
+                recognition.onresult = function (event) {
+                    let finalTranscript = '';
+                    let interimTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const chunk = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) finalTranscript += chunk;
+                        else interimTranscript += chunk;
+                    }
+                    if (finalTranscript) baseText += finalTranscript + ' ';
+                    userInput.value = (baseText + interimTranscript).trim();
+                    userInput.dispatchEvent(new Event('input')); // keep auto-resize / send-btn state in sync
+                };
+
+                recognition.onerror = function (event) {
+                    console.warn('Cavdo voice input error:', event.error);
+                    stopListening();
+                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                        cavdoToast('Microphone access was blocked — allow it in your browser settings to use voice input.', 'warn');
+                    }
+                };
+
+                recognition.onend = function () {
+                    // Browsers auto-stop after a pause of silence; if the user
+                    // never clicked stop, just reflect that in the UI.
+                    if (isListening) stopListening();
+                };
+
+                try {
+                    recognition.start();
+                } catch (e) {
+                    stopListening();
+                }
+            }
+
+            micBtn.addEventListener('click', function () {
+                if (isListening) stopListening();
+                else startListening();
+            });
+        })();
 
         const customModalOverlay = document.getElementById('customModalOverlay');
         const renameModalContent = document.getElementById('renameModalContent');
@@ -9534,6 +9626,69 @@
             return replyText.replace(/```(pdf|docx|pptx)(\s|\n|$)/gi, '```markdown$2');
         }
 
+        // Feeds raw model output through incrementally, character by
+        // character as it truly arrives over the network, while still
+        // hiding any <think>...</think> block from ever touching the
+        // screen — even when a chunk boundary lands in the middle of an
+        // opening/closing tag. A small holdback buffer (long enough to
+        // hold a partial "<think>"/"</think>") is kept unflushed until
+        // we're sure it isn't the start of a tag.
+        function createThinkSafeStreamer(onVisibleChunk) {
+            let buffer = '';
+            let inThink = false;
+            const HOLDBACK = 9;
+
+            function process(newText) {
+                buffer += newText;
+                while (true) {
+                    if (inThink) {
+                        const endIdx = buffer.indexOf('</think>');
+                        if (endIdx === -1) return;
+                        buffer = buffer.slice(endIdx + '</think>'.length);
+                        inThink = false;
+                        continue;
+                    }
+                    const startIdx = buffer.indexOf('<think>');
+                    if (startIdx === -1) {
+                        if (buffer.length > HOLDBACK) {
+                            const safeLen = buffer.length - HOLDBACK;
+                            onVisibleChunk(buffer.slice(0, safeLen));
+                            buffer = buffer.slice(safeLen);
+                        }
+                        return;
+                    }
+                    if (startIdx > 0) onVisibleChunk(buffer.slice(0, startIdx));
+                    buffer = buffer.slice(startIdx + '<think>'.length);
+                    inThink = true;
+                }
+            }
+
+            function finish() {
+                if (!inThink && buffer) { onVisibleChunk(buffer); buffer = ''; }
+            }
+
+            return { process, finish };
+        }
+
+        // Turns Gemini's groundingMetadata (present when the google_search
+        // tool actually looked something up) into a short "Sources" line
+        // appended to the reply, so search-grounded answers are checkable.
+        function buildGroundingSourcesBlock(groundingMetadata) {
+            if (!groundingMetadata || !Array.isArray(groundingMetadata.groundingChunks)) return '';
+            const seen = new Set();
+            const links = [];
+            groundingMetadata.groundingChunks.forEach(function (c) {
+                const web = c && c.web;
+                if (web && web.uri && !seen.has(web.uri)) {
+                    seen.add(web.uri);
+                    const title = (web.title || 'source').replace(/[\[\]]/g, '').trim();
+                    links.push(`[${title}](${web.uri})`);
+                }
+            });
+            if (!links.length) return '';
+            return '\n\n---\n🔎 **Sources:** ' + links.join(' · ');
+        }
+
         async function typeOutFullReply(rawText, requestContextChatId, aiMsgIndex, thinkingIntervalId, originalUserText) {
             const fullReply = downgradeUnrequestedDocFences(
                 (rawText || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
@@ -9622,6 +9777,72 @@
             return fullText || fullReply;
         }
 
+        // --- Long-term memory ---
+        // A small list of short facts Cavdo has been told to remember about
+        // this user (name, preferences, ongoing projects, etc). Stored under
+        // an ordinary localStorage key, which the CAVDO_SYNC wrapper above
+        // already mirrors to Firestore per-account — so memories follow the
+        // user across devices for free, no extra sync code needed here.
+        const CAVDO_MEMORY_KEY = 'cavdoMemories';
+        const CAVDO_MEMORY_LIMIT = 40;
+        const CAVDO_MEMORY = {
+            getAll: function () {
+                try { return JSON.parse(localStorage.getItem(CAVDO_MEMORY_KEY) || '[]'); }
+                catch (e) { return []; }
+            },
+            add: function (fact) {
+                fact = (fact || '').trim();
+                if (!fact) return;
+                const list = CAVDO_MEMORY.getAll();
+                if (list.some(f => f.toLowerCase() === fact.toLowerCase())) return; // no dupes
+                list.push(fact);
+                while (list.length > CAVDO_MEMORY_LIMIT) list.shift(); // drop oldest first
+                localStorage.setItem(CAVDO_MEMORY_KEY, JSON.stringify(list));
+            },
+            forget: function (matchText) {
+                const needle = (matchText || '').trim().toLowerCase();
+                if (!needle) return false;
+                const list = CAVDO_MEMORY.getAll();
+                const next = list.filter(f => !f.toLowerCase().includes(needle));
+                const changed = next.length !== list.length;
+                if (changed) localStorage.setItem(CAVDO_MEMORY_KEY, JSON.stringify(next));
+                return changed;
+            },
+            clearAll: function () {
+                localStorage.setItem(CAVDO_MEMORY_KEY, JSON.stringify([]));
+            },
+            // Builds the block appended to sysInstruction so the model has
+            // this context on every single request.
+            promptBlock: function () {
+                const list = CAVDO_MEMORY.getAll();
+                if (!list.length) return '';
+                return " Things you already know about this specific user from earlier conversations (use naturally, don't just recite them back): " + list.map(f => '"' + f.replace(/"/g, "'") + '"').join('; ') + ".";
+            }
+        };
+
+        // Very lightweight, deliberately conservative pattern-matching so the
+        // app only stores memory when the user explicitly asks it to — no
+        // silent profiling off ordinary chat. Returns true if it handled the
+        // message as a memory command (caller still sends it to the model too).
+        function detectMemoryCommand(rawText) {
+            const t = (rawText || '').trim();
+            let m = t.match(/^remember\s+(?:that\s+|this\s*:?\s*)?(.+)$/i);
+            if (m && m[1]) {
+                CAVDO_MEMORY.add(m[1].trim().replace(/\.$/, ''));
+                return true;
+            }
+            m = t.match(/^(?:forget|delete the memory)\s+(?:that\s+|about\s+)?(.+)$/i);
+            if (m && m[1]) {
+                CAVDO_MEMORY.forget(m[1].trim().replace(/\.$/, ''));
+                return true;
+            }
+            if (/^forget everything(?: you know about me)?\.?$/i.test(t)) {
+                CAVDO_MEMORY.clearAll();
+                return true;
+            }
+            return false;
+        }
+
         async function sendMessage() {
             let text = userInput.value.trim();
 
@@ -9685,6 +9906,13 @@
                 return;
             }
             recordFreeTierUsage(getActiveTier().key);
+
+            // Explicit "remember that..." / "forget that..." commands are
+            // saved to long-term memory right away — still falls through to
+            // send normally below, so the model also gets to reply to it.
+            if (text && detectMemoryCommand(text)) {
+                cavdoToast('🧠 Got it, I\'ll remember that.', 'ok');
+            }
 
             const requestContextChatId = currentChatId || `cavdo_chat_${Date.now()}`;
 
@@ -10192,6 +10420,10 @@
                     });
                     sysInstruction += ` The current real-world date and time is ${cavdoNowStr}. Treat this as ground truth for anything involving "today", "now", "current", "latest", ages, deadlines, or how much time has passed — it overrides whatever date your own training data suggests.`;
 
+                    // Cross-session memory: facts the user has explicitly asked
+                    // Cavdo to remember (see CAVDO_MEMORY / detectMemoryCommand).
+                    sysInstruction += CAVDO_MEMORY.promptBlock();
+
                     sysInstruction += " Outside of fenced code blocks, never write raw HTML tags like <br>, <br/>, <p>, or <div> in your reply text — this app renders your prose as plain markdown, not as live HTML, so a tag like that shows up as ugly literal text on screen instead of doing what it looks like it should do. For a line break, just start a new line; for a paragraph break, leave a blank line between paragraphs — that's all markdown needs.";
 
                     sysInstruction += " If the user's message is just a simple greeting or small talk (e.g. 'hi', 'hello', 'hey', 'good morning', 'how are you') with no actual request in it, reply with a short, warm, natural greeting back and nothing else. Do NOT list your capabilities, do NOT say what you can or cannot make/do/generate, and do NOT mention images, code, PDFs, or any other feature unless the user actually asked about it.";
@@ -10224,21 +10456,35 @@
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
                         const usedTier = getActiveTier();
                         const activeModel = (selectedMode === 'code') ? usedTier.codeModel : usedTier.textModel;
-                        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${getActiveGeminiKey()}`;
+                        // alt=sse gets us a real token-by-token stream instead of
+                        // waiting for the whole reply to finish generating before
+                        // anything appears on screen.
+                        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:streamGenerateContent?alt=sse&key=${getActiveGeminiKey()}`;
 
                         const response = await fetch(endpoint, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 systemInstruction: { parts: [{ text: sysInstruction }] },
-                                contents: buildApiPayload(chatData.messages.slice(0, -1))
+                                contents: buildApiPayload(chatData.messages.slice(0, -1)),
+                                // Lets the model search the live web for current
+                                // facts instead of relying only on training data —
+                                // pairs with the current-date grounding above so
+                                // "today", "latest", "current" questions are both
+                                // time-aware AND fact-current.
+                                tools: [{ google_search: {} }]
                             }),
                             signal: abortController.signal
                         });
 
+                        // A rejected request (bad key, rate limit, etc.) comes back
+                        // as a normal single JSON error body, not a stream — safe
+                        // to read it in full before touching response.body at all.
                         let responseData = null;
-                        try { responseData = await response.json(); } catch (e) {
-                            try { responseData = JSON.parse(await response.text()); } catch (e2) {}
+                        if (!response.ok) {
+                            try { responseData = await response.json(); } catch (e) {
+                                try { responseData = JSON.parse(await response.text()); } catch (e2) {}
+                            }
                         }
 
                         if (!response.ok) {
@@ -10303,19 +10549,103 @@
                             throw new Error((responseData && responseData.error && responseData.error.message) || `API request failed (${response.status})`);
                         }
 
-                        if (responseData && responseData.error) throw new Error(responseData.error.message || "API Failure");
+                        // Streaming success path: read real SSE chunks as they
+                        // arrive from Google and reveal them as they come in,
+                        // instead of waiting for the full reply then faking a
+                        // typing animation on already-finished text.
+                        clearInterval(internalThinkingInterval);
+                        const clearThinkChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                        if (clearThinkChat && clearThinkChat.messages[aiMsgIndex]) {
+                            clearThinkChat.messages[aiMsgIndex].isThinking = false;
+                            localStorage.setItem(requestContextChatId, JSON.stringify(clearThinkChat));
+                        }
+                        if (currentChatId === requestContextChatId) {
+                            const tNode = getLastMessageNode()?.querySelector('.text-container-node');
+                            if (tNode) tNode.classList.remove('thinking-status-text');
+                        }
 
-                        // Get the full response in one shot, THEN fake-type it —
-                        // this is the reliable approach the earlier version of
-                        // this app used. No live SSE parsing, no risk of a
-                        // <think> block being displayed and then swapped out
-                        // partway through — the raw text is cleaned up front,
-                        // and only the clean, final answer ever gets typed.
-                        const rawParts = responseData?.candidates?.[0]?.content?.parts || [];
-                        let rawText = '';
-                        for (const part of rawParts) { if (part.text) rawText += part.text; }
+                        let fullText = '';
+                        let groundingMetadata = null;
+                        let sawAnyOutput = false;
+                        let lastRenderAt = 0;
 
-                        aiText = await typeOutFullReply(rawText, requestContextChatId, aiMsgIndex, internalThinkingInterval, text);
+                        function pushVisibleChunk(chunk) {
+                            sawAnyOutput = true;
+                            fullText += chunk;
+                            const loopChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                            if (!loopChat) return;
+                            loopChat.messages[aiMsgIndex].text = fullText;
+                            localStorage.setItem(requestContextChatId, JSON.stringify(loopChat));
+
+                            if (document.hidden || currentChatId !== requestContextChatId) return;
+                            const now = performance.now();
+                            if (now - lastRenderAt < 25) return; // light throttle, avoid render-thrash on tiny SSE chunks
+                            lastRenderAt = now;
+                            const lastMessageNode = getLastMessageNode();
+                            const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
+                            if (!textDiv) return;
+                            let simulatedText = fullText;
+                            const occurrences = (simulatedText.match(/```/g) || []).length;
+                            if (occurrences % 2 !== 0) simulatedText += "\n```";
+                            try { renderAIContent(textDiv, simulatedText, false, text, true); }
+                            catch (renderErr) { console.error('Live stream render error (safe to ignore, text already saved):', renderErr); }
+                        }
+
+                        const streamer = createThinkSafeStreamer(pushVisibleChunk);
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let sseBuffer = '';
+
+                        while (true) {
+                            if (abortController.signal.aborted) { try { reader.cancel(); } catch (e) {} break; }
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            sseBuffer += decoder.decode(value, { stream: true });
+                            const lines = sseBuffer.split('\n');
+                            sseBuffer = lines.pop(); // last (possibly incomplete) line stays buffered
+                            for (const line of lines) {
+                                const trimmed = line.trim();
+                                if (!trimmed.startsWith('data:')) continue;
+                                const jsonStr = trimmed.slice(5).trim();
+                                if (!jsonStr || jsonStr === '[DONE]') continue;
+                                let evt;
+                                try { evt = JSON.parse(jsonStr); } catch (e) { continue; }
+                                if (evt && evt.error) throw new Error(evt.error.message || 'API Failure');
+                                const candidate = evt?.candidates?.[0];
+                                const parts = candidate?.content?.parts || [];
+                                for (const part of parts) { if (part.text) streamer.process(part.text); }
+                                if (candidate?.groundingMetadata) groundingMetadata = candidate.groundingMetadata;
+                            }
+                        }
+                        streamer.finish();
+
+                        if (!sawAnyOutput && !abortController.signal.aborted) {
+                            // Stream closed with literally nothing in it — treat like
+                            // any other failed attempt so the rotation logic above
+                            // gets a chance to retry on the next key/tier.
+                            throw new Error('Empty stream received.');
+                        }
+
+                        fullText = downgradeUnrequestedDocFences(
+                            fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
+                            text
+                        ) + buildGroundingSourcesBlock(groundingMetadata);
+
+                        const finalizeChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                        if (finalizeChat && finalizeChat.messages[aiMsgIndex]) {
+                            finalizeChat.messages[aiMsgIndex].text = fullText;
+                            localStorage.setItem(requestContextChatId, JSON.stringify(finalizeChat));
+                        }
+                        if (currentChatId === requestContextChatId) {
+                            const lastMessageNode = getLastMessageNode();
+                            const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
+                            if (textDiv) {
+                                try { renderAIContent(textDiv, fullText, false, text, true); }
+                                catch (renderErr) { console.error('Final stream render error (text already saved):', renderErr); }
+                            }
+                        }
+
+                        aiText = fullText;
                         break;
                     }
 

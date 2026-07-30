@@ -11814,9 +11814,9 @@
         //      this to your rules (adjust to match whatever else is already there):
         //
         //        match /users/{uid} {
-        //          allow read: if request.auth.uid == uid || request.auth.uid in ['8DmBhABjCncIGjuAb6IsmZNOKNN2'];
+        //          allow read: if request.auth.uid == uid || request.auth.uid in ['U6BngCLIjUhbmYwc0Xj2pEbTVym2'];
         //          match /data/{doc} {
-        //            allow read: if request.auth.uid == uid || request.auth.uid in ['8DmBhABjCncIGjuAb6IsmZNOKNN2'];
+        //            allow read: if request.auth.uid == uid || request.auth.uid in ['U6BngCLIjUhbmYwc0Xj2pEbTVym2'];
         //          }
         //        }
         //
@@ -11827,7 +11827,7 @@
         // Replace with your own Firebase Auth UID(s) — found in Firebase Console →
         // Authentication → Users, or by logging in once and checking
         // cavdoAuth.currentUser.uid in the browser console.
-        const ADMIN_UIDS = ['8DmBhABjCncIGjuAb6IsmZNOKNN2'];
+        const ADMIN_UIDS = ['U6BngCLIjUhbmYwc0Xj2pEbTVym2'];
 
         function applyAdminVisibility(uid) {
             const btn = document.getElementById('adminPanelBtn');

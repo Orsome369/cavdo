@@ -10451,6 +10451,15 @@
 
                     let aiText = null;
                     const maxAttempts = MODEL_TIERS.length * KEY_POOL.length;
+                    // Keys tried against the *current* tier — resets every time we
+                    // move to a different tier, so each tier gets its own full sweep
+                    // of the key pool instead of inheriting a spent-out counter from
+                    // whichever tier was tried before it.
+                    let keysRotatedThisTier = 0;
+                    // Number of times we've done a full "fresh key, reset to top
+                    // tier" advance this request (access-denied, or every tier
+                    // exhausted). Never resets — same-tier rotations don't count
+                    // toward it, so it isn't pinned to max by an ordinary sweep.
                     let keysRotatedThisRequest = 0;
 
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -10494,9 +10503,13 @@
                             // giving up; only surface the hard error once every built-in
                             // key has been tried.
                             if (isAccessDeniedResponse(response, responseData)) {
-                                if (!sessionGeminiKeyOverride && keysRotatedThisRequest < KEY_POOL.length - 1) {
+                                if (!sessionGeminiKeyOverride && keysRotatedThisTier < KEY_POOL.length - 1) {
+                                    keysRotatedThisTier++;
                                     keysRotatedThisRequest++;
                                     advanceApiKey();
+                                    // advanceApiKey() resets us to the top tier, so this
+                                    // is effectively a new tier context too.
+                                    keysRotatedThisTier = 0;
                                     continue;
                                 }
                                 throw new Error("This Gemini API key's project has been denied access by Google — it isn't a rate limit, so switching model tiers won't help. Add a working key in Settings → API Keys, or fix/replace the key tied to the default project.");
@@ -10512,8 +10525,8 @@
                                 // been tried on this tier do we fall back to
                                 // downgrading/locking it. Applies to free and paid
                                 // plans alike.
-                                if (!sessionGeminiKeyOverride && keysRotatedThisRequest < KEY_POOL.length - 1) {
-                                    keysRotatedThisRequest++;
+                                if (!sessionGeminiKeyOverride && keysRotatedThisTier < KEY_POOL.length - 1) {
+                                    keysRotatedThisTier++;
                                     advanceApiKeyKeepTier();
                                     const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
                                     if (switchChat) {
@@ -10523,11 +10536,23 @@
                                     continue;
                                 }
                                 const nextTier = downgradeAfterLimit();
+                                if (nextTier) {
+                                    // Entering a new tier with a clean slate — it hasn't
+                                    // had any of its own keys tried yet, so don't let the
+                                    // previous tier's exhausted counter carry over and
+                                    // skip this tier's key rotation.
+                                    keysRotatedThisTier = 0;
+                                }
                                 if (!nextTier) {
                                     // Every model tier is exhausted for the current key.
                                     // Rotate to the next key in the pool (fresh quota,
                                     // fresh tiers) and keep going, fast, before giving up.
+                                    // Gated on the whole-request total (not the per-tier
+                                    // counter, which is likely already maxed out from
+                                    // sweeping the last tier) so this fallback can still
+                                    // fire and actually try a different key.
                                     if (!sessionGeminiKeyOverride && keysRotatedThisRequest < KEY_POOL.length - 1) {
+                                        keysRotatedThisTier = 0;
                                         keysRotatedThisRequest++;
                                         advanceApiKey();
                                         const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));

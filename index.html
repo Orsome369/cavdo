@@ -10180,6 +10180,18 @@
                         ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
+                    // Ground the model in real wall-clock time on every request — without
+                    // this, the model only knows its training cutoff and will misjudge
+                    // "current", "latest", "today", how old something is, days-until-date
+                    // math, etc. Include weekday + timezone so relative-date reasoning
+                    // ("this Friday", "next month") is unambiguous too.
+                    const cavdoNow = new Date();
+                    const cavdoNowStr = cavdoNow.toLocaleString(undefined, {
+                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+                    });
+                    sysInstruction += ` The current real-world date and time is ${cavdoNowStr}. Treat this as ground truth for anything involving "today", "now", "current", "latest", ages, deadlines, or how much time has passed — it overrides whatever date your own training data suggests.`;
+
                     sysInstruction += " Outside of fenced code blocks, never write raw HTML tags like <br>, <br/>, <p>, or <div> in your reply text — this app renders your prose as plain markdown, not as live HTML, so a tag like that shows up as ugly literal text on screen instead of doing what it looks like it should do. For a line break, just start a new line; for a paragraph break, leave a blank line between paragraphs — that's all markdown needs.";
 
                     sysInstruction += " If the user's message is just a simple greeting or small talk (e.g. 'hi', 'hello', 'hey', 'good morning', 'how are you') with no actual request in it, reply with a short, warm, natural greeting back and nothing else. Do NOT list your capabilities, do NOT say what you can or cannot make/do/generate, and do NOT mention images, code, PDFs, or any other feature unless the user actually asked about it.";

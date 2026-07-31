@@ -4702,13 +4702,16 @@
 
         function getFreeUsageCount(tierKey) {
             const entry = loadFreeUsageMap()[tierKey];
-            return entry ? entry.count : 0;
+            const count = entry ? entry.count : 0;
+            return Number.isFinite(count) ? count : 0;
         }
 
         function incrementFreeUsageCount(tierKey) {
             const map = loadFreeUsageMap();
             const now = Date.now();
-            if (!map[tierKey]) map[tierKey] = { count: 0, windowStart: now };
+            if (!map[tierKey] || !Number.isFinite(map[tierKey].count)) {
+                map[tierKey] = { count: 0, windowStart: now };
+            }
             map[tierKey].count += 1;
             saveFreeUsageMap(map);
             return map[tierKey].count;
@@ -5421,6 +5424,15 @@
         // as the app loads so exhausted/unavailable models are already
         // greyed out before the user ever sends a message.
         // ------------------------------------------------------------
+        // ------------------------------------------------------------
+        // 🔑 Optional user-supplied Gemini key — session-only, in-memory.
+        // Never written to localStorage; cleared automatically on reload.
+        // Declared here (before probeModelAvailability/runStartupAvailabilityCheck
+        // use it) so the startup check doesn't hit a temporal-dead-zone
+        // ReferenceError when it runs immediately below.
+        // ------------------------------------------------------------
+        let sessionGeminiKeyOverride = null;
+
         async function probeModelAvailability(tier) {
             // A 429 on the currently active key doesn't mean the tier
             // itself is out of quota — another key in KEY_POOL may still
@@ -5491,12 +5503,6 @@
         }
 
         runStartupAvailabilityCheck();
-
-        // ------------------------------------------------------------
-        // 🔑 Optional user-supplied Gemini key — session-only, in-memory.
-        // Never written to localStorage; cleared automatically on reload.
-        // ------------------------------------------------------------
-        let sessionGeminiKeyOverride = null;
 
         function getActiveGeminiKey() {
             return sessionGeminiKeyOverride && sessionGeminiKeyOverride.trim()

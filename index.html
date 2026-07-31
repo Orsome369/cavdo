@@ -126,12 +126,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html-docx-js/dist/html-docx.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
-    <!-- Puter.js — last-resort fallback provider only. Loaded up front so it's
-         ready if it's ever needed, but it is NEVER used unless every built-in
-         Gemini key, across every model tier, has already failed. See the
-         "Fallback Provider" section further down and the Terms & Conditions
-         modal for the user-facing disclosure this requires. -->
-    <script src="https://js.puter.com/v2/"></script>
     <style>
         :root {
             /* Real safe-area insets (falls back to 0 on browsers without support).
@@ -3857,8 +3851,7 @@
                     <p><strong>5. Plans &amp; billing.</strong> Paid plans are active for the period shown in Settings → Billing and revert to the Free plan automatically once that period ends, unless renewed.</p>
                     <p><strong>6. No warranty.</strong> Cavdo AI is provided "as is." AI-generated content can be inaccurate — use your judgment, especially for anything important.</p>
                     <p><strong>7. Account deletion.</strong> You can delete your account at any time from Settings → Account. This permanently removes your data and cannot be undone.</p>
-                    <p><strong>8. Fallback AI provider.</strong> Cavdo AI primarily processes your messages using Google's Gemini API. On the rare occasion our own connection to Gemini is unavailable, your message may instead be routed through a third-party AI gateway (Puter.js, provided by Puter Technologies Inc.) to reach the same underlying model. This fallback is used only as a last resort, is not tied to any specific plan, and may occasionally prompt you to sign in with a Puter account to continue. By using Cavdo AI you consent to this occasional routing. See Puter's own <a href="https://puter.com/terms" target="_blank" rel="noopener">Terms</a> and <a href="https://puter.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> for how they handle data passed through their service.</p>
-                    <p><strong>9. Changes.</strong> These terms may be updated from time to time; continued use after a change means you accept the updated terms.</p>
+                    <p><strong>8. Changes.</strong> These terms may be updated from time to time; continued use after a change means you accept the updated terms.</p>
                 </div>
                 <label class="terms-agree-row">
                     <input type="checkbox" id="termsAgreeCheckbox">
@@ -10598,16 +10591,7 @@
                     }
 
                     let aiText = null;
-                    // NOTE: the loop below can do more than one full "sweep every
-                    // key across every tier" pass — once every tier is exhausted
-                    // for the current key it rotates to a fresh key and starts a
-                    // brand-new tier sweep (see keysRotatedThisRequest below), and
-                    // that can repeat up to KEY_POOL.length times. So this cap has
-                    // to cover a full sweep for *every* key in the pool, not just
-                    // one sweep — otherwise the loop can run out of iterations
-                    // (and silently fall through to "Failed to get a response.")
-                    // one step before it would have reached the Puter fallback.
-                    const maxAttempts = MODEL_TIERS.length * KEY_POOL.length * KEY_POOL.length;
+                    const maxAttempts = MODEL_TIERS.length * KEY_POOL.length;
                     // Keys tried against the *current* tier — resets every time we
                     // move to a different tier, so each tier gets its own full sweep
                     // of the key pool instead of inheriting a spent-out counter from
@@ -10618,18 +10602,6 @@
                     // exhausted). Never resets — same-tier rotations don't count
                     // toward it, so it isn't pinned to max by an ordinary sweep.
                     let keysRotatedThisRequest = 0;
-                    // How many tiers we've downgraded through for the *current*
-                    // key. Tracked locally instead of trusting
-                    // downgradeAfterLimit()'s return value on its own, because
-                    // advanceApiKeyKeepTier() clears the shared exhausted-tier
-                    // map (EXHAUSTED_STORAGE_KEY) on every ordinary same-tier
-                    // key rotation — wiping out the record of tiers we already
-                    // fully swept earlier in this same request. Without this
-                    // counter, downgradeAfterLimit() can "rediscover" an
-                    // already-exhausted tier as free and the loop cycles
-                    // through tiers indefinitely, never reaching the point
-                    // where it gives up on this key and tries Puter.
-                    let tiersExhaustedThisKeyCycle = 0;
 
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
                         const usedTier = getActiveTier();
@@ -10679,13 +10651,8 @@
                                     // advanceApiKey() resets us to the top tier, so this
                                     // is effectively a new tier context too.
                                     keysRotatedThisTier = 0;
-                                    tiersExhaustedThisKeyCycle = 0;
                                     continue;
                                 }
-                                // Every built-in key's project is blocked — try the
-                                // backup provider once before giving up entirely.
-                                const puterText1 = await tryPuterFallback(activeModel, sysInstruction, chatData.messages.slice(0, -1), aiMsgIndex, requestContextChatId, text).catch(() => null);
-                                if (puterText1 !== null) { aiText = puterText1; break; }
                                 throw new Error("This Gemini API key's project has been denied access by Google — it isn't a rate limit, so switching model tiers won't help. Add a working key in Settings → API Keys, or fix/replace the key tied to the default project.");
                             }
                             if (isRateLimitResponse(response, responseData)) {
@@ -10710,23 +10677,14 @@
                                     continue;
                                 }
                                 const nextTier = downgradeAfterLimit();
-                                tiersExhaustedThisKeyCycle++;
-                                // Don't just trust nextTier being truthy — the shared
-                                // exhausted-tier map it's based on gets wiped by every
-                                // same-tier key rotation (see comment on
-                                // tiersExhaustedThisKeyCycle above), so downgradeAfterLimit()
-                                // can point back at a tier we already fully swept. The
-                                // local counter is the reliable signal that every tier
-                                // has genuinely been tried for this key.
-                                const everyTierExhaustedForThisKey = !nextTier || tiersExhaustedThisKeyCycle >= MODEL_TIERS.length;
-                                if (!everyTierExhaustedForThisKey) {
+                                if (nextTier) {
                                     // Entering a new tier with a clean slate — it hasn't
                                     // had any of its own keys tried yet, so don't let the
                                     // previous tier's exhausted counter carry over and
                                     // skip this tier's key rotation.
                                     keysRotatedThisTier = 0;
                                 }
-                                if (everyTierExhaustedForThisKey) {
+                                if (!nextTier) {
                                     // Every model tier is exhausted for the current key.
                                     // Rotate to the next key in the pool (fresh quota,
                                     // fresh tiers) and keep going, fast, before giving up.
@@ -10736,7 +10694,6 @@
                                     // fire and actually try a different key.
                                     if (!sessionGeminiKeyOverride && keysRotatedThisRequest < KEY_POOL.length - 1) {
                                         keysRotatedThisTier = 0;
-                                        tiersExhaustedThisKeyCycle = 0;
                                         keysRotatedThisRequest++;
                                         advanceApiKey();
                                         const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
@@ -10746,10 +10703,6 @@
                                         }
                                         continue;
                                     }
-                                    // Every key on every tier is exhausted — last resort
-                                    // before giving up: try the backup provider.
-                                    const puterText2 = await tryPuterFallback(activeModel, sysInstruction, chatData.messages.slice(0, -1), aiMsgIndex, requestContextChatId, text).catch(() => null);
-                                    if (puterText2 !== null) { aiText = puterText2; break; }
                                     throw new Error("All available API keys have hit their limit. Please try again later.");
                                 }
                                 const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
@@ -10929,75 +10882,6 @@
                 }
                 abortController = null;
             }
-        }
-
-        // ==========================================
-        // 🌐 FALLBACK PROVIDER (Puter.js)
-        // ------------------------------------------------------------
-        // Only ever called after every key in KEY_POOL has failed on
-        // every model tier — see the two call sites in the send loop
-        // below. It requests the SAME model name the user already has
-        // selected (Cavdo Ultimate/Speed/Lite never change, and neither
-        // does the underlying Gemini model — only the transport does),
-        // just routed through Puter.js's user-pays infrastructure
-        // instead of our own key pool, so a person only ever sees this
-        // on the rare occasion our whole pool is genuinely down.
-        //
-        // Puter.js may show the user a one-time sign-in popup the first
-        // time this fires in their browser — this is disclosed in the
-        // Terms & Conditions (see "Fallback AI Provider" section) and
-        // to the person live via the status message below.
-        // ==========================================
-        async function tryPuterFallback(activeModel, sysInstruction, historyMessages, aiMsgIndex, requestContextChatId, userText) {
-            if (typeof puter === 'undefined' || !puter.ai || typeof puter.ai.chat !== 'function') {
-                return null; // script failed to load (e.g. blocked/offline) — nothing to fall back to
-            }
-
-            const statusChat = JSON.parse(localStorage.getItem(requestContextChatId));
-            if (statusChat && statusChat.messages[aiMsgIndex]) {
-                statusChat.messages[aiMsgIndex].text = `🌐 Our built-in keys are all busy right now — trying a backup connection (you may see a one-time sign-in prompt), thinking`;
-                localStorage.setItem(requestContextChatId, JSON.stringify(statusChat));
-                if (currentChatId === requestContextChatId) {
-                    try { renderActiveChatMessages(); } catch (e) {}
-                }
-            }
-
-            // Text-only history for the fallback — this is a last-resort
-            // safety net, not the primary path, so file/image attachments
-            // aren't replayed here (they still work fine on every normal
-            // request through the regular key pool).
-            const puterMessages = [{ role: 'system', content: sysInstruction }];
-            historyMessages.forEach(function (m) {
-                puterMessages.push({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text || '' });
-            });
-
-            let fullText = '';
-            let lastRenderAt = 0;
-            const stream = await puter.ai.chat(puterMessages, { model: activeModel, stream: true });
-            for await (const part of stream) {
-                if (!part || !part.text) continue;
-                fullText += part.text;
-                const loopChat = JSON.parse(localStorage.getItem(requestContextChatId));
-                if (loopChat && loopChat.messages[aiMsgIndex]) {
-                    loopChat.messages[aiMsgIndex].text = fullText;
-                    localStorage.setItem(requestContextChatId, JSON.stringify(loopChat));
-                }
-                if (currentChatId === requestContextChatId) {
-                    const now = performance.now();
-                    if (now - lastRenderAt >= 25) {
-                        lastRenderAt = now;
-                        const lastMessageNode = getLastMessageNode();
-                        const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
-                        if (textDiv) {
-                            try { renderAIContent(textDiv, fullText, false, userText, true); }
-                            catch (e) {}
-                        }
-                    }
-                }
-            }
-
-            if (!fullText.trim()) throw new Error('Backup connection returned an empty response.');
-            return downgradeUnrequestedDocFences(fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(), userText);
         }
 
         function buildApiPayload(messages) {

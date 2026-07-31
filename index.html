@@ -84,7 +84,7 @@
         // Text chat (all MODEL_TIERS) now calls this app's own secure
         // backend endpoint instead of Google's API directly, so no key
         // ever reaches the browser:
-        const ULTIMATE_CHAT_API_URL = '/api/ultimate-chat'; // see api/ultimate-chat.js (Vercel), key lives server-side in NVIDIA_API_KEY env var
+        const ULTIMATE_CHAT_API_URL = 'https://vercel-backend-umber-mu.vercel.app/api/ultimate-chat'; // see api/ultimate-chat.js (Vercel), key lives server-side in NVIDIA_API_KEY env var — this is a DIFFERENT Vercel project than the frontend, so it must be an absolute URL, not a relative path
         //
         // Shims so leftover legacy code paths (image-edit fallback loops,
         // the deleted admin panel's stray references, etc.) don't throw —

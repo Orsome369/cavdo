@@ -10618,6 +10618,18 @@
                     // exhausted). Never resets — same-tier rotations don't count
                     // toward it, so it isn't pinned to max by an ordinary sweep.
                     let keysRotatedThisRequest = 0;
+                    // How many tiers we've downgraded through for the *current*
+                    // key. Tracked locally instead of trusting
+                    // downgradeAfterLimit()'s return value on its own, because
+                    // advanceApiKeyKeepTier() clears the shared exhausted-tier
+                    // map (EXHAUSTED_STORAGE_KEY) on every ordinary same-tier
+                    // key rotation — wiping out the record of tiers we already
+                    // fully swept earlier in this same request. Without this
+                    // counter, downgradeAfterLimit() can "rediscover" an
+                    // already-exhausted tier as free and the loop cycles
+                    // through tiers indefinitely, never reaching the point
+                    // where it gives up on this key and tries Puter.
+                    let tiersExhaustedThisKeyCycle = 0;
 
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
                         const usedTier = getActiveTier();
@@ -10667,6 +10679,7 @@
                                     // advanceApiKey() resets us to the top tier, so this
                                     // is effectively a new tier context too.
                                     keysRotatedThisTier = 0;
+                                    tiersExhaustedThisKeyCycle = 0;
                                     continue;
                                 }
                                 // Every built-in key's project is blocked — try the
@@ -10697,14 +10710,23 @@
                                     continue;
                                 }
                                 const nextTier = downgradeAfterLimit();
-                                if (nextTier) {
+                                tiersExhaustedThisKeyCycle++;
+                                // Don't just trust nextTier being truthy — the shared
+                                // exhausted-tier map it's based on gets wiped by every
+                                // same-tier key rotation (see comment on
+                                // tiersExhaustedThisKeyCycle above), so downgradeAfterLimit()
+                                // can point back at a tier we already fully swept. The
+                                // local counter is the reliable signal that every tier
+                                // has genuinely been tried for this key.
+                                const everyTierExhaustedForThisKey = !nextTier || tiersExhaustedThisKeyCycle >= MODEL_TIERS.length;
+                                if (!everyTierExhaustedForThisKey) {
                                     // Entering a new tier with a clean slate — it hasn't
                                     // had any of its own keys tried yet, so don't let the
                                     // previous tier's exhausted counter carry over and
                                     // skip this tier's key rotation.
                                     keysRotatedThisTier = 0;
                                 }
-                                if (!nextTier) {
+                                if (everyTierExhaustedForThisKey) {
                                     // Every model tier is exhausted for the current key.
                                     // Rotate to the next key in the pool (fresh quota,
                                     // fresh tiers) and keep going, fast, before giving up.
@@ -10714,6 +10736,7 @@
                                     // fire and actually try a different key.
                                     if (!sessionGeminiKeyOverride && keysRotatedThisRequest < KEY_POOL.length - 1) {
                                         keysRotatedThisTier = 0;
+                                        tiersExhaustedThisKeyCycle = 0;
                                         keysRotatedThisRequest++;
                                         advanceApiKey();
                                         const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));

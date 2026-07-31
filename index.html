@@ -10598,7 +10598,16 @@
                     }
 
                     let aiText = null;
-                    const maxAttempts = MODEL_TIERS.length * KEY_POOL.length;
+                    // NOTE: the loop below can do more than one full "sweep every
+                    // key across every tier" pass — once every tier is exhausted
+                    // for the current key it rotates to a fresh key and starts a
+                    // brand-new tier sweep (see keysRotatedThisRequest below), and
+                    // that can repeat up to KEY_POOL.length times. So this cap has
+                    // to cover a full sweep for *every* key in the pool, not just
+                    // one sweep — otherwise the loop can run out of iterations
+                    // (and silently fall through to "Failed to get a response.")
+                    // one step before it would have reached the Puter fallback.
+                    const maxAttempts = MODEL_TIERS.length * KEY_POOL.length * KEY_POOL.length;
                     // Keys tried against the *current* tier — resets every time we
                     // move to a different tier, so each tier gets its own full sweep
                     // of the key pool instead of inheriting a spent-out counter from

@@ -6007,6 +6007,17 @@
         const userInput = document.getElementById('userInput');
         const welcomeBox = document.getElementById('welcomeBox');
         const chatContainer = document.getElementById('chatContainer');
+        chatContainer.addEventListener('wheel', () => { lastUserScrollGestureAt = Date.now(); }, { passive: true });
+        chatContainer.addEventListener('touchmove', () => { lastUserScrollGestureAt = Date.now(); }, { passive: true });
+        chatContainer.addEventListener('scroll', () => {
+            // Only a scroll that followed a real wheel/touch gesture within
+            // the last half-second counts as the user actively scrolling —
+            // this is what keeps our own smooth-scroll-to-follow calls
+            // (which also fire 'scroll' events) from being mistaken for the
+            // user scrolling away and immediately cancelling themselves out.
+            if (Date.now() - lastUserScrollGestureAt > 500) return;
+            autoScrollDuringGeneration = isChatScrolledNearBottom();
+        }, { passive: true });
         const chatWrapper = document.getElementById('chatWrapper');
         const newChatBtn = document.getElementById('newChatBtn');
         const statusIndicator = document.getElementById('statusIndicator');
@@ -6123,6 +6134,25 @@
         // re-applies it on every re-render while a reply is streaming) and
         // sendMessage() (which does the initial smooth scroll to it).
         const PINNED_MSG_TOP_GAP = 10;
+
+        // ------------------------------------------------------------
+        // 📜 Auto-scroll-follow while generating. Starts on for every new
+        // send. If the person scrolls away (wheel/touch — a genuine user
+        // gesture, not our own smooth-scroll calls) it turns off so it
+        // stops fighting them; scrolling back down near the bottom turns
+        // it on again. `chatContainer` is declared further down, so these
+        // listeners are attached once the DOM is ready (see bottom of
+        // this block).
+        // ------------------------------------------------------------
+        let autoScrollDuringGeneration = true;
+        let lastUserScrollGestureAt = 0;
+        const AUTO_SCROLL_NEAR_BOTTOM_PX = 120;
+
+        function isChatScrolledNearBottom() {
+            if (!chatContainer) return true;
+            const distanceFromBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+            return distanceFromBottom < AUTO_SCROLL_NEAR_BOTTOM_PX;
+        }
         let abortController = null;
         
         let currentChatId = null;
@@ -8545,19 +8575,25 @@
             }
 
             if (wasGenerating) {
-                const userGroups = chatWrapper.querySelectorAll('.message-group.user');
-                const lastUserGroup = userGroups[userGroups.length - 1];
-                if (lastUserGroup) {
-                    const currentOffset = lastUserGroup.getBoundingClientRect().top - chatContainer.getBoundingClientRect().top;
-                    const targetTop = Math.max(0, chatContainer.scrollTop + currentOffset - PINNED_MSG_TOP_GAP);
-                    // Smooth scrollTo (not a raw scrollTop assignment) so that
-                    // repeated calls toward this same target, fired on every
-                    // re-render while the reply streams in, keep continuing
-                    // the same motion instead of freezing wherever a prior
-                    // in-flight animation happened to be.
-                    chatContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
-                } else {
+                if (!autoScrollDuringGeneration) {
+                    // The person scrolled away on purpose — hold their
+                    // position instead of yanking them back down.
                     chatContainer.scrollTop = preservedScrollTop;
+                } else {
+                    const userGroups = chatWrapper.querySelectorAll('.message-group.user');
+                    const lastUserGroup = userGroups[userGroups.length - 1];
+                    if (lastUserGroup) {
+                        const currentOffset = lastUserGroup.getBoundingClientRect().top - chatContainer.getBoundingClientRect().top;
+                        const targetTop = Math.max(0, chatContainer.scrollTop + currentOffset - PINNED_MSG_TOP_GAP);
+                        // Smooth scrollTo (not a raw scrollTop assignment) so that
+                        // repeated calls toward this same target, fired on every
+                        // re-render while the reply streams in, keep continuing
+                        // the same motion instead of freezing wherever a prior
+                        // in-flight animation happened to be.
+                        chatContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
+                    } else {
+                        chatContainer.scrollTop = preservedScrollTop;
+                    }
                 }
             } else if (scrollToLatest) {
                 // Opening a chat fresh (page load/refresh, switching chats,
@@ -10456,6 +10492,7 @@
                     : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
 
             const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true };
+            autoScrollDuringGeneration = true;
             chatData.messages.push(aiMsg);
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
 

@@ -10617,7 +10617,8 @@
 
                         if (!response.ok) {
                             if (usingUltimateProxy) {
-                                throw new Error((responseData && (responseData.error || responseData.detail)) || `Ultimate model request failed (${response.status})`);
+                                const errMsg = responseData ? [responseData.error, responseData.detail].filter(Boolean).join(': ') : '';
+                                throw new Error(errMsg || `Ultimate model request failed (${response.status})`);
                             }
                             // 403 "denied access" means that particular key's project is
                             // blocked — not a quota issue. If there's no user-supplied

@@ -10557,18 +10557,22 @@
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
                         const usedTier = getActiveTier();
                         const activeModel = (selectedMode === 'code') ? usedTier.codeModel : usedTier.textModel;
-                        // Cavdo Ultimate is served by our own secure backend proxy
-                        // (NVIDIA-hosted model) — no API key of any kind reaches the
-                        // browser for this tier. Speed/Lite still call Gemini
-                        // directly and need the person's own session key (see
-                        // sessionGeminiKeyOverride) since the built-in/shared key
-                        // pool has been removed.
-                        const usingUltimateProxy = (usedTier.key === 'ultimate');
+                        // Every current tier (Ultimate/Speed/Lite) is served by our own
+                        // secure backend proxy (NVIDIA-hosted models) — no API key of
+                        // any kind reaches the browser for text chat. The `tier` field
+                        // tells the backend which model to use; the backend decides the
+                        // actual model/params, not the client. Gemini is no longer used
+                        // for text chat at all — it's still used directly (with the
+                        // person's own session key, see sessionGeminiKeyOverride) for
+                        // image editing and search-grounding only.
+                        const NVIDIA_PROXY_TIERS = new Set(['ultimate', 'speed', 'lite']);
+                        const usingUltimateProxy = NVIDIA_PROXY_TIERS.has(usedTier.key);
 
                         let endpoint, fetchBody;
                         if (usingUltimateProxy) {
                             endpoint = ULTIMATE_CHAT_API_URL;
                             fetchBody = JSON.stringify({
+                                tier: usedTier.key,
                                 messages: [
                                     { role: 'system', content: sysInstruction },
                                     ...buildApiPayload(chatData.messages.slice(0, -1)).map(m => ({

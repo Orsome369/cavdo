@@ -6569,9 +6569,11 @@
         // stuck on "✨ Thinking it through" forever.
         // ------------------------------------------------------------
         const activeResumePolls = new Set();
+        const liveGeneratingChatIds = new Set();
 
         function resumePendingGeneration(chatId) {
             if (activeResumePolls.has(chatId)) return; // already polling this one
+            if (liveGeneratingChatIds.has(chatId)) return; // this tab is already streaming it live — nothing to resume
             activeResumePolls.add(chatId);
 
             const poll = async () => {
@@ -6642,6 +6644,7 @@
             }
             chat.isGeneratingInBg = false;
             chat.pendingRequestId = null;
+            liveGeneratingChatIds.delete(chatId);
             localStorage.setItem(chatId, JSON.stringify(chat));
             if (currentChatId === chatId) {
                 isGenerating = false;
@@ -10049,6 +10052,7 @@
                         }
                         chatData.isGeneratingInBg = false;
                         chatData.pendingRequestId = null;
+                        liveGeneratingChatIds.delete(currentChatId);
                         localStorage.setItem(currentChatId, JSON.stringify(chatData));
                     }
                 }
@@ -10190,6 +10194,7 @@
                     if (rollback) {
                         rollback.isGeneratingInBg = false;
                         rollback.pendingRequestId = null;
+                        liveGeneratingChatIds.delete(requestContextChatId);
                         localStorage.setItem(requestContextChatId, JSON.stringify(rollback));
                     }
                 } catch (e2) { /* storage is full either way; nothing more we can do here */ }
@@ -10411,6 +10416,13 @@
             const isNsfwImageRequest = (selectedMode === 'image') && nsfwRegex.test(lowerText);
 
             const aiMsgIndex = chatData.messages.length;
+            // Tracks chats this SAME tab is actively streaming right now, so
+            // the resume/poll logic (loadActiveChat, the 2s sidebar sweep)
+            // never tries to "recover" a generation that's already running
+            // live right here — that race is what caused replies to flash
+            // in then get overwritten with a "server busy"/lost-connection
+            // message a moment later.
+            liveGeneratingChatIds.add(requestContextChatId);
 
             const thinkingPhrases = (selectedMode === 'image')
                 ? ['✨ Looking into that', '✨ Searching for related images', '✨ Checking sources', '✨ Almost there']
@@ -10467,6 +10479,7 @@
                     updatedChat.messages[aiMsgIndex].isThinking = false;
                     updatedChat.isGeneratingInBg = false;
                     updatedChat.pendingRequestId = null;
+                    liveGeneratingChatIds.delete(requestContextChatId);
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                     if (currentChatId === requestContextChatId) {
@@ -10481,6 +10494,7 @@
                     updatedChat.messages[aiMsgIndex].isThinking = false;
                     updatedChat.isGeneratingInBg = false;
                     updatedChat.pendingRequestId = null;
+                    liveGeneratingChatIds.delete(requestContextChatId);
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                     if (currentChatId === requestContextChatId) {
@@ -10495,6 +10509,7 @@
                         updatedChat.messages[aiMsgIndex].isThinking = false;
                         updatedChat.isGeneratingInBg = false;
                         updatedChat.pendingRequestId = null;
+                        liveGeneratingChatIds.delete(requestContextChatId);
                         localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                         if (currentChatId === requestContextChatId) {
@@ -10598,6 +10613,7 @@
 
                     updatedChat.isGeneratingInBg = false;
                     updatedChat.pendingRequestId = null;
+                    liveGeneratingChatIds.delete(requestContextChatId);
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                     if (currentChatId === requestContextChatId) {
@@ -10927,6 +10943,7 @@
                         finalChat.messages[aiMsgIndex].isThinking = false;
                         finalChat.isGeneratingInBg = false;
                         finalChat.pendingRequestId = null;
+                        liveGeneratingChatIds.delete(requestContextChatId);
                         localStorage.setItem(requestContextChatId, JSON.stringify(finalChat));
                     }
 
@@ -10970,6 +10987,7 @@
                         existingMsg.isThinking = false;
                         errChat.isGeneratingInBg = false;
                         errChat.pendingRequestId = null;
+                        liveGeneratingChatIds.delete(requestContextChatId);
                         localStorage.setItem(requestContextChatId, JSON.stringify(errChat));
                     }
                     if (currentChatId === requestContextChatId) {
@@ -10981,6 +10999,7 @@
                 if (cleanupChat) {
                     cleanupChat.isGeneratingInBg = false;
                     cleanupChat.pendingRequestId = null;
+                    liveGeneratingChatIds.delete(requestContextChatId);
                     localStorage.setItem(requestContextChatId, JSON.stringify(cleanupChat));
                 }
                 if (currentChatId === requestContextChatId) {

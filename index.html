@@ -85,6 +85,7 @@
         // backend endpoint instead of Google's API directly, so no key
         // ever reaches the browser:
         const ULTIMATE_CHAT_API_URL = 'https://vercel-backend-umber-mu.vercel.app/api/ultimate-chat'; // see api/ultimate-chat.js (Vercel), key lives server-side in NVIDIA_API_KEY env var — this is a DIFFERENT Vercel project than the frontend, so it must be an absolute URL, not a relative path
+        const GENERATION_STATUS_API_URL = 'https://vercel-backend-umber-mu.vercel.app/api/generation-status'; // see api/generation-status.js — polled after a refresh to resume a generation that was still in progress instead of losing it
         //
         // Shims so leftover legacy code paths (image-edit fallback loops,
         // the deleted admin panel's stray references, etc.) don't throw —
@@ -6548,6 +6549,106 @@
             } else {
                 updateUrlForChat(id);
             }
+
+            if (chat && chat.isGeneratingInBg && chat.pendingRequestId) {
+                resumePendingGeneration(id);
+            }
+        }
+
+        // ------------------------------------------------------------
+        // 🔁 Resume-after-refresh. Generation used to live entirely inside
+        // one browser tab's fetch() call — reloading, closing the tab, or
+        // losing the connection killed it outright, mid-answer. Now the
+        // backend (see api/ultimate-chat.js) keeps generating and saving
+        // progress to Firestore regardless of whether this tab is still
+        // listening, keyed by the requestId we stored in
+        // chat.pendingRequestId before the send. This polls that saved
+        // state and finishes filling in the same placeholder AI message
+        // the normal streaming path would have — same shape, same
+        // localStorage write, same render call — instead of leaving it
+        // stuck on "✨ Thinking it through" forever.
+        // ------------------------------------------------------------
+        const activeResumePolls = new Set();
+
+        function resumePendingGeneration(chatId) {
+            if (activeResumePolls.has(chatId)) return; // already polling this one
+            activeResumePolls.add(chatId);
+
+            const poll = async () => {
+                const chat = JSON.parse(localStorage.getItem(chatId) || 'null');
+                if (!chat || !chat.isGeneratingInBg || !chat.pendingRequestId) {
+                    activeResumePolls.delete(chatId);
+                    return;
+                }
+                const requestId = chat.pendingRequestId;
+
+                let data;
+                try {
+                    const resp = await fetch(`${GENERATION_STATUS_API_URL}?requestId=${encodeURIComponent(requestId)}&ack=1`);
+                    if (resp.status === 404) {
+                        // Nothing recoverable (expired, or this generation never
+                        // reached the persisted-progress backend, e.g. an older
+                        // Gemini-direct tier) — stop waiting on it.
+                        finalizeResumedChat(chatId, null, 'Lost connection before a response finished — please try asking again.');
+                        activeResumePolls.delete(chatId);
+                        return;
+                    }
+                    if (!resp.ok) throw new Error('status ' + resp.status);
+                    data = await resp.json();
+                } catch (e) {
+                    // Transient network hiccup while resuming — keep trying
+                    // rather than giving up on the first blip.
+                    setTimeout(poll, 1500);
+                    return;
+                }
+
+                // Update the placeholder message with whatever text has
+                // accumulated so far, whether or not it's finished — so a
+                // person watching this chat sees it keep filling in.
+                const liveChat = JSON.parse(localStorage.getItem(chatId) || 'null');
+                if (liveChat && Array.isArray(liveChat.messages) && liveChat.messages.length) {
+                    const lastMsg = liveChat.messages[liveChat.messages.length - 1];
+                    if (lastMsg && lastMsg.role === 'ai' && data.text) {
+                        lastMsg.text = data.text;
+                        lastMsg.isThinking = !data.done;
+                        localStorage.setItem(chatId, JSON.stringify(liveChat));
+                        if (currentChatId === chatId) renderActiveChatMessages(false);
+                    }
+                }
+
+                if (data.done) {
+                    finalizeResumedChat(chatId, data.text, data.error);
+                    activeResumePolls.delete(chatId);
+                    return;
+                }
+
+                setTimeout(poll, 1200);
+            };
+
+            poll();
+        }
+
+        function finalizeResumedChat(chatId, recoveredText, errorMsg) {
+            const chat = JSON.parse(localStorage.getItem(chatId) || 'null');
+            if (!chat) return;
+            if (Array.isArray(chat.messages) && chat.messages.length) {
+                const lastMsg = chat.messages[chat.messages.length - 1];
+                if (lastMsg && lastMsg.role === 'ai') {
+                    lastMsg.text = (recoveredText && recoveredText.trim())
+                        ? recoveredText
+                        : (errorMsg || 'This response could not be recovered after the page reloaded — please try asking again.');
+                    lastMsg.isThinking = false;
+                }
+            }
+            chat.isGeneratingInBg = false;
+            chat.pendingRequestId = null;
+            localStorage.setItem(chatId, JSON.stringify(chat));
+            if (currentChatId === chatId) {
+                isGenerating = false;
+                setGeneratingState(false);
+                renderActiveChatMessages(false);
+            }
+            loadHistoryList();
         }
 
         // SVG definitions for action state icons
@@ -9947,6 +10048,7 @@
                             lastMsg.stoppedPrompt = prevUserMsg ? prevUserMsg.text : "";
                         }
                         chatData.isGeneratingInBg = false;
+                        chatData.pendingRequestId = null;
                         localStorage.setItem(currentChatId, JSON.stringify(chatData));
                     }
                 }
@@ -10003,6 +10105,11 @@
             }
 
             const requestContextChatId = currentChatId || `cavdo_chat_${Date.now()}`;
+            // One id per send, used so a refreshed/reloaded page can find
+            // and resume this exact in-progress generation (see
+            // GENERATION_STATUS_API_URL / resumePendingGeneration below)
+            // instead of losing it the way a plain client-side stream did.
+            const requestId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
 
             if (!currentChatId) {
                 currentChatId = requestContextChatId;
@@ -10012,6 +10119,7 @@
                     messages: [],
                     pinned: false,
                     isGeneratingInBg: true,
+                    pendingRequestId: requestId,
                     updatedAt: Date.now()
                 };
                 localStorage.setItem(currentChatId, JSON.stringify(newChat));
@@ -10020,6 +10128,7 @@
             } else {
                 const chatData = JSON.parse(localStorage.getItem(requestContextChatId));
                 chatData.isGeneratingInBg = true;
+                chatData.pendingRequestId = requestId;
                 localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
             }
 
@@ -10080,6 +10189,7 @@
                     const rollback = JSON.parse(localStorage.getItem(requestContextChatId));
                     if (rollback) {
                         rollback.isGeneratingInBg = false;
+                        rollback.pendingRequestId = null;
                         localStorage.setItem(requestContextChatId, JSON.stringify(rollback));
                     }
                 } catch (e2) { /* storage is full either way; nothing more we can do here */ }
@@ -10356,6 +10466,7 @@
                     updatedChat.messages[aiMsgIndex].text = "I can't generate 18+, nude, or sexual images. Happy to help with a different image request though.";
                     updatedChat.messages[aiMsgIndex].isThinking = false;
                     updatedChat.isGeneratingInBg = false;
+                    updatedChat.pendingRequestId = null;
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                     if (currentChatId === requestContextChatId) {
@@ -10369,6 +10480,7 @@
                     updatedChat.messages[aiMsgIndex].text = "I can't edit existing images right now. Describe the whole picture you want and I'll generate a brand new one instead.";
                     updatedChat.messages[aiMsgIndex].isThinking = false;
                     updatedChat.isGeneratingInBg = false;
+                    updatedChat.pendingRequestId = null;
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                     if (currentChatId === requestContextChatId) {
@@ -10382,6 +10494,7 @@
                         updatedChat.messages[aiMsgIndex].text = genQuota.reason;
                         updatedChat.messages[aiMsgIndex].isThinking = false;
                         updatedChat.isGeneratingInBg = false;
+                        updatedChat.pendingRequestId = null;
                         localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                         if (currentChatId === requestContextChatId) {
@@ -10484,6 +10597,7 @@
                     }
 
                     updatedChat.isGeneratingInBg = false;
+                    updatedChat.pendingRequestId = null;
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 
                     if (currentChatId === requestContextChatId) {
@@ -10573,6 +10687,7 @@
                             endpoint = ULTIMATE_CHAT_API_URL;
                             fetchBody = JSON.stringify({
                                 tier: usedTier.key,
+                                requestId,
                                 messages: [
                                     { role: 'system', content: sysInstruction },
                                     ...buildApiPayload(chatData.messages.slice(0, -1)).map(m => ({
@@ -10811,6 +10926,7 @@
                         finalChat.messages[aiMsgIndex].text = aiText || "Empty track token received.";
                         finalChat.messages[aiMsgIndex].isThinking = false;
                         finalChat.isGeneratingInBg = false;
+                        finalChat.pendingRequestId = null;
                         localStorage.setItem(requestContextChatId, JSON.stringify(finalChat));
                     }
 
@@ -10853,6 +10969,7 @@
                         }
                         existingMsg.isThinking = false;
                         errChat.isGeneratingInBg = false;
+                        errChat.pendingRequestId = null;
                         localStorage.setItem(requestContextChatId, JSON.stringify(errChat));
                     }
                     if (currentChatId === requestContextChatId) {
@@ -10863,6 +10980,7 @@
                 const cleanupChat = JSON.parse(localStorage.getItem(requestContextChatId));
                 if (cleanupChat) {
                     cleanupChat.isGeneratingInBg = false;
+                    cleanupChat.pendingRequestId = null;
                     localStorage.setItem(requestContextChatId, JSON.stringify(cleanupChat));
                 }
                 if (currentChatId === requestContextChatId) {
@@ -11333,8 +11451,15 @@
             const searchOpen = searchModalOverlay && searchModalOverlay.classList.contains('show');
             if (anyDropdownOpen || searchOpen) return;
             const keys = Object.keys(localStorage).filter(k => k.startsWith('cavdo_chat_'));
-            const anyGenerating = keys.some(k => {
-                try { return !!JSON.parse(localStorage.getItem(k)).isGeneratingInBg; } catch (e) { return false; }
+            let anyGenerating = false;
+            keys.forEach(k => {
+                let c;
+                try { c = JSON.parse(localStorage.getItem(k)); } catch (e) { return; }
+                if (!c || !c.isGeneratingInBg) return;
+                anyGenerating = true;
+                // Resumes any chat left generating after a refresh — not just
+                // whichever one happens to be open right now.
+                if (c.pendingRequestId) resumePendingGeneration(k);
             });
             if (anyGenerating) loadHistoryList();
         }, 2000);

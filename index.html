@@ -6574,6 +6574,18 @@
         function resumePendingGeneration(chatId) {
             if (activeResumePolls.has(chatId)) return; // already polling this one
             if (liveGeneratingChatIds.has(chatId)) return; // this tab is already streaming it live — nothing to resume
+
+            const chatSnapshot = JSON.parse(localStorage.getItem(chatId) || 'null');
+            const startedAt = chatSnapshot && chatSnapshot.generationStartedAt;
+            // A genuine refresh/reconnect always takes at least a couple of
+            // seconds of real wall-clock time. A generation that "started"
+            // under 4s ago is either still running live in this very tab (the
+            // liveGeneratingChatIds check above should already catch that,
+            // this is a second, timing-independent line of defense) or is
+            // brand new — either way, resuming it here would only race the
+            // real stream. Let the periodic sweep re-check later instead.
+            if (startedAt && Date.now() - startedAt < 4000) return;
+
             activeResumePolls.add(chatId);
 
             const poll = async () => {
@@ -6636,9 +6648,20 @@
             if (Array.isArray(chat.messages) && chat.messages.length) {
                 const lastMsg = chat.messages[chat.messages.length - 1];
                 if (lastMsg && lastMsg.role === 'ai') {
-                    lastMsg.text = (recoveredText && recoveredText.trim())
-                        ? recoveredText
-                        : (errorMsg || 'This response could not be recovered after the page reloaded — please try asking again.');
+                    if (recoveredText && recoveredText.trim()) {
+                        // Same cleanup a normal (non-refreshed) completion applies —
+                        // skipping this is what made a fully-recovered code block
+                        // still render as raw, unstyled markdown instead of the
+                        // normal syntax-highlighted, downloadable code tray.
+                        const precedingUserMsg = chat.messages.length >= 2 ? chat.messages[chat.messages.length - 2] : null;
+                        const originalPromptText = (precedingUserMsg && precedingUserMsg.role === 'user') ? (precedingUserMsg.text || '') : '';
+                        lastMsg.text = downgradeUnrequestedDocFences(
+                            recoveredText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
+                            originalPromptText
+                        );
+                    } else {
+                        lastMsg.text = errorMsg || 'This response could not be recovered after the page reloaded — please try asking again.';
+                    }
                     lastMsg.isThinking = false;
                 }
             }
@@ -8286,7 +8309,7 @@
                         }
                     } else {
                         if (msg.isThinking) textDiv.classList.add('thinking-status-text');
-                        renderAIContent(textDiv, msg.text, msg.wasStopped, msg.stoppedPrompt);
+                        renderAIContent(textDiv, msg.text, msg.wasStopped, msg.stoppedPrompt, !!msg.isThinking);
                         if (msg.relatedImages && msg.relatedImages.length) {
                             renderRelatedImagesGallery(textDiv, msg.relatedImages);
                         }
@@ -10124,6 +10147,7 @@
                     pinned: false,
                     isGeneratingInBg: true,
                     pendingRequestId: requestId,
+                    generationStartedAt: Date.now(),
                     updatedAt: Date.now()
                 };
                 localStorage.setItem(currentChatId, JSON.stringify(newChat));
@@ -10133,6 +10157,7 @@
                 const chatData = JSON.parse(localStorage.getItem(requestContextChatId));
                 chatData.isGeneratingInBg = true;
                 chatData.pendingRequestId = requestId;
+                chatData.generationStartedAt = Date.now();
                 localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
             }
 

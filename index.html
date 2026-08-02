@@ -1724,6 +1724,90 @@
             background: transparent !important;
         }
 
+        /* --------------------------------------------------------------
+           Cavdo syntax theme — overrides the stock "GitHub Dark" hljs
+           theme loaded from the CDN (blue/purple/orange tokens that
+           clashed with the rest of the UI) with Cavdo's own palette:
+           the same greens used for the language label / primary accents
+           (#2fd05c / #3ee06c / #2fa958 / #8bf0a5), the same amber used
+           for warnings elsewhere (#f5b942 / #ffcc4d), and soft
+           off-white for plain text (#e6eff5) — all sitting on the
+           existing transparent code-tray background rather than
+           GitHub's own dark navy. Comes after the CDN stylesheet in
+           source order so it wins on equal-specificity .hljs-* rules
+           without needing !important everywhere.
+        -------------------------------------------------------------- */
+        .hljs {
+            color: #e6eff5;
+            background: transparent;
+        }
+        .hljs-comment,
+        .hljs-quote {
+            color: rgba(230, 239, 245, 0.4);
+            font-style: italic;
+        }
+        .hljs-keyword,
+        .hljs-selector-tag,
+        .hljs-literal,
+        .hljs-subst,
+        .hljs-operator {
+            color: #2fd05c;
+        }
+        .hljs-string,
+        .hljs-doctag,
+        .hljs-regexp,
+        .hljs-addition {
+            color: #8bf0a5;
+        }
+        .hljs-title,
+        .hljs-section,
+        .hljs-name,
+        .hljs-type,
+        .hljs-built_in,
+        .hljs-class .hljs-title,
+        .hljs-function .hljs-title,
+        .hljs-selector-id,
+        .hljs-selector-class {
+            color: #3ee06c;
+            font-weight: 600;
+        }
+        .hljs-number,
+        .hljs-symbol,
+        .hljs-bullet,
+        .hljs-attr {
+            color: #f5b942;
+        }
+        .hljs-variable,
+        .hljs-template-variable,
+        .hljs-attribute,
+        .hljs-params {
+            color: #ffcc4d;
+        }
+        .hljs-tag {
+            color: #2fa958;
+        }
+        .hljs-tag .hljs-name {
+            color: #2fa958;
+        }
+        .hljs-meta,
+        .hljs-meta-keyword {
+            color: rgba(230, 239, 245, 0.55);
+        }
+        .hljs-deletion {
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+        }
+        .hljs-emphasis {
+            font-style: italic;
+        }
+        .hljs-strong {
+            font-weight: 700;
+        }
+        .hljs-link {
+            color: #3ee06c;
+            text-decoration: underline;
+        }
+
         .zip-bundle-card {
             display: flex;
             align-items: center;

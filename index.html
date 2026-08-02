@@ -11412,7 +11412,19 @@
                             }
 
                             if (document.hidden || currentChatId !== requestContextChatId) return;
-                            if (now - lastRenderAt < 25) return; // light throttle, avoid render-thrash on tiny SSE chunks
+                            // renderAIContent doesn't append — it wipes the message and
+                            // re-parses/rebuilds EVERYTHING typed so far from scratch on
+                            // every call. A flat 25ms gate works fine while the reply is
+                            // short, but once it grows past a few KB each full rebuild can
+                            // itself take longer than 25ms, so rebuilds start queueing up
+                            // behind each other: the main thread goes busy for a stretch
+                            // (typing looks stuck), then the backlog drains in one jump
+                            // (a sudden burst of text). Scaling the minimum gap up with
+                            // the current message length keeps each rebuild able to finish
+                            // before the next one is due, trading a little liveness on long
+                            // replies for a smooth, non-stuttering typing effect.
+                            const renderGap = 25 + Math.min(300, Math.floor(fullText.length / 40));
+                            if (now - lastRenderAt < renderGap) return;
                             lastRenderAt = now;
                             const lastMessageNode = getLastMessageNode();
                             const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
@@ -11456,6 +11468,99 @@
                             }
                         }
                         streamer.finish();
+
+                        // If the stream ended naturally (not via the Stop button) with a
+                        // ``` fence still open, the model was cut off mid-code by its own
+                        // output limit or the backend's request timeout — not something
+                        // fixable purely by waiting. Instead of leaving a dead stub,
+                        // automatically ask it to continue exactly where it left off and
+                        // splice the continuation onto fullText, repeating until the fence
+                        // actually closes. This is the same trick Claude/ChatGPT use to get
+                        // past a single response's token ceiling on long generations.
+                        // Capped at a handful of rounds so a genuinely broken/looping
+                        // response can't hang the chat forever.
+                        if (!abortController.signal.aborted) {
+                            const CONTINUE_INSTRUCTION = "Continue exactly where you left off. Do not repeat anything you already wrote, do not restart the code, and do not add any explanation before or after — output ONLY the raw continuation text, picking back up mid-line if needed, and close the ``` code fence once the code is actually complete.";
+                            let continueRounds = 0;
+                            const MAX_CONTINUE_ROUNDS = 6;
+                            while (continueRounds < MAX_CONTINUE_ROUNDS) {
+                                const openCount = (fullText.match(/```/g) || []).length;
+                                if (openCount % 2 === 0) break; // fence is closed — nothing truncated
+                                continueRounds++;
+                                try {
+                                    let contEndpoint, contBody;
+                                    if (usingUltimateProxy) {
+                                        contEndpoint = ULTIMATE_CHAT_API_URL;
+                                        contBody = JSON.stringify({
+                                            tier: usedTier.key,
+                                            requestId: `${requestId}-cont${continueRounds}`,
+                                            max_tokens: 8192,
+                                            messages: [
+                                                { role: 'system', content: attemptSysInstruction },
+                                                ...buildApiPayload(chatData.messages.slice(0, -1)).map(m => ({
+                                                    role: m.role === 'model' ? 'assistant' : 'user',
+                                                    content: m.parts.map(p => p.text || '').join('\n').trim()
+                                                })),
+                                                { role: 'assistant', content: fullText },
+                                                { role: 'user', content: CONTINUE_INSTRUCTION }
+                                            ]
+                                        });
+                                    } else {
+                                        contEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:streamGenerateContent?alt=sse&key=${getActiveGeminiKey()}`;
+                                        contBody = JSON.stringify({
+                                            systemInstruction: { parts: [{ text: attemptSysInstruction }] },
+                                            contents: [
+                                                ...buildApiPayload(chatData.messages.slice(0, -1)),
+                                                { role: 'model', parts: [{ text: fullText }] },
+                                                { role: 'user', parts: [{ text: CONTINUE_INSTRUCTION }] }
+                                            ],
+                                            generationConfig: { maxOutputTokens: 32768 }
+                                        });
+                                    }
+                                    const contResp = await fetch(contEndpoint, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: contBody,
+                                        signal: abortController.signal
+                                    });
+                                    if (!contResp.ok || !contResp.body) break;
+                                    const contReader = contResp.body.getReader();
+                                    const contDecoder = new TextDecoder();
+                                    let contBuffer = '';
+                                    let gotAny = false;
+                                    while (true) {
+                                        if (abortController.signal.aborted) { try { contReader.cancel(); } catch (e) {} break; }
+                                        const { done: contDone, value: contValue } = await contReader.read();
+                                        if (contDone) break;
+                                        contBuffer += contDecoder.decode(contValue, { stream: true });
+                                        const contLines = contBuffer.split('\n');
+                                        contBuffer = contLines.pop();
+                                        for (const cLine of contLines) {
+                                            const cTrimmed = cLine.trim();
+                                            if (!cTrimmed.startsWith('data:')) continue;
+                                            const cJsonStr = cTrimmed.slice(5).trim();
+                                            if (!cJsonStr || cJsonStr === '[DONE]') continue;
+                                            let cEvt;
+                                            try { cEvt = JSON.parse(cJsonStr); } catch (e) { continue; }
+                                            if (cEvt && cEvt.error) break;
+                                            if (usingUltimateProxy) {
+                                                const cDelta = cEvt?.choices?.[0]?.delta?.content;
+                                                if (cDelta) { gotAny = true; streamer.process(cDelta); }
+                                            } else {
+                                                const cCandidate = cEvt?.candidates?.[0];
+                                                const cParts = cCandidate?.content?.parts || [];
+                                                for (const cPart of cParts) { if (cPart.text) { gotAny = true; streamer.process(cPart.text); } }
+                                            }
+                                        }
+                                    }
+                                    streamer.finish();
+                                    if (!gotAny) break; // continuation produced nothing further — stop trying
+                                } catch (contErr) {
+                                    console.error('Auto-continue of truncated response failed, keeping partial content:', contErr);
+                                    break;
+                                }
+                            }
+                        }
 
                         // If generation ended (finished normally, or was stopped
                         // mid-code-block via the Stop button) while a ``` fence was

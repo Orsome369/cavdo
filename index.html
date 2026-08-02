@@ -8341,6 +8341,7 @@
             const generatedFiles = []; // { elementId, language, ext }
 
             tokens.forEach((token, idx) => {
+              try {
                 if (token.startsWith('```') && token.endsWith('```')) {
                     const lines = token.slice(3, -3).trim().split('\n');
                     let language = lines[0].trim() || 'code';
@@ -8513,6 +8514,21 @@
                         targetElement.appendChild(textNode);
                     }
                 }
+              } catch (tokenErr) {
+                // Whatever the exact trigger, one token failing to render should
+                // never blank out the whole message — and since this forEach has
+                // no per-iteration guard, an uncaught error here previously
+                // aborted rendering of every message AFTER this one too, when
+                // called from renderActiveChatMessages(). That's the "container
+                // disappears after the response finishes" bug: fall back to
+                // plain escaped text for just this one piece instead of nothing.
+                console.error('renderAIContent: failed to render one token, showing plain text instead:', tokenErr);
+                const fallback = document.createElement('div');
+                fallback.className = 'text-segment';
+                fallback.style.whiteSpace = 'pre-wrap';
+                fallback.textContent = token;
+                targetElement.appendChild(fallback);
+              }
             });
 
             // Gemini-style "generated files" card: when a reply contains multiple
@@ -8723,7 +8739,18 @@
                         }
                     } else {
                         if (msg.isThinking) textDiv.classList.add('thinking-status-text');
-                        renderAIContent(textDiv, msg.text, msg.wasStopped, msg.stoppedPrompt, !!msg.isThinking);
+                        try {
+                            renderAIContent(textDiv, msg.text, msg.wasStopped, msg.stoppedPrompt, !!msg.isThinking);
+                        } catch (renderErr) {
+                            // Same reasoning as the per-token catch inside
+                            // renderAIContent itself: this forEach has no other
+                            // guard, so one message failing to render used to
+                            // silently stop every message after it from
+                            // rendering too — showing up as chunks of the chat
+                            // (or the just-finished response) simply vanishing.
+                            console.error('renderActiveChatMessages: failed to render one message, showing plain text instead:', renderErr);
+                            textDiv.textContent = msg.text || '';
+                        }
                         if (msg.relatedImages && msg.relatedImages.length) {
                             renderRelatedImagesGallery(textDiv, msg.relatedImages);
                         }

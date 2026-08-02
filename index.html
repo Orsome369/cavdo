@@ -8462,7 +8462,18 @@
                             <pre><code id="${elementId}"></code></pre>
                         `;
                         tray.querySelector('code').textContent = codeContent;
-                        applySyntaxHighlight(tray.querySelector('code'), language);
+                        // Re-running full syntax highlighting from scratch on the
+                        // WHOLE accumulated code every single live chunk gets more
+                        // expensive as the block grows — on a long code block this
+                        // is exactly what showed up as "typing stops, then
+                        // continues" (the main thread blocking on a big
+                        // highlightElement() call every ~25ms). Small/short-lived
+                        // blocks are cheap enough to keep coloring live; longer
+                        // ones get colored once, in full, the moment they finish.
+                        const LIVE_HIGHLIGHT_CHAR_LIMIT = 400;
+                        if (!isLive || codeContent.length <= LIVE_HIGHLIGHT_CHAR_LIMIT) {
+                            applySyntaxHighlight(tray.querySelector('code'), language);
+                        }
                         targetElement.appendChild(tray);
 
                         if (canPreview) {
@@ -11325,17 +11336,34 @@
                         let groundingMetadata = null;
                         let sawAnyOutput = false;
                         let lastRenderAt = 0;
+                        let lastPersistAt = 0;
 
                         function pushVisibleChunk(chunk) {
                             sawAnyOutput = true;
                             fullText += chunk;
-                            const loopChat = JSON.parse(localStorage.getItem(requestContextChatId));
-                            if (!loopChat) return;
-                            loopChat.messages[aiMsgIndex].text = fullText;
-                            localStorage.setItem(requestContextChatId, JSON.stringify(loopChat));
+
+                            const now = performance.now();
+                            // Persisting means JSON.stringify-ing the WHOLE chat
+                            // object — doing that on every single incoming SSE
+                            // chunk gets more expensive as the reply (and the
+                            // chat's total history) grows, and combined with the
+                            // re-render below is a big part of why long code
+                            // blocks visibly stuttered ("stop then continue") the
+                            // longer they got. Throttling it alongside the render
+                            // removes most of that cost — a final complete save
+                            // always happens separately once streaming ends, so
+                            // nothing is ever actually lost, just saved slightly
+                            // less often while still in progress.
+                            if (now - lastPersistAt >= 120) {
+                                lastPersistAt = now;
+                                const loopChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                                if (loopChat) {
+                                    loopChat.messages[aiMsgIndex].text = fullText;
+                                    localStorage.setItem(requestContextChatId, JSON.stringify(loopChat));
+                                }
+                            }
 
                             if (document.hidden || currentChatId !== requestContextChatId) return;
-                            const now = performance.now();
                             if (now - lastRenderAt < 25) return; // light throttle, avoid render-thrash on tiny SSE chunks
                             lastRenderAt = now;
                             const lastMessageNode = getLastMessageNode();
@@ -11380,6 +11408,21 @@
                             }
                         }
                         streamer.finish();
+
+                        // If generation ended (finished normally, or was stopped
+                        // mid-code-block via the Stop button) while a ``` fence was
+                        // still open, close it here before fullText is saved. The
+                        // live render above auto-closes an unclosed fence too, but
+                        // only for that in-progress render — it never touched the
+                        // SAVED text. Any later re-render of the saved message
+                        // (switching chats and back, reloading, resuming) passes
+                        // isLive=false and does NOT auto-close, so the unmatched
+                        // fence made the whole styled code container (header,
+                        // highlighting, copy/download buttons) disappear and fall
+                        // back to plain escaped text — that was the "container
+                        // disappears after stopping mid-code" bug.
+                        const openFenceCount = (fullText.match(/```/g) || []).length;
+                        if (openFenceCount % 2 !== 0) fullText += '\n```';
 
                         if (!sawAnyOutput && !abortController.signal.aborted) {
                             // Stream closed with literally nothing in it — treat like

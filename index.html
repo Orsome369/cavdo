@@ -6618,6 +6618,17 @@
 
             activeResumePolls.add(chatId);
 
+            // Safety net for a backend generation that got killed outright
+            // (e.g. hit the serverless function's hard maxDuration) rather
+            // than finishing or erroring normally — in that case Firestore
+            // is never updated again, `done` never becomes true, and this
+            // poll loop would otherwise wait forever with no feedback to
+            // the person. If the saved text hasn't grown at all for a while,
+            // treat it as dead instead of polling silently forever.
+            const STALL_GIVEUP_MS = 25000;
+            let lastProgressAt = Date.now();
+            let lastSeenLength = -1;
+
             const poll = async () => {
                 const chat = JSON.parse(localStorage.getItem(chatId) || 'null');
                 if (!chat || !chat.isGeneratingInBg || !chat.pendingRequestId) {
@@ -6646,6 +6657,12 @@
                     return;
                 }
 
+                const currentLength = (data.text || '').length;
+                if (currentLength > lastSeenLength) {
+                    lastSeenLength = currentLength;
+                    lastProgressAt = Date.now();
+                }
+
                 // Update the placeholder message with whatever text has
                 // accumulated so far, whether or not it's finished — so a
                 // person watching this chat sees it keep filling in.
@@ -6662,6 +6679,21 @@
 
                 if (data.done) {
                     finalizeResumedChat(chatId, data.text, data.error);
+                    activeResumePolls.delete(chatId);
+                    return;
+                }
+
+                if (Date.now() - lastProgressAt >= STALL_GIVEUP_MS) {
+                    // No new text for a while and still not marked done — the
+                    // generation almost certainly died server-side without
+                    // ever getting to report an error. Recover whatever
+                    // partial text exists rather than leaving the person
+                    // staring at "thinking" indefinitely.
+                    finalizeResumedChat(
+                        chatId,
+                        data.text,
+                        data.text ? null : 'This response stalled and never finished — please try asking again.'
+                    );
                     activeResumePolls.delete(chatId);
                     return;
                 }

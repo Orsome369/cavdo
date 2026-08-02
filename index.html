@@ -8463,15 +8463,18 @@
                             <pre><code id="${elementId}"></code></pre>
                         `;
                         tray.querySelector('code').textContent = codeContent;
-                        // Re-running full syntax highlighting from scratch on the
-                        // WHOLE accumulated code every single live chunk gets more
-                        // expensive as the block grows — on a long code block this
-                        // is exactly what showed up as "typing stops, then
-                        // continues" (the main thread blocking on a big
-                        // highlightElement() call every ~25ms). Small/short-lived
-                        // blocks are cheap enough to keep coloring live; longer
-                        // ones get colored once, in full, the moment they finish.
-                        const LIVE_HIGHLIGHT_CHAR_LIMIT = 400;
+                        // Highlighting used to hard-cut-off at 400 characters while
+                        // live, then never re-color until the block finished — on
+                        // any normal-sized code block that showed up as the syntax
+                        // colors visibly disappearing partway through typing, then
+                        // popping back once it finished. The original concern (a big
+                        // highlightElement() call on every single SSE chunk blocking
+                        // the main thread) is now handled by the adaptive render-gap
+                        // in pushVisibleChunk, which already spaces out full
+                        // re-renders (and therefore re-highlights) as the message
+                        // grows — so this limit only needs to guard against truly
+                        // huge blocks, not ordinary ones.
+                        const LIVE_HIGHLIGHT_CHAR_LIMIT = 20000;
                         if (!isLive || codeContent.length <= LIVE_HIGHLIGHT_CHAR_LIMIT) {
                             applySyntaxHighlight(tray.querySelector('code'), language);
                         }
@@ -11385,6 +11388,7 @@
                         let sawAnyOutput = false;
                         let lastRenderAt = 0;
                         let lastPersistAt = 0;
+                        let linesSinceLastRender = 0;
                         // Covers the initial stream AND every auto-continue round below —
                         // used to keep a long, multi-round response wrapping up within a
                         // fixed overall time budget instead of chaining continuations
@@ -11394,6 +11398,7 @@
                         function pushVisibleChunk(chunk) {
                             sawAnyOutput = true;
                             fullText += chunk;
+                            linesSinceLastRender += (chunk.match(/\n/g) || []).length;
 
                             const now = performance.now();
                             // Persisting means JSON.stringify-ing the WHOLE chat
@@ -11428,9 +11433,23 @@
                             // the current message length keeps each rebuild able to finish
                             // before the next one is due, trading a little liveness on long
                             // replies for a smooth, non-stuttering typing effect.
+                            //
+                            // On top of that, ALSO wait for roughly 20 new lines to have
+                            // arrived since the last flush (not just a fixed time gap) —
+                            // this cuts the total number of full rebuilds over the course
+                            // of a long response even further, which is what was still
+                            // showing up as "stuck, stuck, stuck" repeatedly rather than
+                            // one smooth stream. A max-wait fallback keeps prose replies
+                            // (which have far fewer newlines than code) from feeling
+                            // unresponsive while waiting for 20 lines that may never come.
                             const renderGap = 25 + Math.min(300, Math.floor(fullText.length / 40));
+                            const MAX_FLUSH_WAIT_MS = 900;
+                            const enoughLines = linesSinceLastRender >= 20;
+                            const waitedTooLong = now - lastRenderAt >= MAX_FLUSH_WAIT_MS;
                             if (now - lastRenderAt < renderGap) return;
+                            if (!enoughLines && !waitedTooLong) return;
                             lastRenderAt = now;
+                            linesSinceLastRender = 0;
                             const lastMessageNode = getLastMessageNode();
                             const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
                             if (!textDiv) return;

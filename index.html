@@ -11127,11 +11127,11 @@
 
                 } else {
                     let sysInstruction = (selectedMode === 'code') 
-                        ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
+                        ? "You are a senior developer inside Cavdo AI. Write like a sharp, experienced engineer, not a code generator maximizing output: the shortest correct, clean implementation always beats a longer one that does the same job. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
                     if (selectedMode === 'code') {
-                        sysInstruction += " Size the response to the request instead of always maxing it out or always minimizing it: a small, single-purpose ask (one component, one function, one script) should land around 80-200 lines; a real page/app/dashboard with a handful of features should land around 300-600 lines; only go up toward ~1000 lines when the user explicitly asks for a full/production/complete/multi-feature app or names a long list of specific features. Don't pad any of these with unused boilerplate, repeated code, or comments explaining the obvious — every line should be doing something real.";
+                        sysInstruction += " Default to the shortest correct implementation instead of always maxing length out: a small, single-purpose ask (one component, one function, one script) should usually land around 40-120 lines; a real page/app/dashboard with a handful of features should usually land around 150-350 lines; only go up toward ~600 lines when the user explicitly asks for a full/production/complete/multi-feature app or names a long list of specific features — and even then every added line must do real work. Treat these as ceilings to stay under, not targets to hit. Never pad with: comments that just restate what the code obviously does, defensive/try-catch handling for cases that can't occur here, unused helper functions or config options nobody asked for, wrapper abstractions around something that's only used once, or boilerplate left over from a template. If you can delete a line without changing behavior or readability, delete it. Prioritize readable, idiomatic code over clever code, but never over long code.";
                         sysInstruction += " Visual quality always matters — never hand back a bare, unstyled skeleton. Whenever the request involves a UI, webpage, app, dashboard, or game (HTML/CSS/JS, or any framework), build something that actually looks finished: a real deliberate color palette (not browser defaults), good typography, sensible spacing/alignment, and smooth CSS transitions/animations where they naturally belong (hover states, button feedback, entry animations) — for games specifically, include real visual feedback (score/state on screen, simple effects on key events, a styled win/game-over state) rather than console.log or alert(). Make it genuinely nice to look at and use. The only thing to avoid is unrequested extra FEATURES (new pages, settings panels, extra modes nobody asked for) — polish and visual craft on what was actually requested is not bloat, it's the bar. Keep everything self-contained (no external dependencies unless a framework was requested) and fully working — never sacrifice correctness for looks.";
                     }
 
@@ -11389,6 +11389,14 @@
                         let lastRenderAt = 0;
                         let lastPersistAt = 0;
                         let linesSinceLastRender = 0;
+                        // Set whenever the upstream API itself reports the reply was
+                        // cut off by the token ceiling (OpenAI-style finish_reason
+                        // 'length', or Gemini's finishReason 'MAX_TOKENS'). Unlike the
+                        // "unclosed ``` fence" check below, this catches truncation in
+                        // PLAIN PROSE too — a cut-off explanation/answer with no code
+                        // block in it previously had nothing to trigger the
+                        // auto-continue logic, so it just silently stopped mid-sentence.
+                        let truncatedByLength = false;
                         // Covers the initial stream AND every auto-continue round below —
                         // used to keep a long, multi-round response wrapping up within a
                         // fixed overall time budget instead of chaining continuations
@@ -11483,11 +11491,13 @@
                                 if (usingUltimateProxy) {
                                     const delta = evt?.choices?.[0]?.delta?.content;
                                     if (delta) streamer.process(delta);
+                                    if (evt?.choices?.[0]?.finish_reason === 'length') truncatedByLength = true;
                                 } else {
                                     const candidate = evt?.candidates?.[0];
                                     const parts = candidate?.content?.parts || [];
                                     for (const part of parts) { if (part.text) streamer.process(part.text); }
                                     if (candidate?.groundingMetadata) groundingMetadata = candidate.groundingMetadata;
+                                    if (candidate?.finishReason === 'MAX_TOKENS') truncatedByLength = true;
                                 }
                             }
                         }
@@ -11516,9 +11526,13 @@
                             const MAX_TOTAL_GENERATION_MS = 4.5 * 60 * 1000;
                             while (continueRounds < MAX_CONTINUE_ROUNDS) {
                                 const openCount = (fullText.match(/```/g) || []).length;
-                                if (openCount % 2 === 0) break; // fence is closed — nothing truncated
+                                const fenceOpen = openCount % 2 !== 0;
+                                if (!fenceOpen && !truncatedByLength) break; // fence closed AND API says it finished normally — nothing truncated
                                 if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) break; // out of time budget
                                 continueRounds++;
+                                // Re-armed per round: only the CURRENT round's response
+                                // decides whether another continuation is needed next.
+                                truncatedByLength = false;
                                 try {
                                     let contEndpoint, contBody;
                                     if (usingUltimateProxy) {
@@ -11579,10 +11593,12 @@
                                             if (usingUltimateProxy) {
                                                 const cDelta = cEvt?.choices?.[0]?.delta?.content;
                                                 if (cDelta) { gotAny = true; streamer.process(cDelta); }
+                                                if (cEvt?.choices?.[0]?.finish_reason === 'length') truncatedByLength = true;
                                             } else {
                                                 const cCandidate = cEvt?.candidates?.[0];
                                                 const cParts = cCandidate?.content?.parts || [];
                                                 for (const cPart of cParts) { if (cPart.text) { gotAny = true; streamer.process(cPart.text); } }
+                                                if (cCandidate?.finishReason === 'MAX_TOKENS') truncatedByLength = true;
                                             }
                                         }
                                     }

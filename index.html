@@ -6774,53 +6774,70 @@
             let backendDone = false;
             let backendError = null;
             let typingActive = false;
-            let lastLiveRenderAt = 0;
-            const LIVE_RENDER_MIN_INTERVAL_MS = 80;
+            let lastCommitAt = 0;
+            // How often we actually touch localStorage + the DOM. The live
+            // (non-resumed) stream only ever writes on each arriving network
+            // chunk — never on a fixed fast timer — so committing here on
+            // every single simulated character (the previous version did
+            // this every ~15ms) was doing a full JSON.stringify/parse of the
+            // whole chat, on every character, on the main thread. On any
+            // chat with real history that's enough blocking work to cause a
+            // visible hitch — which read as "stuck, then it thinks, then it
+            // starts again." Batching commits to this interval removes that
+            // without changing how fast text visibly appears (revealedText
+            // itself still advances every tick below).
+            const COMMIT_INTERVAL_MS = 60;
 
-            function paintRevealed() {
-                if (currentChatId !== chatId) return;
-                const now = Date.now();
-                const isFinalStep = backendDone && revealedText.length >= targetText.length;
-                if (!isFinalStep && (now - lastLiveRenderAt) < LIVE_RENDER_MIN_INTERVAL_MS) return;
-                const lastMessageNode = getLastMessageNode();
-                const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
-                if (!textDiv) return;
-                textDiv.classList.remove('thinking-status-text');
-                let simulatedText = revealedText;
-                const occurrences = (simulatedText.match(/```/g) || []).length;
-                if (occurrences % 2 !== 0) simulatedText += "\n```";
-                try {
-                    renderAIContent(textDiv, simulatedText, false, null, true);
-                    lastLiveRenderAt = now;
-                } catch (renderErr) {
-                    console.error('Resumed live preview render error (safe to ignore, text already saved):', renderErr);
+            function commitRevealed(isFinalStep) {
+                const loopChat = JSON.parse(localStorage.getItem(chatId) || 'null');
+                if (loopChat && Array.isArray(loopChat.messages) && loopChat.messages.length) {
+                    const lastMsg = loopChat.messages[loopChat.messages.length - 1];
+                    if (lastMsg && lastMsg.role === 'ai') {
+                        lastMsg.text = revealedText;
+                        lastMsg.isThinking = false; // real content is showing now — stop blinking
+                        localStorage.setItem(chatId, JSON.stringify(loopChat));
+                    }
                 }
+                if (currentChatId === chatId) {
+                    const lastMessageNode = getLastMessageNode();
+                    const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
+                    if (textDiv) {
+                        textDiv.classList.remove('thinking-status-text');
+                        let simulatedText = revealedText;
+                        const occurrences = (simulatedText.match(/```/g) || []).length;
+                        if (occurrences % 2 !== 0) simulatedText += "\n```";
+                        try { renderAIContent(textDiv, simulatedText, false, null, true); }
+                        catch (renderErr) { console.error('Resumed live preview render error (safe to ignore, text already saved):', renderErr); }
+                    }
+                }
+                lastCommitAt = Date.now();
             }
 
             function typeStep() {
                 if (revealedText.length < targetText.length) {
-                    const len = targetText.length;
-                    const stepDelay = len <= 60 ? 18 : 14;
-                    const TARGET_LONG_ANIM_MS = 3500;
-                    const subChunk = len <= 60 ? 1
-                        : len <= 400 ? 2
-                        : len <= 1200 ? 4
-                        : Math.max(8, Math.ceil(len / (TARGET_LONG_ANIM_MS / stepDelay)));
+                    // Pace off how far BEHIND we currently are, not the
+                    // reply's total length so far. Total length only grows,
+                    // so keying off it (the old approach) meant the catch-up
+                    // speed calculated at the start of a long reply was
+                    // already stale by the time more text showed up from a
+                    // later poll — the reveal would crawl even once the
+                    // backend was miles ahead, which is what made it look
+                    // like it stalled between polls. Backlog-based pacing
+                    // always closes the gap at roughly the same real-world
+                    // speed regardless of when in the reply it happens.
+                    const stepDelay = 15;
+                    const backlog = targetText.length - revealedText.length;
+                    const subChunk = backlog <= 40 ? 1 : Math.max(2, Math.ceil(backlog / 40));
 
                     revealedText = targetText.slice(0, Math.min(targetText.length, revealedText.length + subChunk));
 
-                    const loopChat = JSON.parse(localStorage.getItem(chatId) || 'null');
-                    if (loopChat && Array.isArray(loopChat.messages) && loopChat.messages.length) {
-                        const lastMsg = loopChat.messages[loopChat.messages.length - 1];
-                        if (lastMsg && lastMsg.role === 'ai') {
-                            lastMsg.text = revealedText;
-                            lastMsg.isThinking = false; // real content is showing now — stop blinking
-                            localStorage.setItem(chatId, JSON.stringify(loopChat));
-                        }
+                    const caughtUp = revealedText.length >= targetText.length;
+                    const isFinalStep = caughtUp && backendDone;
+                    if (isFinalStep || (Date.now() - lastCommitAt) >= COMMIT_INTERVAL_MS) {
+                        commitRevealed(isFinalStep);
                     }
-                    paintRevealed();
 
-                    if (revealedText.length < targetText.length || !backendDone) {
+                    if (!isFinalStep) {
                         setTimeout(typeStep, stepDelay);
                         return;
                     }
@@ -6828,7 +6845,7 @@
 
                 typingActive = false;
                 if (backendDone && revealedText.length >= targetText.length) {
-                    paintRevealed();
+                    commitRevealed(true);
                     finalizeResumedChat(chatId, targetText, backendError);
                     activeResumePolls.delete(chatId);
                 }

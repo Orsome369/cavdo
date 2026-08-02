@@ -8341,6 +8341,19 @@
                 return 'python';
             }
             if (/^#!\/bin\/(ba|z)?sh/.test(trimmed)) return 'bash';
+            // CSS was the one language type this sniffer had zero coverage
+            // for — a reply that forgot to fence CSS (common on large
+            // "dynamic UI" generations with many separate style rules)
+            // fell all the way through to the plain-text fallback below:
+            // no box, no header, no highlighting, no copy/download button,
+            // just a raw wall of text. var(--x) custom properties are a
+            // near-certain CSS signature on their own; the selector/brace
+            // pattern catches plain CSS that doesn't use custom properties.
+            if (/var\(--[\w-]+\)/.test(trimmed)
+                || /^\s*(@media|@keyframes|@import|@font-face|:root)\b/m.test(trimmed)
+                || /[.#]?[\w-]+(\s*[.#:][\w-]+)*\s*\{[^{}]*:[^{}]*;[^{}]*\}/.test(trimmed)) {
+                return 'css';
+            }
             if (/^\s*[\{\[]/.test(trimmed)) {
                 try { JSON.parse(full); return 'json'; } catch (e) { /* not valid JSON */ }
             }

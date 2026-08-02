@@ -7987,7 +7987,13 @@
                     // obvious mismatches (missing tag, generic "code", or a tag that doesn't
                     // match what's actually in the block) before it's used for the header
                     // label or the download file extension.
-                    {
+                    if (!isLive) {
+                        // Only reclassify once the block has actually finished
+                        // streaming. Doing this while isLive is true meant the
+                        // header label (and its color) re-guessed the language
+                        // from whatever partial code existed so far on every
+                        // single re-render — visibly flickering as the code
+                        // typed itself in.
                         const declaredKey = language.toLowerCase().trim();
                         const declaredExt = CODE_LANG_EXTENSIONS[declaredKey];
                         const sample = codeContent.length > 4000 ? codeContent.slice(0, 4000) : codeContent;
@@ -9972,6 +9978,17 @@
             const subChunk = len <= 60 ? 1 : len <= 400 ? 2 : len <= 1200 ? 4 : 8;
             const stepDelay = len <= 60 ? 18 : 14;
 
+            // The DOM rebuild triggered by renderAIContent (full innerHTML
+            // wipe + rebuild, including re-detecting code language) is much
+            // more expensive than a plain text update, and doesn't need to
+            // happen on every single character step to still look like live
+            // typing. Capping it to ~12 rebuilds/sec removes the container
+            // flicker/"blinking" while streaming without slowing down how
+            // fast the text itself appears (localStorage + fullText still
+            // update every step).
+            const LIVE_RENDER_MIN_INTERVAL_MS = 80;
+            let lastLiveRenderAt = 0;
+
             for (let i = 0; i < units.length; i += subChunk) {
                 if (abortController?.signal.aborted) return fullText;
                 fullText += units.slice(i, i + subChunk).join('');
@@ -9993,7 +10010,11 @@
                 // you switch back — and the animation just resumes normally
                 // for whatever's left the instant the tab becomes visible again.
                 if (!document.hidden) {
-                    if (currentChatId === requestContextChatId) {
+                    const isFinalStep = (i + subChunk) >= units.length;
+                    const now = Date.now();
+                    const dueForRender = isFinalStep || (now - lastLiveRenderAt) >= LIVE_RENDER_MIN_INTERVAL_MS;
+
+                    if (dueForRender && currentChatId === requestContextChatId) {
                         const lastMessageNode = getLastMessageNode();
                         const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
                         if (textDiv) {
@@ -10002,6 +10023,7 @@
                             if (occurrences % 2 !== 0) simulatedText += "\n```";
                             try {
                                 renderAIContent(textDiv, simulatedText, false, originalUserText, true);
+                                lastLiveRenderAt = now;
                             } catch (renderErr) {
                                 console.error('Live preview render error (safe to ignore, text already saved):', renderErr);
                             }

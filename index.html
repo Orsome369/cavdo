@@ -9975,8 +9975,20 @@
             // replies (big code files) don't take forever to finish.
             const units = fullReply.split('');
             const len = units.length;
-            const subChunk = len <= 60 ? 1 : len <= 400 ? 2 : len <= 1200 ? 4 : 8;
+            // Below this length, keep the original per-tier feel — short
+            // replies benefit from looking like real, natural typing.
+            // Above it, stop scaling the chunk size linearly with length:
+            // the full answer already finished generating on the backend
+            // before this animation even starts, so a big code file was
+            // previously "typed out" for 20-50+ seconds for no real reason.
+            // Instead, cap the whole animation to a fixed target duration
+            // regardless of how long the content is.
             const stepDelay = len <= 60 ? 18 : 14;
+            const TARGET_LONG_ANIM_MS = 3500;
+            const subChunk = len <= 60 ? 1
+                : len <= 400 ? 2
+                : len <= 1200 ? 4
+                : Math.max(8, Math.ceil(len / (TARGET_LONG_ANIM_MS / stepDelay)));
 
             // The DOM rebuild triggered by renderAIContent (full innerHTML
             // wipe + rebuild, including re-detecting code language) is much
@@ -10710,6 +10722,10 @@
                         ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
+                    if (selectedMode === 'code') {
+                        sysInstruction += " Visual quality matters as much as correctness. Whenever the request involves a UI, webpage, app, dashboard, or game (HTML/CSS/JS, or any framework), do not hand back a bare, unstyled skeleton — build something that actually looks finished: a real color palette (not browser defaults), readable typography with a deliberate font choice, sensible spacing/alignment, smooth CSS transitions or animations where they'd naturally belong (hover states, button feedback, loading/entry animations), and — for games specifically — actual visual feedback (score/state changes reflected on screen, simple particle/flash effects on key events, a styled game-over/win state) rather than only console.log or alert(). Keep all of this in plain HTML/CSS/JS (or the requested language/framework) with no external dependencies unless the user asked for a framework, and keep the code fully working and self-contained — flashy but broken is worse than plain but correct, so never sacrifice functionality for polish.";
+                    }
+
                     // Ground the model in real wall-clock time on every request — without
                     // this, the model only knows its training cutoff and will misjudge
                     // "current", "latest", "today", how old something is, days-until-date
@@ -10782,6 +10798,16 @@
                         const NVIDIA_PROXY_TIERS = new Set(['ultimate', 'speed', 'lite']);
                         const usingUltimateProxy = NVIDIA_PROXY_TIERS.has(usedTier.key);
 
+                        // Ultimate is the top paid tier, so for code requests push it
+                        // further than the baseline instruction above: go the extra
+                        // mile on polish/detail rather than the minimum that satisfies
+                        // the request, and default to a more complete/production-feel
+                        // implementation instead of a bare-minimum demo.
+                        let attemptSysInstruction = sysInstruction;
+                        if (selectedMode === 'code' && usedTier.key === 'ultimate') {
+                            attemptSysInstruction += " You are running as Cavdo Ultimate, the top tier — hold yourself to a higher bar than a quick demo. Favor a genuinely complete, production-feel implementation: think through edge cases, add small thoughtful touches (empty states, subtle micro-interactions, sensible defaults) that a careful senior developer would include without being asked, and prefer a fuller/more capable version of what was requested over the bare minimum, as long as it stays correct, self-contained, and doesn't bloat the response with unrequested extra features.";
+                        }
+
                         let endpoint, fetchBody;
                         if (usingUltimateProxy) {
                             endpoint = ULTIMATE_CHAT_API_URL;
@@ -10789,7 +10815,7 @@
                                 tier: usedTier.key,
                                 requestId,
                                 messages: [
-                                    { role: 'system', content: sysInstruction },
+                                    { role: 'system', content: attemptSysInstruction },
                                     ...buildApiPayload(chatData.messages.slice(0, -1)).map(m => ({
                                         role: m.role === 'model' ? 'assistant' : 'user',
                                         content: m.parts.map(p => p.text || '').join('\n').trim()
@@ -10802,7 +10828,7 @@
                             // anything appears on screen.
                             endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:streamGenerateContent?alt=sse&key=${getActiveGeminiKey()}`;
                             fetchBody = JSON.stringify({
-                                systemInstruction: { parts: [{ text: sysInstruction }] },
+                                systemInstruction: { parts: [{ text: attemptSysInstruction }] },
                                 contents: buildApiPayload(chatData.messages.slice(0, -1)),
                                 // Lets the model search the live web for current
                                 // facts instead of relying only on training data —

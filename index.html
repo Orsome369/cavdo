@@ -11566,6 +11566,20 @@
                         }
                         streamer.finish();
 
+                        // The two checks above (unclosed fence / finish_reason) only
+                        // catch truncation when the API itself tells us about it. A
+                        // Vercel function hitting its maxDuration (60s on the Ultimate
+                        // proxy) doesn't do that — it just kills the connection, which
+                        // looks to reader.read() exactly like the stream ending
+                        // normally. That's the case that was still slipping through:
+                        // no unclosed fence, no finish_reason, just a reply that stops
+                        // dead. If we were this close to that ceiling when the stream
+                        // closed, assume it was cut off and route it through the same
+                        // auto-continue path below rather than treating it as done.
+                        if (usingUltimateProxy && !truncatedByLength && (performance.now() - generationStartTime) > 54000) {
+                            truncatedByLength = true;
+                        }
+
                         // If the stream ended naturally (not via the Stop button) with a
                         // ``` fence still open, the model was cut off mid-code by its own
                         // output limit or the backend's request timeout — not something
@@ -11596,6 +11610,7 @@
                                 // Re-armed per round: only the CURRENT round's response
                                 // decides whether another continuation is needed next.
                                 truncatedByLength = false;
+                                const roundStartedAt = performance.now();
                                 try {
                                     let contEndpoint, contBody;
                                     if (usingUltimateProxy) {
@@ -11666,6 +11681,9 @@
                                         }
                                     }
                                     streamer.finish();
+                                    if (usingUltimateProxy && !truncatedByLength && (performance.now() - roundStartedAt) > 54000) {
+                                        truncatedByLength = true; // same silent-timeout heuristic as the initial round, applied per round
+                                    }
                                     if (!gotAny) break; // continuation produced nothing further — stop trying
                                 } catch (contErr) {
                                     console.error('Auto-continue of truncated response failed, keeping partial content:', contErr);

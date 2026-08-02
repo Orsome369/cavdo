@@ -8384,19 +8384,25 @@
             }
 
             // Safety net: the model is instructed to always fence code, but
-            // if it forgets and sends raw, unfenced source (no ``` anywhere),
-            // it would otherwise get flattened through the plain-text/markdown
-            // path and shown as a wall of prose instead of a proper code
-            // block. Detect that case with the same sniffer used to correct
-            // mistagged fences, and wrap the whole reply in a fence so it
-            // still renders with real code formatting, a language label, and
-            // copy/download buttons.
-            if (!rawText.includes('```')) {
-                const sniffed = sniffLanguageFromCode(rawText);
-                if (sniffed) {
-                    rawText = '```' + sniffed + '\n' + rawText + '\n```';
-                }
-            }
+            // if it forgets, that unfenced source would otherwise get
+            // flattened through the plain-text/markdown path and shown as
+            // a wall of prose instead of a proper code block. This used to
+            // only check the case where the ENTIRE reply had zero ``` in
+            // it anywhere — which missed the more common real case: a long
+            // multi-round reply that DOES have real fenced blocks in it,
+            // but also has a leftover unfenced segment sitting between/
+            // after them (e.g. a stray fence introduced while splicing an
+            // auto-continue round back on). That segment used to render as
+            // plain text with no box, header, highlighting, or download
+            // button. Now every segment that ISN'T already a matched
+            // ```...``` pair gets checked individually, so this catches
+            // both the whole-reply case and the partial-segment case.
+            rawText = rawText.split(/(```[\s\S]*?```)/g).map(function (segment) {
+                if (segment.startsWith('```') && segment.endsWith('```')) return segment; // already fenced — leave alone
+                if (!segment.trim()) return segment;
+                const sniffed = sniffLanguageFromCode(segment);
+                return sniffed ? ('```' + sniffed + '\n' + segment + '\n```') : segment;
+            }).join('');
 
             const tokens = rawText.split(/(```[\s\S]*?```)/g);
             const generatedFiles = []; // { elementId, language, ext }

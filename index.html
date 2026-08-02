@@ -6642,9 +6642,28 @@
             // poll loop would otherwise wait forever with no feedback to
             // the person. If the saved text hasn't grown at all for a while,
             // treat it as dead instead of polling silently forever.
-            const STALL_GIVEUP_MS = 25000;
+            // Must comfortably clear the backend's own hard ceiling
+            // (ultimate-chat.js sets maxDuration: 60) — otherwise a
+            // perfectly healthy Ultimate-tier generation, which can sit
+            // silent for a long stretch during its reasoning pass before
+            // any visible token appears, gets declared "stalled" and
+            // abandoned while the backend is still working fine.
+            const STALL_GIVEUP_MS = 65000;
             let lastProgressAt = Date.now();
             let lastSeenLength = -1;
+            // A 404 here almost always just means the Firestore doc for
+            // this requestId hasn't been written yet — Vercel cold start
+            // plus the model's silent thinking phase can easily eat the
+            // first several seconds, and the very first poll after a
+            // refresh typically lands right in that window. Treating one
+            // 404 as fatal was killing perfectly healthy generations
+            // right as they were getting started (and, in a still-open
+            // tab, colliding with the real stream that kept writing
+            // afterward — the reply would show "lost connection" and
+            // then start appearing anyway). Only give up after several
+            // consecutive 404s.
+            let consecutive404s = 0;
+            const MAX_404_RETRIES = 6;
 
             const poll = async () => {
                 const chat = JSON.parse(localStorage.getItem(chatId) || 'null');
@@ -6658,13 +6677,19 @@
                 try {
                     const resp = await fetch(`${GENERATION_STATUS_API_URL}?requestId=${encodeURIComponent(requestId)}&ack=1`);
                     if (resp.status === 404) {
-                        // Nothing recoverable (expired, or this generation never
-                        // reached the persisted-progress backend, e.g. an older
-                        // Gemini-direct tier) — stop waiting on it.
-                        finalizeResumedChat(chatId, null, 'Lost connection before a response finished — please try asking again.');
-                        activeResumePolls.delete(chatId);
+                        consecutive404s++;
+                        if (consecutive404s > MAX_404_RETRIES) {
+                            // Genuinely nothing recoverable after repeated checks
+                            // (expired, or this generation never reached the
+                            // persisted-progress backend at all) — stop waiting.
+                            finalizeResumedChat(chatId, null, 'Lost connection before a response finished — please try asking again.');
+                            activeResumePolls.delete(chatId);
+                            return;
+                        }
+                        setTimeout(poll, 1500);
                         return;
                     }
+                    consecutive404s = 0;
                     if (!resp.ok) throw new Error('status ' + resp.status);
                     data = await resp.json();
                 } catch (e) {

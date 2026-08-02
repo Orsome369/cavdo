@@ -6749,6 +6749,97 @@
             let consecutive404s = 0;
             const MAX_404_RETRIES = 6;
 
+            // -----------------------------------------------------------
+            // Typewriter reveal for resumed replies.
+            //
+            // A poll only tells us how far the backend has gotten
+            // (`targetText`). Painting that whole chunk onto the screen the
+            // instant each poll landed (the old behaviour) made a resumed
+            // reply visibly jump/snap every ~1.2s instead of appearing to
+            // type — and kept the "thinking" blink animation on the real
+            // answer text the entire time (isThinking was only cleared once
+            // the backend reported `done`), so the content blinked right up
+            // until it finished. Both were the tell that a reply had been
+            // resumed after a refresh instead of streamed live.
+            //
+            // `revealedText` is walked up to `targetText` at the same
+            // char-by-char pace typeOutFullReply uses for a live reply, and
+            // the "thinking" flag is cleared the moment any real text is
+            // shown (not gated on the backend being fully done) — so a
+            // resumed reply looks identical to one that never lost its
+            // connection.
+            // -----------------------------------------------------------
+            let targetText = '';
+            let revealedText = '';
+            let backendDone = false;
+            let backendError = null;
+            let typingActive = false;
+            let lastLiveRenderAt = 0;
+            const LIVE_RENDER_MIN_INTERVAL_MS = 80;
+
+            function paintRevealed() {
+                if (currentChatId !== chatId) return;
+                const now = Date.now();
+                const isFinalStep = backendDone && revealedText.length >= targetText.length;
+                if (!isFinalStep && (now - lastLiveRenderAt) < LIVE_RENDER_MIN_INTERVAL_MS) return;
+                const lastMessageNode = getLastMessageNode();
+                const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
+                if (!textDiv) return;
+                textDiv.classList.remove('thinking-status-text');
+                let simulatedText = revealedText;
+                const occurrences = (simulatedText.match(/```/g) || []).length;
+                if (occurrences % 2 !== 0) simulatedText += "\n```";
+                try {
+                    renderAIContent(textDiv, simulatedText, false, null, true);
+                    lastLiveRenderAt = now;
+                } catch (renderErr) {
+                    console.error('Resumed live preview render error (safe to ignore, text already saved):', renderErr);
+                }
+            }
+
+            function typeStep() {
+                if (revealedText.length < targetText.length) {
+                    const len = targetText.length;
+                    const stepDelay = len <= 60 ? 18 : 14;
+                    const TARGET_LONG_ANIM_MS = 3500;
+                    const subChunk = len <= 60 ? 1
+                        : len <= 400 ? 2
+                        : len <= 1200 ? 4
+                        : Math.max(8, Math.ceil(len / (TARGET_LONG_ANIM_MS / stepDelay)));
+
+                    revealedText = targetText.slice(0, Math.min(targetText.length, revealedText.length + subChunk));
+
+                    const loopChat = JSON.parse(localStorage.getItem(chatId) || 'null');
+                    if (loopChat && Array.isArray(loopChat.messages) && loopChat.messages.length) {
+                        const lastMsg = loopChat.messages[loopChat.messages.length - 1];
+                        if (lastMsg && lastMsg.role === 'ai') {
+                            lastMsg.text = revealedText;
+                            lastMsg.isThinking = false; // real content is showing now — stop blinking
+                            localStorage.setItem(chatId, JSON.stringify(loopChat));
+                        }
+                    }
+                    paintRevealed();
+
+                    if (revealedText.length < targetText.length || !backendDone) {
+                        setTimeout(typeStep, stepDelay);
+                        return;
+                    }
+                }
+
+                typingActive = false;
+                if (backendDone && revealedText.length >= targetText.length) {
+                    paintRevealed();
+                    finalizeResumedChat(chatId, targetText, backendError);
+                    activeResumePolls.delete(chatId);
+                }
+            }
+
+            function scheduleTyping() {
+                if (typingActive) return;
+                typingActive = true;
+                typeStep();
+            }
+
             const poll = async () => {
                 const chat = JSON.parse(localStorage.getItem(chatId) || 'null');
                 if (!chat || !chat.isGeneratingInBg || !chat.pendingRequestId) {
@@ -6766,8 +6857,9 @@
                             // Genuinely nothing recoverable after repeated checks
                             // (expired, or this generation never reached the
                             // persisted-progress backend at all) — stop waiting.
-                            finalizeResumedChat(chatId, null, 'Lost connection before a response finished — please try asking again.');
-                            activeResumePolls.delete(chatId);
+                            backendDone = true;
+                            backendError = 'Lost connection before a response finished — please try asking again.';
+                            scheduleTyping();
                             return;
                         }
                         setTimeout(poll, 1500);
@@ -6789,23 +6881,15 @@
                     lastProgressAt = Date.now();
                 }
 
-                // Update the placeholder message with whatever text has
-                // accumulated so far, whether or not it's finished — so a
-                // person watching this chat sees it keep filling in.
-                const liveChat = JSON.parse(localStorage.getItem(chatId) || 'null');
-                if (liveChat && Array.isArray(liveChat.messages) && liveChat.messages.length) {
-                    const lastMsg = liveChat.messages[liveChat.messages.length - 1];
-                    if (lastMsg && lastMsg.role === 'ai' && data.text) {
-                        lastMsg.text = data.text;
-                        lastMsg.isThinking = !data.done;
-                        localStorage.setItem(chatId, JSON.stringify(liveChat));
-                        if (currentChatId === chatId) renderActiveChatMessages(false);
-                    }
-                }
+                // Advance what the backend has reached — the typewriter loop
+                // (kicked off below) is what actually reveals it on screen,
+                // at typing speed, whether or not this poll's answer is done.
+                if (data.text) targetText = data.text;
 
                 if (data.done) {
-                    finalizeResumedChat(chatId, data.text, data.error);
-                    activeResumePolls.delete(chatId);
+                    backendDone = true;
+                    backendError = data.error || null;
+                    scheduleTyping();
                     return;
                 }
 
@@ -6815,15 +6899,13 @@
                     // ever getting to report an error. Recover whatever
                     // partial text exists rather than leaving the person
                     // staring at "thinking" indefinitely.
-                    finalizeResumedChat(
-                        chatId,
-                        data.text,
-                        data.text ? null : 'This response stalled and never finished — please try asking again.'
-                    );
-                    activeResumePolls.delete(chatId);
+                    backendDone = true;
+                    backendError = targetText ? null : 'This response stalled and never finished — please try asking again.';
+                    scheduleTyping();
                     return;
                 }
 
+                scheduleTyping();
                 setTimeout(poll, 1200);
             };
 

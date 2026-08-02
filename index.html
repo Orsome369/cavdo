@@ -11470,9 +11470,7 @@
                         let fullText = '';
                         let groundingMetadata = null;
                         let sawAnyOutput = false;
-                        let lastRenderAt = 0;
                         let lastPersistAt = 0;
-                        let linesSinceLastRender = 0;
                         // Set whenever the upstream API itself reports the reply was
                         // cut off by the token ceiling (OpenAI-style finish_reason
                         // 'length', or Gemini's finishReason 'MAX_TOKENS'). Unlike the
@@ -11490,20 +11488,16 @@
                         function pushVisibleChunk(chunk) {
                             sawAnyOutput = true;
                             fullText += chunk;
-                            linesSinceLastRender += (chunk.match(/\n/g) || []).length;
 
                             const now = performance.now();
                             // Persisting means JSON.stringify-ing the WHOLE chat
                             // object — doing that on every single incoming SSE
                             // chunk gets more expensive as the reply (and the
-                            // chat's total history) grows, and combined with the
-                            // re-render below is a big part of why long code
-                            // blocks visibly stuttered ("stop then continue") the
-                            // longer they got. Throttling it alongside the render
-                            // removes most of that cost — a final complete save
-                            // always happens separately once streaming ends, so
-                            // nothing is ever actually lost, just saved slightly
-                            // less often while still in progress.
+                            // chat's total history) grows. Throttling it keeps
+                            // that cost down — a final complete save always
+                            // happens separately once streaming ends, so nothing
+                            // is ever actually lost, just saved slightly less
+                            // often while still in progress.
                             if (now - lastPersistAt >= 120) {
                                 lastPersistAt = now;
                                 const loopChat = JSON.parse(localStorage.getItem(requestContextChatId));
@@ -11512,46 +11506,53 @@
                                     localStorage.setItem(requestContextChatId, JSON.stringify(loopChat));
                                 }
                             }
+                            // Visual rendering is handled entirely by revealTimer below,
+                            // on its own fixed cadence, decoupled from however bursty
+                            // these incoming network chunks actually are — see
+                            // renderRevealTick. This function's only job now is to grow
+                            // fullText and persist it, never to touch the DOM directly.
+                        }
 
+                        // --- Typewriter reveal ---
+                        // fullText (above) always holds every character actually
+                        // received so far — nothing about truncation-detection,
+                        // persistence, or the final save changes. What changes is what
+                        // gets PAINTED to the screen and when: instead of rendering
+                        // fullText itself the moment enough of it has piled up (which
+                        // reads as chunky bursts — arrives, sits idle, then a wall of
+                        // text dumps in at once, i.e. "pasting" rather than "typing"),
+                        // a fixed-cadence timer reveals it a little at a time. The
+                        // reveal speed adapts to the backlog: small backlog = a gentle,
+                        // human-typing-like trickle; large backlog (a fast burst, or an
+                        // auto-continue splice landing all at once) = it accelerates so
+                        // it catches up within roughly a second instead of crawling.
+                        let revealedLength = 0;
+                        let lastRenderedRevealLength = -1;
+                        function renderRevealTick() {
+                            if (revealedLength >= fullText.length) return;
+                            const backlog = fullText.length - revealedLength;
+                            const step = Math.max(2, Math.min(backlog, Math.ceil(backlog / 6)));
+                            revealedLength = Math.min(fullText.length, revealedLength + step);
+                            if (revealedLength === lastRenderedRevealLength) return;
+                            lastRenderedRevealLength = revealedLength;
                             if (document.hidden || currentChatId !== requestContextChatId) return;
-                            // renderAIContent doesn't append — it wipes the message and
-                            // re-parses/rebuilds EVERYTHING typed so far from scratch on
-                            // every call. A flat 25ms gate works fine while the reply is
-                            // short, but once it grows past a few KB each full rebuild can
-                            // itself take longer than 25ms, so rebuilds start queueing up
-                            // behind each other: the main thread goes busy for a stretch
-                            // (typing looks stuck), then the backlog drains in one jump
-                            // (a sudden burst of text). Scaling the minimum gap up with
-                            // the current message length keeps each rebuild able to finish
-                            // before the next one is due, trading a little liveness on long
-                            // replies for a smooth, non-stuttering typing effect.
-                            //
-                            // On top of that, ALSO wait for roughly 20 new lines to have
-                            // arrived since the last flush (not just a fixed time gap) —
-                            // this cuts the total number of full rebuilds over the course
-                            // of a long response even further, which is what was still
-                            // showing up as "stuck, stuck, stuck" repeatedly rather than
-                            // one smooth stream. A max-wait fallback keeps prose replies
-                            // (which have far fewer newlines than code) from feeling
-                            // unresponsive while waiting for 20 lines that may never come.
-                            const renderGap = 20 + Math.min(260, Math.floor(fullText.length / 45));
-                            const MAX_FLUSH_WAIT_MS = 600;
-                            const enoughLines = linesSinceLastRender >= 14;
-                            const waitedTooLong = now - lastRenderAt >= MAX_FLUSH_WAIT_MS;
-                            if (now - lastRenderAt < renderGap) return;
-                            if (!enoughLines && !waitedTooLong) return;
-                            lastRenderAt = now;
-                            linesSinceLastRender = 0;
                             const lastMessageNode = getLastMessageNode();
                             const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
                             if (!textDiv) return;
-                            let simulatedText = fullText;
+                            let simulatedText = fullText.slice(0, revealedLength);
                             const occurrences = (simulatedText.match(/```/g) || []).length;
                             if (occurrences % 2 !== 0) simulatedText += "\n```";
                             try { renderAIContent(textDiv, simulatedText, false, text, true); }
                             catch (renderErr) { console.error('Live stream render error (safe to ignore, text already saved):', renderErr); }
                             followScrollDuringGeneration();
                         }
+                        // 30ms cadence = a smooth ~33fps typing feel without triggering
+                        // renderAIContent's full rebuild any more often than that.
+                        // Runs across the initial stream AND every auto-continue round
+                        // (fullText just keeps growing) — stopped in the finally block
+                        // once this whole generation attempt is done, however it ends.
+                        let revealTimer = setInterval(renderRevealTick, 30);
+                        try {
 
                         const streamer = createThinkSafeStreamer(pushVisibleChunk);
                         const reader = response.body.getReader();
@@ -11743,6 +11744,12 @@
                                     break;
                                 }
                             }
+                        }
+                        } finally {
+                            // Whatever happens above — clean finish, thrown error,
+                            // Stop button, ran out of continue rounds — the reveal
+                            // timer must not keep ticking after this attempt is done.
+                            clearInterval(revealTimer);
                         }
 
                         // If generation ended (finished normally, or was stopped

@@ -8139,6 +8139,25 @@
         function renderAIContent(targetElement, rawText, isStopped = false, originalPrompt = '', isLive = false) {
             targetElement.innerHTML = '';
 
+            // While a reply is still streaming in (live typing, OR a chat
+            // resumed after a refresh — see resumePendingGeneration —
+            // both pass isLive/isThinking through here the same way), an
+            // open code fence usually doesn't have its closing ``` yet.
+            // The tokenizer below only recognizes a code block once it
+            // sees a MATCHED pair of fences, so an unclosed one used to
+            // fall straight through to the plain-text path instead: no
+            // tray, no header, no syntax highlighting, no copy/download
+            // buttons — just a raw text dump — until the response
+            // finished. Temporarily closing it here (only for rendering;
+            // the saved/stored text is untouched) means every caller gets
+            // a properly boxed, highlighted block while it's still typing,
+            // not just the one live-stream call site that used to patch
+            // this locally.
+            if (isLive) {
+                const openFenceCount = (rawText.match(/```/g) || []).length;
+                if (openFenceCount % 2 !== 0) rawText += '\n```';
+            }
+
             // Safety net: the model is instructed to always fence code, but
             // if it forgets and sends raw, unfenced source (no ``` anywhere),
             // it would otherwise get flattened through the plain-text/markdown

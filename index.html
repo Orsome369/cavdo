@@ -1733,12 +1733,14 @@
         }
 
         .code-tray code {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 14px;
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
+            font-size: 13.5px;
+            font-variant-ligatures: none;
             color: #e6eff5;
-            line-height: 1.5;
+            line-height: 1.6;
             white-space: pre;
             display: block;
+            -webkit-font-smoothing: antialiased;
         }
 
         /* highlight.js applies its own background/padding by default —
@@ -1915,7 +1917,7 @@
         }
 
         .ai-inline-code {
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
             font-size: 13px;
             background: rgba(47, 208, 92, 0.12);
             border: 1px solid rgba(47, 208, 92, 0.22);
@@ -3568,11 +3570,12 @@
             overflow: auto;
         }
         .split-panel-view pre code {
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
             font-size: 13px;
-            line-height: 1.55;
+            line-height: 1.6;
             color: #e6eff5;
             white-space: pre;
+            -webkit-font-smoothing: antialiased;
         }
 
         @media (max-width: 860px) {
@@ -11555,32 +11558,63 @@
                         const decoder = new TextDecoder();
                         let sseBuffer = '';
 
-                        while (true) {
-                            if (abortController.signal.aborted) { try { reader.cancel(); } catch (e) {} break; }
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            sseBuffer += decoder.decode(value, { stream: true });
-                            const lines = sseBuffer.split('\n');
-                            sseBuffer = lines.pop(); // last (possibly incomplete) line stays buffered
-                            for (const line of lines) {
-                                const trimmed = line.trim();
-                                if (!trimmed.startsWith('data:')) continue;
-                                const jsonStr = trimmed.slice(5).trim();
-                                if (!jsonStr || jsonStr === '[DONE]') continue;
-                                let evt;
-                                try { evt = JSON.parse(jsonStr); } catch (e) { continue; }
-                                if (evt && evt.error) throw new Error(evt.error.message || evt.error || 'API Failure');
-                                if (usingUltimateProxy) {
-                                    const delta = evt?.choices?.[0]?.delta?.content;
-                                    if (delta) streamer.process(delta);
-                                    if (evt?.choices?.[0]?.finish_reason === 'length') truncatedByLength = true;
-                                } else {
-                                    const candidate = evt?.candidates?.[0];
-                                    const parts = candidate?.content?.parts || [];
-                                    for (const part of parts) { if (part.text) streamer.process(part.text); }
-                                    if (candidate?.groundingMetadata) groundingMetadata = candidate.groundingMetadata;
-                                    if (candidate?.finishReason === 'MAX_TOKENS') truncatedByLength = true;
+                        // The whole read loop is wrapped so that a connection drop
+                        // mid-stream (Wi-Fi hiccup, mobile network switch, the
+                        // upstream proxy resetting the socket, etc.) is handled the
+                        // same way as any other "stopped early" case instead of
+                        // blowing straight past the fence-closing/auto-continue
+                        // logic below and landing in the generic outer error
+                        // handler. Before this, reader.read() throwing was the one
+                        // path that could turn "half a reply arrived" into "the
+                        // whole message replaced by a busy-server banner" — this is
+                        // the actual mechanism behind most "response just stopped
+                        // mid-sentence" reports, not the token-limit cases the rest
+                        // of this function already handled.
+                        try {
+                            while (true) {
+                                if (abortController.signal.aborted) { try { reader.cancel(); } catch (e) {} break; }
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                sseBuffer += decoder.decode(value, { stream: true });
+                                const lines = sseBuffer.split('\n');
+                                sseBuffer = lines.pop(); // last (possibly incomplete) line stays buffered
+                                for (const line of lines) {
+                                    const trimmed = line.trim();
+                                    if (!trimmed.startsWith('data:')) continue;
+                                    const jsonStr = trimmed.slice(5).trim();
+                                    if (!jsonStr || jsonStr === '[DONE]') continue;
+                                    let evt;
+                                    try { evt = JSON.parse(jsonStr); } catch (e) { continue; }
+                                    if (evt && evt.error) throw new Error(evt.error.message || evt.error || 'API Failure');
+                                    if (usingUltimateProxy) {
+                                        const delta = evt?.choices?.[0]?.delta?.content;
+                                        if (delta) streamer.process(delta);
+                                        if (evt?.choices?.[0]?.finish_reason === 'length') truncatedByLength = true;
+                                    } else {
+                                        const candidate = evt?.candidates?.[0];
+                                        const parts = candidate?.content?.parts || [];
+                                        for (const part of parts) { if (part.text) streamer.process(part.text); }
+                                        if (candidate?.groundingMetadata) groundingMetadata = candidate.groundingMetadata;
+                                        if (candidate?.finishReason === 'MAX_TOKENS') truncatedByLength = true;
+                                    }
                                 }
+                            }
+                        } catch (readErr) {
+                            if (abortController.signal.aborted) {
+                                // User hit Stop — let the existing abort handling below take it.
+                            } else if (sawAnyOutput) {
+                                // We already have real, partial content. Treat this exactly
+                                // like a token-limit truncation: fall through to the
+                                // fence-closing + auto-continue logic below instead of
+                                // throwing the whole response away.
+                                console.warn('Cavdo: stream connection dropped mid-response, will auto-continue from what we have:', readErr);
+                                truncatedByLength = true;
+                            } else {
+                                // Nothing usable arrived at all — this is a genuine failed
+                                // attempt, so let it propagate up to the existing
+                                // key-rotation/tier-downgrade retry logic that wraps this
+                                // whole attempt loop, same as any other request failure.
+                                throw readErr;
                             }
                         }
                         streamer.finish();

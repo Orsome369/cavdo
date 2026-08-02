@@ -72,6 +72,10 @@
     <!-- Kept as a JS-controlled fallback so the in-app favicon-swapping logic (search for cavdoFavicon) still works -->
     <link rel="icon" type="image/png" id="cavdoFavicon" href="/favicon-32.png">
 
+    <!-- Syntax highlighting for code blocks in chat replies (GitHub-style colors) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
     <script>
         // ==========================================
         // 🔑 AI PROVIDER CONFIG (post key-pool removal)
@@ -1705,6 +1709,19 @@
             line-height: 1.5;
             white-space: pre;
             display: block;
+        }
+
+        /* highlight.js applies its own background/padding by default —
+           override both so the GitHub-style token colors sit on top of
+           our existing dark code-tray background instead of clashing
+           with it, and don't double up on padding (.code-tray pre
+           already has its own). */
+        .code-tray code.hljs {
+            background: transparent !important;
+            padding: 0 !important;
+        }
+        #splitPanelCodeEl.hljs {
+            background: transparent !important;
         }
 
         .zip-bundle-card {
@@ -7248,7 +7265,7 @@
             const codeEl = document.getElementById('splitPanelCodeEl');
             const urlBar = document.getElementById('splitPanelUrlBar');
             if (iframe) iframe.srcdoc = splitPanelState.previewHtml;
-            if (codeEl) codeEl.textContent = splitPanelState.code;
+            if (codeEl) { codeEl.textContent = splitPanelState.code; applySyntaxHighlight(codeEl, null); }
             if (urlBar) urlBar.textContent = splitPanelState.filename;
 
             document.body.classList.add('split-view-open');
@@ -7272,7 +7289,7 @@
             const codeEl = document.getElementById('splitPanelCodeEl');
             const urlBar = document.getElementById('splitPanelUrlBar');
             if (iframe) iframe.srcdoc = splitPanelState.code;
-            if (codeEl) codeEl.textContent = splitPanelState.code;
+            if (codeEl) { codeEl.textContent = splitPanelState.code; applySyntaxHighlight(codeEl, 'html'); }
             if (urlBar) urlBar.textContent = splitPanelState.filename;
         };
 
@@ -7377,6 +7394,31 @@
         function getCodeFileExtension(language) {
             const key = (language || '').toLowerCase().trim();
             return CODE_LANG_EXTENSIONS[key] || 'txt';
+        }
+
+        // Applies GitHub-style syntax highlighting (via highlight.js, loaded
+        // in <head>) to a code block. Most of our language tags already
+        // match hljs's own language names/aliases directly; the couple that
+        // don't (or that represent non-code content) are mapped or skipped
+        // below. Falls back to hljs's own auto-detection if the tag isn't
+        // recognized, and fails silently (plain text, no crash) if the
+        // highlight.js script hasn't loaded for any reason.
+        const HLJS_LANGUAGE_MAP = {
+            html: 'xml', code: null, text: 'plaintext', plaintext: 'plaintext'
+        };
+        function applySyntaxHighlight(codeEl, language) {
+            if (!window.hljs || !codeEl) return;
+            const key = (language || '').toLowerCase().trim();
+            const mapped = HLJS_LANGUAGE_MAP.hasOwnProperty(key) ? HLJS_LANGUAGE_MAP[key] : key;
+            try {
+                if (mapped && window.hljs.getLanguage(mapped)) {
+                    codeEl.classList.add(`language-${mapped}`);
+                }
+                window.hljs.highlightElement(codeEl);
+            } catch (e) {
+                // Never let a highlighting failure break the actual code
+                // block from rendering — worst case it just stays plain.
+            }
         }
 
         // Shared helper: trigger a real browser download from a Blob, like Gemini's file cards.
@@ -8128,6 +8170,7 @@
                             <pre><code id="${elementId}"></code></pre>
                         `;
                         tray.querySelector('code').textContent = codeContent;
+                        applySyntaxHighlight(tray.querySelector('code'), language);
                         targetElement.appendChild(tray);
 
                         if (canPreview) {

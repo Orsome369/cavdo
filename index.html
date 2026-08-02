@@ -11128,7 +11128,8 @@
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
                     if (selectedMode === 'code') {
-                        sysInstruction += " Visual quality matters as much as correctness. Whenever the request involves a UI, webpage, app, dashboard, or game (HTML/CSS/JS, or any framework), do not hand back a bare, unstyled skeleton — build something that actually looks finished: a real color palette (not browser defaults), readable typography with a deliberate font choice, sensible spacing/alignment, smooth CSS transitions or animations where they'd naturally belong (hover states, button feedback, loading/entry animations), and — for games specifically — actual visual feedback (score/state changes reflected on screen, simple particle/flash effects on key events, a styled game-over/win state) rather than only console.log or alert(). Keep all of this in plain HTML/CSS/JS (or the requested language/framework) with no external dependencies unless the user asked for a framework, and keep the code fully working and self-contained — flashy but broken is worse than plain but correct, so never sacrifice functionality for polish.";
+                        sysInstruction += " Default to a medium-sized, focused implementation: write exactly what was asked for, cleanly and completely, without padding it out with extra unrequested features, exhaustive edge-case handling, or long explanatory comments on every line. Prefer fewer, well-chosen lines over maximal ones. Only go bigger/more elaborate than that when the user's own message clearly calls for it — e.g. they explicitly ask for a 'full app', 'production-ready', 'complete/detailed', or a long list of specific features/pages, or the task genuinely cannot work correctly in a shorter form.";
+                        sysInstruction += " Visual quality still matters within that medium size. Whenever the request involves a UI, webpage, app, dashboard, or game (HTML/CSS/JS, or any framework), do not hand back a bare, unstyled skeleton — use a real color palette (not browser defaults), readable typography, sensible spacing/alignment, and a couple of simple CSS transitions where they'd naturally belong (hover states, button feedback). Don't stack on multiple animation systems, particle effects, or every possible micro-interaction unless asked — one or two tasteful touches beat many. Keep all of this in plain HTML/CSS/JS (or the requested language/framework) with no external dependencies unless the user asked for a framework, and keep the code fully working and self-contained — flashy but broken, or bloated and hard to read, is worse than plain but correct and concise.";
                     }
 
                     // Ground the model in real wall-clock time on every request — without
@@ -11210,7 +11211,7 @@
                         // implementation instead of a bare-minimum demo.
                         let attemptSysInstruction = sysInstruction;
                         if (selectedMode === 'code' && usedTier.key === 'ultimate') {
-                            attemptSysInstruction += " You are running as Cavdo Ultimate, the top tier — hold yourself to a higher bar than a quick demo. Favor a genuinely complete, production-feel implementation: think through edge cases, add small thoughtful touches (empty states, subtle micro-interactions, sensible defaults) that a careful senior developer would include without being asked, and prefer a fuller/more capable version of what was requested over the bare minimum, as long as it stays correct, self-contained, and doesn't bloat the response with unrequested extra features.";
+                            attemptSysInstruction += " You are running as Cavdo Ultimate, the top tier — hold yourself to a higher bar of correctness and code quality than a quick demo, but that means well-structured, bug-free, sensibly-named code, NOT simply more of it. Keep the same medium-sized, focused scope described above: a careful senior developer's instinct is to give exactly what was asked in clean, readable form, not to bolt on extra features, states, or interactions nobody requested. Only expand scope when the user's request itself calls for something larger.";
                         }
 
                         let endpoint, fetchBody;
@@ -11240,7 +11241,17 @@
                                 // pairs with the current-date grounding above so
                                 // "today", "latest", "current" questions are both
                                 // time-aware AND fact-current.
-                                tools: [{ google_search: {} }]
+                                tools: [{ google_search: {} }],
+                                // Without an explicit cap here, the request fell back to
+                                // whatever the model's own implicit default output limit
+                                // is — plenty for a normal chat reply, but a long code
+                                // block (plus the "polish everything" instructions this
+                                // app used to send) could burn through it and get cut off
+                                // mid-stream with no error, which is exactly what looked
+                                // like "the response just stops" and left an unclosed
+                                // code fence behind. Setting a large explicit ceiling here
+                                // means the model is never the one running out of room.
+                                generationConfig: { maxOutputTokens: 32768 }
                             });
                         }
 

@@ -6748,6 +6748,10 @@
             // consecutive 404s.
             let consecutive404s = 0;
             const MAX_404_RETRIES = 6;
+            // Companion cap for outright network/endpoint failures (fetch throwing,
+            // CORS blocked, 500s, etc.) — see the catch block in poll() below.
+            let networkFailStartedAt = null;
+            const NETWORK_FAIL_GIVEUP_MS = 90000;
 
             // -----------------------------------------------------------
             // Typewriter reveal for resumed replies.
@@ -6885,9 +6889,25 @@
                     consecutive404s = 0;
                     if (!resp.ok) throw new Error('status ' + resp.status);
                     data = await resp.json();
+                    networkFailStartedAt = null; // a good response clears any ongoing outage timer
                 } catch (e) {
-                    // Transient network hiccup while resuming — keep trying
-                    // rather than giving up on the first blip.
+                    // Transient network hiccup while resuming — keep trying rather
+                    // than giving up on the first blip. But if the endpoint is
+                    // actually down/misconfigured/CORS-blocked (not just a blip),
+                    // every retry lands here forever — with no cap this left the
+                    // UI stuck on "thinking"/"generating" indefinitely, which is
+                    // exactly the bug reported: closing the tab mid-answer and
+                    // reopening it later showed it stuck forever instead of
+                    // eventually erroring out.
+                    if (networkFailStartedAt === null) networkFailStartedAt = Date.now();
+                    if (Date.now() - networkFailStartedAt >= NETWORK_FAIL_GIVEUP_MS) {
+                        backendDone = true;
+                        backendError = targetText
+                            ? null // still show whatever partial text we'd already recovered, if any
+                            : 'Could not reach the server to check on this response — check your connection and try again.';
+                        scheduleTyping();
+                        return;
+                    }
                     setTimeout(poll, 1500);
                     return;
                 }
@@ -7908,19 +7928,61 @@
                 pageCanvas.width = canvas.width;
                 const ctx = pageCanvas.getContext('2d');
 
+                // Collect the top/bottom (in canvas-pixel space, matching the
+                // scale:2 used for html2canvas above) of every element that must
+                // never be cut in half by a page break. Without this, a page break
+                // landing mid-table-row (or mid-list-item / mid-heading) rasterized
+                // as two truncated halves on consecutive pages — that was the
+                // "glitchy table" bug in exported PDFs.
+                const wrapperRect = wrapper.getBoundingClientRect();
+                const scaleFactor = canvas.width / wrapper.offsetWidth; // matches html2canvas's actual scale
+                const atomicEls = Array.from(wrapper.querySelectorAll('tr, li, h1, h2, h3, h4, p, pre, blockquote, img'));
+                const noSplitZones = atomicEls.map(el => {
+                    const r = el.getBoundingClientRect();
+                    return {
+                        top: (r.top - wrapperRect.top) * scaleFactor,
+                        bottom: (r.bottom - wrapperRect.top) * scaleFactor
+                    };
+                }).sort((a, b) => a.top - b.top);
+
+                // If a proposed page-break height falls inside any no-split zone,
+                // pull the break back to that zone's top so the element starts
+                // fresh on the next page instead of being torn across two.
+                function snapToSafeBreak(renderedHeight, proposedBottom) {
+                    for (const zone of noSplitZones) {
+                        if (proposedBottom > zone.top + 1 && proposedBottom < zone.bottom - 1) {
+                            const snapped = zone.top;
+                            // Guard against a zero/near-zero slice (e.g. a single row
+                            // taller than a whole page) — fall back to the raw cut so
+                            // we always make forward progress and never infinite-loop.
+                            return (snapped - renderedHeight > 40) ? snapped : proposedBottom;
+                        }
+                    }
+                    return proposedBottom;
+                }
+
+                // Pass 1: work out every page's slice bounds up front, so the
+                // footer can print an accurate "Page N of totalPages" instead of
+                // an estimate that drifts once breaks start moving to avoid cuts.
+                const slices = [];
                 let renderedHeight = 0;
-                let firstPage = true;
-                let pageNum = 0;
-                const totalPages = Math.max(1, Math.ceil(canvas.height / pageHeightPx));
                 while (renderedHeight < canvas.height) {
-                    pageNum++;
-                    const sliceHeight = Math.min(pageHeightPx, canvas.height - renderedHeight);
-                    pageCanvas.height = sliceHeight;
+                    const rawBottom = Math.min(renderedHeight + pageHeightPx, canvas.height);
+                    const safeBottom = snapToSafeBreak(renderedHeight, rawBottom);
+                    slices.push({ top: renderedHeight, height: safeBottom - renderedHeight });
+                    renderedHeight = safeBottom;
+                }
+                const totalPages = slices.length;
+
+                // Pass 2: render each slice into the PDF.
+                slices.forEach((slice, idx) => {
+                    const pageNum = idx + 1;
+                    pageCanvas.height = slice.height;
                     ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-                    ctx.drawImage(canvas, 0, renderedHeight, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+                    ctx.drawImage(canvas, 0, slice.top, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
                     const imgData = pageCanvas.toDataURL('image/jpeg', 0.95);
-                    const sliceHeightPt = (sliceHeight * imgWidth) / canvas.width;
-                    if (!firstPage) pdf.addPage();
+                    const sliceHeightPt = (slice.height * imgWidth) / canvas.width;
+                    if (idx > 0) pdf.addPage();
                     pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, sliceHeightPt);
 
                     // Subtle branded footer (thin rule + Cavdo AI mark + page numbers)
@@ -7934,10 +7996,7 @@
                     pdf.text('Cavdo AI', 40, pdfHeight - 16);
                     pdf.setTextColor(150, 150, 150);
                     pdf.text(`Page ${pageNum} of ${totalPages}`, pdfWidth / 2, pdfHeight - 16, { align: 'center' });
-
-                    renderedHeight += sliceHeight;
-                    firstPage = false;
-                }
+                });
 
                 pdf.save(filename);
             } finally {
@@ -8152,7 +8211,13 @@
 
             function isTableRow(line) {
                 const trimmed = line.trim();
-                return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 1;
+                // Outer pipes are optional in standard GFM tables (e.g. "Name | Age"
+                // with no leading/trailing |). The old strict startsWith/endsWith('|')
+                // check missed that common style entirely, leaving raw "a | b | c"
+                // text on screen instead of a table — that was the main source of
+                // "glitchy" table rendering. parseTableRow() below already strips
+                // outer pipes only if present, so it works fine either way.
+                return trimmed.length > 0 && trimmed.includes('|');
             }
 
             let i = 0;

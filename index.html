@@ -165,6 +165,36 @@
             scrollbar-width: thin !important;
             scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
         }
+        /* Every throttled re-render during a live reply swaps the whole
+           message content in at once (see renderAIContent) — this fade
+           makes each of those swaps look like a smooth continuation of
+           typing instead of a hard, blocky pop-in. Kept short so it never
+           looks laggy on its own. */
+        @keyframes cavdoStreamFadeIn {
+            from { opacity: 0.35; }
+            to { opacity: 1; }
+        }
+        .text-container-node.cavdo-live-typing {
+            animation: cavdoStreamFadeIn 160ms ease-out;
+        }
+        /* Blinking cursor appended after the last character while a reply
+           is still streaming in — gives constant visual feedback that
+           generation is actively happening even between the throttled
+           re-renders (up to ~900ms apart on long replies), instead of the
+           text looking frozen/stalled in between. */
+        @keyframes cavdoCursorBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        .cavdo-typing-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            margin-left: 1px;
+            vertical-align: text-bottom;
+            background: currentColor;
+            animation: cavdoCursorBlink 850ms step-start infinite;
+        }
         .chat-container::-webkit-scrollbar {
             width: 6px !important;
             height: 6px !important;
@@ -6254,6 +6284,24 @@
             const distanceFromBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
             return distanceFromBottom < AUTO_SCROLL_NEAR_BOTTOM_PX;
         }
+
+        // Keeps the view following the newest content while a reply streams
+        // in — called on every live render tick (not just at the start/end
+        // of generation), which is what makes the magnet actually track
+        // growing text instead of only positioning once per message.
+        // Respects autoScrollDuringGeneration: if the person scrolled away
+        // on purpose, this is a no-op until the scroll listener above sees
+        // them come back near the bottom and re-arms the magnet.
+        function followScrollDuringGeneration() {
+            if (!autoScrollDuringGeneration) return;
+            const userGroups = chatWrapper.querySelectorAll('.message-group.user');
+            const lastUserGroup = userGroups[userGroups.length - 1];
+            if (!lastUserGroup) return;
+            const currentOffset = lastUserGroup.getBoundingClientRect().top - chatContainer.getBoundingClientRect().top;
+            const targetTop = Math.max(0, chatContainer.scrollTop + currentOffset - PINNED_MSG_TOP_GAP);
+            chatContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
+        }
+
         let abortController = null;
         
         let currentChatId = null;
@@ -8533,6 +8581,20 @@
                 targetElement.appendChild(fallback);
               }
             });
+
+            // Live "still typing" feedback: a fade-in on the swapped-in
+            // content (see cavdoStreamFadeIn) plus a blinking cursor at the
+            // very end of the text, so the reply visibly feels like it's
+            // continuously being typed rather than sitting frozen between
+            // the throttled re-renders that happen while streaming.
+            if (isLive) {
+                targetElement.classList.add('cavdo-live-typing');
+                const cursor = document.createElement('span');
+                cursor.className = 'cavdo-typing-cursor';
+                targetElement.appendChild(cursor);
+            } else {
+                targetElement.classList.remove('cavdo-live-typing');
+            }
 
             // Gemini-style "generated files" card: when a reply contains multiple
             // files/snippets, offer one combined ZIP download for all of them.
@@ -11450,9 +11512,9 @@
                             // one smooth stream. A max-wait fallback keeps prose replies
                             // (which have far fewer newlines than code) from feeling
                             // unresponsive while waiting for 20 lines that may never come.
-                            const renderGap = 25 + Math.min(300, Math.floor(fullText.length / 40));
-                            const MAX_FLUSH_WAIT_MS = 900;
-                            const enoughLines = linesSinceLastRender >= 20;
+                            const renderGap = 20 + Math.min(260, Math.floor(fullText.length / 45));
+                            const MAX_FLUSH_WAIT_MS = 600;
+                            const enoughLines = linesSinceLastRender >= 14;
                             const waitedTooLong = now - lastRenderAt >= MAX_FLUSH_WAIT_MS;
                             if (now - lastRenderAt < renderGap) return;
                             if (!enoughLines && !waitedTooLong) return;
@@ -11466,6 +11528,7 @@
                             if (occurrences % 2 !== 0) simulatedText += "\n```";
                             try { renderAIContent(textDiv, simulatedText, false, text, true); }
                             catch (renderErr) { console.error('Live stream render error (safe to ignore, text already saved):', renderErr); }
+                            followScrollDuringGeneration();
                         }
 
                         const streamer = createThinkSafeStreamer(pushVisibleChunk);

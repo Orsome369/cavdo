@@ -11220,6 +11220,16 @@
                             fetchBody = JSON.stringify({
                                 tier: usedTier.key,
                                 requestId,
+                                // Best-effort: if the backend proxy forwards extra
+                                // fields through to the upstream NVIDIA/OpenAI-compatible
+                                // API (most thin proxies do), this raises the response's
+                                // token ceiling so long code isn't cut off mid-stream.
+                                // NOTE: this has no effect if ultimate-chat.js on the
+                                // backend hardcodes/ignores max_tokens, or if the real
+                                // cause is the serverless function's own execution
+                                // timeout rather than a token limit — that part can only
+                                // be fixed in the backend repo, not from this file.
+                                max_tokens: 8192,
                                 messages: [
                                     { role: 'system', content: attemptSysInstruction },
                                     ...buildApiPayload(chatData.messages.slice(0, -1)).map(m => ({

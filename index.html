@@ -11385,6 +11385,11 @@
                         let sawAnyOutput = false;
                         let lastRenderAt = 0;
                         let lastPersistAt = 0;
+                        // Covers the initial stream AND every auto-continue round below —
+                        // used to keep a long, multi-round response wrapping up within a
+                        // fixed overall time budget instead of chaining continuations
+                        // indefinitely.
+                        const generationStartTime = performance.now();
 
                         function pushVisibleChunk(chunk) {
                             sawAnyOutput = true;
@@ -11477,15 +11482,23 @@
                         // splice the continuation onto fullText, repeating until the fence
                         // actually closes. This is the same trick Claude/ChatGPT use to get
                         // past a single response's token ceiling on long generations.
-                        // Capped at a handful of rounds so a genuinely broken/looping
-                        // response can't hang the chat forever.
+                        // Capped at a handful of rounds, AND at a fixed overall time
+                        // budget (see MAX_TOTAL_GENERATION_MS below) — a long response
+                        // should finish within a predictable window instead of chaining
+                        // continuations for however long the model feels like.
                         if (!abortController.signal.aborted) {
                             const CONTINUE_INSTRUCTION = "Continue exactly where you left off. Do not repeat anything you already wrote, do not restart the code, and do not add any explanation before or after — output ONLY the raw continuation text, picking back up mid-line if needed, and close the ``` code fence once the code is actually complete.";
                             let continueRounds = 0;
                             const MAX_CONTINUE_ROUNDS = 6;
+                            // Whole generation (initial stream + every continuation round)
+                            // is capped at 4.5 minutes of actual work, leaving headroom
+                            // under a 5 minute target once the final fence-close/save/
+                            // render steps below are accounted for.
+                            const MAX_TOTAL_GENERATION_MS = 4.5 * 60 * 1000;
                             while (continueRounds < MAX_CONTINUE_ROUNDS) {
                                 const openCount = (fullText.match(/```/g) || []).length;
                                 if (openCount % 2 === 0) break; // fence is closed — nothing truncated
+                                if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) break; // out of time budget
                                 continueRounds++;
                                 try {
                                     let contEndpoint, contBody;
@@ -11530,6 +11543,7 @@
                                     let gotAny = false;
                                     while (true) {
                                         if (abortController.signal.aborted) { try { contReader.cancel(); } catch (e) {} break; }
+                                        if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) { try { contReader.cancel(); } catch (e) {} break; }
                                         const { done: contDone, value: contValue } = await contReader.read();
                                         if (contDone) break;
                                         contBuffer += contDecoder.decode(contValue, { stream: true });

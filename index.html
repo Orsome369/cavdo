@@ -6778,7 +6778,7 @@
             // the person. If the saved text hasn't grown at all for a while,
             // treat it as dead instead of polling silently forever.
             // Must comfortably clear the backend's own hard ceiling
-            // (ultimate-chat.js sets maxDuration: 60) — otherwise a
+            // (ultimate-chat.js sets maxDuration: 280) — otherwise a
             // perfectly healthy Ultimate-tier generation, which can sit
             // silent for a long stretch during its reasoning pass before
             // any visible token appears, gets declared "stalled" and
@@ -11622,15 +11622,17 @@
 
                         // The two checks above (unclosed fence / finish_reason) only
                         // catch truncation when the API itself tells us about it. A
-                        // Vercel function hitting its maxDuration (60s on the Ultimate
-                        // proxy) doesn't do that — it just kills the connection, which
-                        // looks to reader.read() exactly like the stream ending
-                        // normally. That's the case that was still slipping through:
-                        // no unclosed fence, no finish_reason, just a reply that stops
-                        // dead. If we were this close to that ceiling when the stream
-                        // closed, assume it was cut off and route it through the same
-                        // auto-continue path below rather than treating it as done.
-                        if (usingUltimateProxy && !truncatedByLength && (performance.now() - generationStartTime) > 54000) {
+                        // Vercel function hitting its maxDuration (280s on the Ultimate
+                        // proxy — see the comment on handler.config in ultimate-chat.js
+                        // for why 280 and not 60) doesn't do that — it just kills the
+                        // connection, which looks to reader.read() exactly like the
+                        // stream ending normally. That's the case that was still
+                        // slipping through: no unclosed fence, no finish_reason, just a
+                        // reply that stops dead. If we were this close to that ceiling
+                        // when the stream closed, assume it was cut off and route it
+                        // through the same auto-continue path below rather than
+                        // treating it as done.
+                        if (usingUltimateProxy && !truncatedByLength && (performance.now() - generationStartTime) > 260000) {
                             truncatedByLength = true;
                             console.warn('Cavdo: near the proxy timeout with no finish_reason — assuming truncation.');
                         }
@@ -11657,10 +11659,13 @@
                             let consecutiveEmptyRounds = 0;
                             const MAX_CONTINUE_ROUNDS = 6;
                             // Whole generation (initial stream + every continuation round)
-                            // is capped at 4.5 minutes of actual work, leaving headroom
-                            // under a 5 minute target once the final fence-close/save/
-                            // render steps below are accounted for.
-                            const MAX_TOTAL_GENERATION_MS = 4.5 * 60 * 1000;
+                            // is capped at 10 minutes of actual work. This has to stay
+                            // comfortably ABOVE a single round's own ceiling (280s, see
+                            // ultimate-chat.js) or a legitimately long first round would
+                            // get killed by this budget before it even had a chance to
+                            // auto-continue — 10 minutes leaves room for a couple of
+                            // full-length rounds back to back.
+                            const MAX_TOTAL_GENERATION_MS = 10 * 60 * 1000;
                             while (continueRounds < MAX_CONTINUE_ROUNDS) {
                                 const openCount = (fullText.match(/```/g) || []).length;
                                 const fenceOpen = openCount % 2 !== 0;
@@ -11758,7 +11763,7 @@
                                         }
                                     }
                                     streamer.finish();
-                                    if (usingUltimateProxy && !truncatedByLength && (performance.now() - roundStartedAt) > 54000) {
+                                    if (usingUltimateProxy && !truncatedByLength && (performance.now() - roundStartedAt) > 260000) {
                                         truncatedByLength = true; // same silent-timeout heuristic as the initial round, applied per round
                                     }
                                     console.log(`Cavdo: auto-continue round ${continueRounds} ended. gotAny=${gotAny}, truncatedByLength=${truncatedByLength}, totalChars=${fullText.length}`);

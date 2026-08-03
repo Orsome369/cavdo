@@ -11654,6 +11654,7 @@
                         if (!abortController.signal.aborted) {
                             const CONTINUE_INSTRUCTION = "Continue exactly where you left off. Do not repeat anything you already wrote, do not restart the code, and do not add any explanation before or after — output ONLY the raw continuation text, picking back up mid-line if needed, and close the ``` code fence once the code is actually complete. If you were cut off in the middle of a markdown table row, resume with the EXACT SAME pipe-delimited table syntax and the same number of columns as the table above — do not switch to bullet points or plain text partway through a table, and do not restart the table from its header.";
                             let continueRounds = 0;
+                            let consecutiveEmptyRounds = 0;
                             const MAX_CONTINUE_ROUNDS = 6;
                             // Whole generation (initial stream + every continuation round)
                             // is capped at 4.5 minutes of actual work, leaving headroom
@@ -11710,7 +11711,10 @@
                                         body: contBody,
                                         signal: abortController.signal
                                     });
-                                    if (!contResp.ok || !contResp.body) break;
+                                    if (!contResp.ok || !contResp.body) {
+                                        console.warn(`Cavdo: auto-continue round ${continueRounds} fetch failed — status ${contResp.status}`);
+                                        break;
+                                    }
                                     const contReader = contResp.body.getReader();
                                     const contDecoder = new TextDecoder();
                                     let contBuffer = '';
@@ -11730,7 +11734,17 @@
                                             if (!cJsonStr || cJsonStr === '[DONE]') continue;
                                             let cEvt;
                                             try { cEvt = JSON.parse(cJsonStr); } catch (e) { continue; }
-                                            if (cEvt && cEvt.error) break;
+                                            if (cEvt && cEvt.error) {
+                                                // Previously this just silently `break`'d with no
+                                                // logging at all, so a real backend error (rate
+                                                // limit, payload too large, transient 5xx, etc.)
+                                                // during a continuation round was indistinguishable
+                                                // from "nothing to continue" — and either way the
+                                                // whole auto-continue chain gave up on the spot.
+                                                // Now we at least surface what actually happened.
+                                                console.warn('Cavdo: auto-continue round hit an API error, will retry if rounds remain:', cEvt.error.message || cEvt.error);
+                                                break;
+                                            }
                                             if (usingUltimateProxy) {
                                                 const cDelta = cEvt?.choices?.[0]?.delta?.content;
                                                 if (cDelta) { gotAny = true; streamer.process(cDelta); }
@@ -11748,7 +11762,21 @@
                                         truncatedByLength = true; // same silent-timeout heuristic as the initial round, applied per round
                                     }
                                     console.log(`Cavdo: auto-continue round ${continueRounds} ended. gotAny=${gotAny}, truncatedByLength=${truncatedByLength}, totalChars=${fullText.length}`);
-                                    if (!gotAny) { console.warn('Cavdo: auto-continue got an empty continuation — giving up.'); break; } // continuation produced nothing further — stop trying
+                                    if (!gotAny) {
+                                        consecutiveEmptyRounds++;
+                                        // A single empty round can just be a transient blip
+                                        // (dropped connection, momentary backend error) — worth
+                                        // one immediate retry before assuming the model/backend
+                                        // genuinely has nothing more to give. Only give up once
+                                        // two rounds IN A ROW come back empty.
+                                        console.warn(`Cavdo: auto-continue round ${continueRounds} came back empty (${consecutiveEmptyRounds} in a row).`);
+                                        if (consecutiveEmptyRounds >= 2) {
+                                            console.warn('Cavdo: two consecutive empty continuations — giving up.');
+                                            break;
+                                        }
+                                    } else {
+                                        consecutiveEmptyRounds = 0;
+                                    }
                                 } catch (contErr) {
                                     console.error('Auto-continue of truncated response failed, keeping partial content:', contErr);
                                     break;

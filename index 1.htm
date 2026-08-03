@@ -5573,18 +5573,44 @@
 
                 } else {
                     let sysInstruction = (selectedMode === 'code') 
-                        ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
+                        ? "You are a senior developer inside Cavdo AI. Write like a sharp, experienced engineer, not a code generator maximizing output: the shortest correct, clean implementation always beats a longer one that does the same job. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
+
+                    if (selectedMode === 'code') {
+                        sysInstruction += " Default to the shortest correct implementation instead of always maxing length out: a small, single-purpose ask (one component, one function, one script) should usually land around 40-120 lines; a real page/app/dashboard with a handful of features should usually land around 150-350 lines; only go up toward ~600 lines when the user explicitly asks for a full/production/complete/multi-feature app or names a long list of specific features — and even then every added line must do real work. Treat these as ceilings to stay under, not targets to hit. Never pad with: comments that just restate what the code obviously does, defensive/try-catch handling for cases that can't occur here, unused helper functions or config options nobody asked for, wrapper abstractions around something that's only used once, or boilerplate left over from a template. If you can delete a line without changing behavior or readability, delete it. Prioritize readable, idiomatic code over clever code, but never over long code.";
+                        sysInstruction += " Visual quality always matters — never hand back a bare, unstyled skeleton. Whenever the request involves a UI, webpage, app, dashboard, or game (HTML/CSS/JS, or any framework), build something that actually looks finished: a real deliberate color palette (not browser defaults), good typography, sensible spacing/alignment, and smooth CSS transitions/animations where they naturally belong (hover states, button feedback, entry animations) — for games specifically, include real visual feedback (score/state on screen, simple effects on key events, a styled win/game-over state) rather than console.log or alert(). Make it genuinely nice to look at and use. The only thing to avoid is unrequested extra FEATURES (new pages, settings panels, extra modes nobody asked for) — polish and visual craft on what was actually requested is not bloat, it's the bar. Keep everything self-contained (no external dependencies unless a framework was requested) and fully working — never sacrifice correctness for looks.";
+                    }
+
+                    // Ground the model in real wall-clock time on every request — without
+                    // this, the model only knows its training cutoff and will misjudge
+                    // "current", "latest", "today", how old something is, days-until-date
+                    // math, etc. Include weekday + timezone so relative-date reasoning
+                    // ("this Friday", "next month") is unambiguous too.
+                    const cavdoNow = new Date();
+                    const cavdoNowStr = cavdoNow.toLocaleString(undefined, {
+                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+                    });
+                    sysInstruction += ` The current real-world date and time is ${cavdoNowStr}. Treat this as ground truth for anything involving "today", "now", "current", "latest", ages, deadlines, or how much time has passed — it overrides whatever date your own training data suggests.`;
+
+                    sysInstruction += " Outside of fenced code blocks, never write raw HTML tags like <br>, <br/>, <p>, or <div> in your reply text — this app renders your prose as plain markdown, not as live HTML, so a tag like that shows up as ugly literal text on screen instead of doing what it looks like it should do. For a line break, just start a new line; for a paragraph break, leave a blank line between paragraphs — that's all markdown needs.";
 
                     sysInstruction += " If the user's message is just a simple greeting or small talk (e.g. 'hi', 'hello', 'hey', 'good morning', 'how are you') with no actual request in it, reply with a short, warm, natural greeting back and nothing else. Do NOT list your capabilities, do NOT say what you can or cannot make/do/generate, and do NOT mention images, code, PDFs, or any other feature unless the user actually asked about it.";
 
-                    sysInstruction += " Every fenced code block you output automatically becomes a real downloadable file in the UI (with copy and download buttons), so always wrap generated documents, scripts, or data in a markdown code fence with an accurate language tag right after the opening ``` (e.g. ```python, ```html, ```json, etc). Only use ```pdf, ```docx, or ```pptx when the user has explicitly asked for that document type (e.g. 'make a PDF for X', 'give me this as a Word doc', 'make a presentation/slides about Y') — each renders as a single 'ready to download' line that turns the content into a real .pdf, .docx, or .pptx file when clicked, with proper headings, bold text, bullet lists and tables (not literal ** or # symbols). Inside a ```pdf or ```docx block, write normal markdown: use '# Title', '## Heading', '**bold**', '*italic*', '- bullet' or '1. numbered' lists, and pipe tables — these render as real formatted headings/bold/lists/tables in the exported file. Inside a ```pptx block, start each slide with a '# ' or '## ' heading (the slide title) followed by '- ' bullet lines for that slide's content, separating slides with '---' if you need a divider without a new heading. Do not use ```pdf/```docx/```pptx for ordinary code or text the user didn't ask to receive as a document.";
+                    sysInstruction += " Every fenced code block you output automatically becomes a real downloadable file in the UI (with copy and download buttons), so always wrap generated documents, scripts, or data in a markdown code fence with an accurate language tag right after the opening ``` (e.g. ```python, ```html, ```json, etc). Only use ```pdf, ```docx, or ```pptx when the user has explicitly asked for that document type (e.g. 'make a PDF for X', 'give me this as a Word doc', 'make a presentation/slides about Y') — each renders as a single 'ready to download' line that turns the content into a real .pdf, .docx, or .pptx file when clicked, with proper headings, bold text, bullet lists and tables (not literal ** or # symbols). Inside a ```pdf or ```docx block, write normal markdown: use '# Title', '## Heading', '**bold**', '*italic*', '- bullet' or '1. numbered' lists, and pipe tables — these render as real formatted headings/bold/lists/tables in the exported file. Inside a ```pptx block, start each slide with a '# ' or '## ' heading (the slide title) followed by '- ' bullet lines for that slide's content, separating slides with '---' if you need a divider without a new heading. Do not use ```pdf/```docx/```pptx for ordinary code or text the user didn't ask to receive as a document. Default to plain prose or a plain ```markdown fence for normal answers, explanations, summaries, lists, and reports — do NOT proactively offer or create a pdf/docx/pptx 'just in case' it's useful, and do not create one because the content is long or looks like a report; wait for the user to actually ask. For example, if the user asks 'write me a report on X' with no mention of a file format, answer in plain markdown, not a ```pdf or ```docx block — only switch to one of those if they follow up with something like 'make that a PDF' or 'as a Word doc'.";
 
                     sysInstruction += " ZIP requests: whenever the user asks you to zip, bundle, combine, package, or 'compress' files — whether those are files they just uploaded as attachments, files/code you generated earlier in this conversation, or brand new files you're writing now — respond with a SINGLE ```zip fenced code block containing a JSON array manifest: [{\"name\": \"path/file.ext\", \"content\": \"...full file content...\"}, ...]. Include the COMPLETE, exact content of every file being zipped (never truncate, summarize, or use placeholders like '...'). If the user says something like 'zip these two files' after uploading two attachments, reuse each attachment's full content verbatim as its own entry. If the user says 'zip that code' or 'zip what you just made' referring to something earlier in the conversation, pull the exact content of that earlier code block/file and put it in the manifest. Give each entry a sensible filename with extension. Do not wrap the zip block in any other code fence or explanation text around the JSON. Separately: when an ordinary (non-zip) reply contains multiple generated files/snippets, the UI automatically also offers a combined ZIP download for all of them — no action needed from you for that case.";
+
+                    sysInstruction += " Math and calculations: you can and should solve ANY math question fully — arithmetic, algebra, geometry, trigonometry, calculus, statistics, word problems, unit conversions, etc. Always show clear step-by-step working before the final answer, and double-check every calculation before giving it. This app has NO LaTeX or MathJax renderer, so never use LaTeX/TeX math syntax or dollar-sign math delimiters, and never use backslash commands such as frac, sqrt, or times — that would show up as broken raw text instead of a formula. Instead write math in plain text using real Unicode characters: superscripts like x², x³, xⁿ; roots like √x or ³√x; and symbols like π, ×, ÷, ±, ≈, ≠, ≤, ≥, °, ∞, Σ, Δ where natural. Write fractions as 'a/b' with a short explanation instead of a stacked fraction command. Use plain markdown (headings, bold, numbered steps) to structure the solution, exactly like the rest of your answers.";
 
                     const hasAttachedFile = chatData.messages.some(m => m.fileText || (Array.isArray(m.files) && m.files.some(f => f.textContent)));
                     if (hasAttachedFile) {
                         sysInstruction += " The conversation history includes one or more file attachments marked '[Context File Attachment: <filename>]' followed by their full content — a single message may include several such attachments if the user uploaded multiple files at once. Remember this content for the rest of the conversation. If the user later asks you to 'edit that file', 'edit the file', or refers to 'that file' without re-uploading it, use the most recently attached file's content as the source of truth and return the complete, fully edited file content in a single markdown code fence, preserving the original structure and format unless told otherwise.";
+                    }
+
+                    const hasAttachedVideo = chatData.messages.some(m => Array.isArray(m.files) && m.files.some(f => f.isVideo));
+                    if (hasAttachedVideo) {
+                        sysInstruction += " The user has attached one or more video files. You can actually see and hear the video's real content (visual frames over time plus any audio) — don't just acknowledge that a video was received, and never say you 'can't view videos'. Watch it closely and respond to what is actually happening in it. Most of the time a user attaches a video because something is going wrong and they want help — a bug, an error message, a crash, a device or app misbehaving, a broken product, an unexpected sound, etc. In that case act like a support engineer who was just handed a screen recording: describe specifically what you observed going wrong (what appears on screen, what action triggered it, at roughly what point in the video), explain the most likely cause, and give clear, concrete troubleshooting steps or a fix — as if the user is genuinely stuck on a problem shown in the clip. If the video isn't about a problem, just describe what happens in it and answer whatever the user actually asked. Reference concrete details from the footage (what's visible, what's said, what changes) rather than vague generalities, so it's clear you actually watched it.";
                     }
 
                     let aiText = null;
@@ -5628,16 +5654,72 @@
 
                         if (responseData && responseData.error) throw new Error(responseData.error.message || "API Failure");
 
-                        // Get the full response in one shot, THEN fake-type it —
-                        // this is the reliable approach the earlier version of
-                        // this app used. No live SSE parsing, no risk of a
-                        // <think> block being displayed and then swapped out
-                        // partway through — the raw text is cleaned up front,
-                        // and only the clean, final answer ever gets typed.
-                        const rawParts = responseData?.candidates?.[0]?.content?.parts || [];
-                        let rawText = '';
-                        for (const part of rawParts) { if (part.text) rawText += part.text; }
+                        // This call never sets maxOutputTokens, so it runs on
+                        // whatever ceiling the model itself defaults to — which a
+                        // sufficiently long answer (a big explanation, a large
+                        // file) can still hit. Nothing here used to check for
+                        // that: the reply was taken as final no matter what, so
+                        // a genuine token-limit cutoff looked identical to a
+                        // normal finished answer — it just silently stopped
+                        // mid-sentence. This loop keeps asking the model to
+                        // continue, in the same non-streaming request/response
+                        // style as the rest of this function, until it actually
+                        // finishes or a safety cap is hit, then the FULL
+                        // concatenated text gets fake-typed once at the end
+                        // exactly like before.
+                        let combinedText = '';
+                        const firstParts = responseData?.candidates?.[0]?.content?.parts || [];
+                        for (const part of firstParts) { if (part.text) combinedText += part.text; }
+                        let lastFinishReason = responseData?.candidates?.[0]?.finishReason || null;
 
+                        const CONTINUE_ROUND_LIMIT = 6;
+                        const generationStartedAt = Date.now();
+                        const GENERATION_TIME_BUDGET_MS = 50000; // stay well under typical serverless/browser request ceilings
+                        let continueRounds = 0;
+                        while (lastFinishReason === 'MAX_TOKENS' && continueRounds < CONTINUE_ROUND_LIMIT && (Date.now() - generationStartedAt) < GENERATION_TIME_BUDGET_MS) {
+                            continueRounds++;
+                            const continuePayload = [
+                                ...buildApiPayload(chatData.messages.slice(0, -1)),
+                                { role: 'model', parts: [{ text: combinedText }] },
+                                { role: 'user', parts: [{ text: "Continue your previous answer exactly from where it left off. Do not repeat any earlier text, do not restart, and do not add any preamble like 'continuing' — just output the next part seamlessly, as if it were one uninterrupted reply." }] }
+                            ];
+                            let contResp;
+                            try {
+                                contResp = await fetch(endpoint, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        systemInstruction: { parts: [{ text: sysInstruction }] },
+                                        contents: continuePayload
+                                    }),
+                                    signal: abortController.signal
+                                });
+                            } catch (contFetchErr) {
+                                break; // network hiccup mid-continuation — keep what we already have rather than losing it
+                            }
+                            if (!contResp.ok) break;
+                            let contData = null;
+                            try { contData = await contResp.json(); } catch (e) {
+                                try { contData = JSON.parse(await contResp.text()); } catch (e2) {}
+                            }
+                            if (!contData || contData.error) break;
+                            const contParts = contData?.candidates?.[0]?.content?.parts || [];
+                            let contText = '';
+                            for (const part of contParts) { if (part.text) contText += part.text; }
+                            if (!contText) break; // nothing further came back — stop rather than loop forever
+                            combinedText += contText;
+                            lastFinishReason = contData?.candidates?.[0]?.finishReason || null;
+                        }
+
+                        const rawText = combinedText;
+
+                        // Get the full (now possibly multi-round) response, THEN
+                        // fake-type it — this is the reliable approach the
+                        // earlier version of this app used. No live SSE parsing,
+                        // no risk of a <think> block being displayed and then
+                        // swapped out partway through — the raw text is cleaned
+                        // up front, and only the clean, final answer ever gets
+                        // typed.
                         aiText = await typeOutFullReply(rawText, requestContextChatId, aiMsgIndex, internalThinkingInterval, text);
                         break;
                     }

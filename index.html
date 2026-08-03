@@ -11632,7 +11632,12 @@
                         // auto-continue path below rather than treating it as done.
                         if (usingUltimateProxy && !truncatedByLength && (performance.now() - generationStartTime) > 54000) {
                             truncatedByLength = true;
+                            console.warn('Cavdo: near the proxy timeout with no finish_reason — assuming truncation.');
                         }
+                        // Visibility: log exactly what the stream told us, every time,
+                        // so "response stopped and nothing showed in console" can never
+                        // happen again — this fires whether or not truncation is detected.
+                        console.log(`Cavdo: initial stream ended. truncatedByLength=${truncatedByLength}, fenceOpen=${(fullText.match(/\`\`\`/g)||[]).length % 2 !== 0}, chars=${fullText.length}`);
 
                         // If the stream ended naturally (not via the Stop button) with a
                         // ``` fence still open, the model was cut off mid-code by its own
@@ -11647,7 +11652,7 @@
                         // should finish within a predictable window instead of chaining
                         // continuations for however long the model feels like.
                         if (!abortController.signal.aborted) {
-                            const CONTINUE_INSTRUCTION = "Continue exactly where you left off. Do not repeat anything you already wrote, do not restart the code, and do not add any explanation before or after — output ONLY the raw continuation text, picking back up mid-line if needed, and close the ``` code fence once the code is actually complete.";
+                            const CONTINUE_INSTRUCTION = "Continue exactly where you left off. Do not repeat anything you already wrote, do not restart the code, and do not add any explanation before or after — output ONLY the raw continuation text, picking back up mid-line if needed, and close the ``` code fence once the code is actually complete. If you were cut off in the middle of a markdown table row, resume with the EXACT SAME pipe-delimited table syntax and the same number of columns as the table above — do not switch to bullet points or plain text partway through a table, and do not restart the table from its header.";
                             let continueRounds = 0;
                             const MAX_CONTINUE_ROUNDS = 6;
                             // Whole generation (initial stream + every continuation round)
@@ -11659,8 +11664,12 @@
                                 const openCount = (fullText.match(/```/g) || []).length;
                                 const fenceOpen = openCount % 2 !== 0;
                                 if (!fenceOpen && !truncatedByLength) break; // fence closed AND API says it finished normally — nothing truncated
-                                if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) break; // out of time budget
+                                if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) {
+                                    console.warn('Cavdo: auto-continue stopped — hit MAX_TOTAL_GENERATION_MS time budget.');
+                                    break;
+                                }
                                 continueRounds++;
+                                console.log(`Cavdo: auto-continue round ${continueRounds}/${MAX_CONTINUE_ROUNDS} starting (fenceOpen=${fenceOpen}, truncatedByLength=${truncatedByLength}).`);
                                 // Re-armed per round: only the CURRENT round's response
                                 // decides whether another continuation is needed next.
                                 truncatedByLength = false;
@@ -11738,7 +11747,8 @@
                                     if (usingUltimateProxy && !truncatedByLength && (performance.now() - roundStartedAt) > 54000) {
                                         truncatedByLength = true; // same silent-timeout heuristic as the initial round, applied per round
                                     }
-                                    if (!gotAny) break; // continuation produced nothing further — stop trying
+                                    console.log(`Cavdo: auto-continue round ${continueRounds} ended. gotAny=${gotAny}, truncatedByLength=${truncatedByLength}, totalChars=${fullText.length}`);
+                                    if (!gotAny) { console.warn('Cavdo: auto-continue got an empty continuation — giving up.'); break; } // continuation produced nothing further — stop trying
                                 } catch (contErr) {
                                     console.error('Auto-continue of truncated response failed, keeping partial content:', contErr);
                                     break;

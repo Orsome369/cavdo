@@ -3332,6 +3332,12 @@
         /* ---- Faded "step trace" list (Claude-style inner steps) ---- */
         .ai-steps-trace {
             margin: 2px 0 12px;
+            /* .thinking-status-text (the parent while live) sets italic +
+               a blinking opacity animation for its old plain-text state —
+               neither should carry into the row/icon layout in here. */
+            font-style: normal;
+            animation: none;
+            opacity: 1;
         }
         .ai-steps-trace-toggle {
             display: inline-flex;
@@ -11328,8 +11334,17 @@
                         const traceEl = buildStepsTraceEl(steps, { live: true });
                         const activeItem = traceEl.querySelector('.ai-steps-trace-item.active');
                         if (activeItem) {
-                            const dots = '.'.repeat((dotsTick % 3) + 1);
-                            activeItem.textContent = steps[steps.length - 1] + dots;
+                            // Update only the text span, not the whole row — setting
+                            // .textContent on activeItem itself would wipe out the
+                            // icon badge it was just built with, collapsing the row
+                            // back down to plain text (this was the actual bug behind
+                            // the "just italic text" look; the row/icon markup was
+                            // always there, this line was destroying it every tick).
+                            const activeTextEl = activeItem.querySelector('.ai-steps-trace-item-text');
+                            if (activeTextEl) {
+                                const dots = '.'.repeat((dotsTick % 3) + 1);
+                                activeTextEl.textContent = steps[steps.length - 1] + dots;
+                            }
                         }
                         targetNode.appendChild(traceEl);
                     }
@@ -11558,6 +11573,12 @@
                     // before rotating away from it, so a one-off blip doesn't
                     // end the whole reply on the spot.
                     let emptyStreamRetriesThisTier = 0;
+                    // Same idea for a non-OK response from the Ultimate/Speed/
+                    // Lite proxy (a 5xx, a cold-start timeout, a dropped
+                    // connection to the backend) — retried in place before
+                    // falling back to the next tier, instead of ending the
+                    // whole reply on the very first hiccup.
+                    let proxyErrorRetriesThisTier = 0;
 
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
                         const usedTier = getActiveTier();
@@ -11661,6 +11682,35 @@
                         if (!response.ok) {
                             if (usingUltimateProxy) {
                                 const errMsg = responseData ? [responseData.error, responseData.detail].filter(Boolean).join(': ') : '';
+                                // A single non-OK response from our own backend proxy
+                                // (cold start, a momentary 5xx, an upstream hiccup) used
+                                // to throw straight out of this whole loop with zero
+                                // retry — every other failure path in this function
+                                // rotates keys/tiers before giving up, this was the one
+                                // silent exception, and it's the main thing that made
+                                // ordinary transient errors feel like hard failures.
+                                // Retry the same tier a couple of times first (status
+                                // 5xx / 429 are worth it — a 4xx like bad-request
+                                // usually isn't, so don't bother retrying those), then
+                                // fall back to the next tier before finally giving up.
+                                const retryableStatus = response.status >= 500 || response.status === 429 || response.status === 408;
+                                if (retryableStatus && proxyErrorRetriesThisTier < 2) {
+                                    proxyErrorRetriesThisTier++;
+                                    console.warn(`Cavdo: ${usedTier.label} request failed (${response.status}), retry ${proxyErrorRetriesThisTier}/2 on this tier:`, errMsg);
+                                    await new Promise(r => setTimeout(r, 900 * proxyErrorRetriesThisTier));
+                                    continue;
+                                }
+                                const nextTier = downgradeAfterLimit();
+                                if (nextTier) {
+                                    proxyErrorRetriesThisTier = 0;
+                                    emptyStreamRetriesThisTier = 0;
+                                    const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                                    if (switchChat) {
+                                        switchChat.messages[aiMsgIndex].text = `✨ ${usedTier.label} had an issue — switching to ${nextTier.label}, thinking`;
+                                        localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
+                                    }
+                                    continue;
+                                }
                                 throw new Error(errMsg || `Ultimate model request failed (${response.status})`);
                             }
                             // 403 "denied access" means that particular key's project is

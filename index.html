@@ -11195,6 +11195,30 @@
             setGeneratingState(true);
             abortController = new AbortController();
 
+            // Extra steps that can trickle in on an unusually long generation,
+            // after all 4 canned phrases have already been shown — so a slow
+            // response doesn't just sit frozen on "Double-checking syntax" for
+            // 20+ seconds with nothing new happening.
+            const EXTRA_THINKING_FILLERS = (selectedMode === 'image')
+                ? ['✨ Finalizing the image', '✨ Adding the final touches']
+                : (selectedMode === 'code')
+                    ? ['✨ Refining edge cases', '✨ Cleaning up the output', '✨ Finalizing the file']
+                    : ['✨ Refining the answer', '✨ Adding a few more details', '✨ Wrapping up'];
+
+            // Ticks run on a fixed clock, but steps are deliberately NOT
+            // revealed one-per-tick — real generation is uneven (a pause while
+            // the model "thinks", then a burst of output), so spacing all 4
+            // canned phrases evenly at a fast rate made the whole trace finish
+            // in ~2 seconds and then sit frozen on the last line for the rest
+            // of a much longer generation. This schedule spaces them out over
+            // roughly the first ~6-7 seconds instead, which reads as far more
+            // realistic, then hands off to the filler list above for anything
+            // longer than that.
+            const TICK_MS = 700;
+            const stepScheduleTicks = [2, 5, 9]; // ~1.4s, ~3.5s, ~6.3s in
+            const EXTRA_FILLER_EVERY_TICKS = 7; // ~4.9s apart from each other
+            let tickCount = 0;
+            let extraFillerIdx = 0;
             let thinkingPhraseIdx = 0;
             let dotsTick = 0;
             let internalThinkingInterval = setInterval(() => {
@@ -11206,18 +11230,26 @@
                 const msgRef = innerChat.messages[aiMsgIndex];
                 if (!msgRef || !msgRef.isThinking) return;
 
+                tickCount++;
                 dotsTick++;
-                // Advance to the next canned phrase — but never loop back once
-                // every phrase has been shown, so the step trace grows a fixed,
-                // sensible list instead of repeating the same step forever on a
-                // slow response. Once exhausted, only the dots on the last step
-                // keep animating.
-                if (thinkingPhraseIdx < thinkingPhrases.length - 1) {
+                let addedNewStep = false;
+
+                if (thinkingPhraseIdx < thinkingPhrases.length - 1 && tickCount >= stepScheduleTicks[thinkingPhraseIdx]) {
                     thinkingPhraseIdx++;
                     if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
                     msgRef.steps.push(thinkingPhrases[thinkingPhraseIdx].replace(/^✨\s*/, ''));
-                    localStorage.setItem(requestContextChatId, JSON.stringify(innerChat));
+                    addedNewStep = true;
+                } else if (
+                    thinkingPhraseIdx === thinkingPhrases.length - 1 &&
+                    extraFillerIdx < EXTRA_THINKING_FILLERS.length &&
+                    tickCount >= stepScheduleTicks[stepScheduleTicks.length - 1] + (extraFillerIdx + 1) * EXTRA_FILLER_EVERY_TICKS
+                ) {
+                    if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
+                    msgRef.steps.push(EXTRA_THINKING_FILLERS[extraFillerIdx].replace(/^✨\s*/, ''));
+                    extraFillerIdx++;
+                    addedNewStep = true;
                 }
+                if (addedNewStep) localStorage.setItem(requestContextChatId, JSON.stringify(innerChat));
 
                 if (currentChatId === requestContextChatId) {
                     const targetNode = getLastMessageNode()?.querySelector('.text-container-node');
@@ -11239,7 +11271,7 @@
                         targetNode.appendChild(traceEl);
                     }
                 }
-            }, 550);
+            }, TICK_MS);
 
 
             try {

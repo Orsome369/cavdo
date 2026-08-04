@@ -3329,9 +3329,9 @@
             50% { opacity: 0.95; }
         }
 
-        /* ---- "Step trace" list (Claude-style tool/step rows: icon + label) ---- */
+        /* ---- Faded "step trace" list (Claude-style inner steps) ---- */
         .ai-steps-trace {
-            margin: 2px 0 10px;
+            margin: 2px 0 12px;
         }
         .ai-steps-trace-toggle {
             display: inline-flex;
@@ -3365,55 +3365,65 @@
         }
         .ai-steps-trace-list {
             flex-direction: column;
-            gap: 1px;
+            position: relative;
             margin-top: 6px;
-            border-left: 2px solid rgba(255, 255, 255, 0.08);
-            padding-left: 10px;
         }
-        .ai-steps-trace.live .ai-steps-trace-list {
-            margin-top: 0;
+        /* Connecting line runs through the center of each icon badge */
+        .ai-steps-trace-list::before {
+            content: '';
+            position: absolute;
+            left: 11px;
+            top: 18px;
+            bottom: 18px;
+            width: 1px;
+            background: rgba(255, 255, 255, 0.12);
         }
         .ai-steps-trace-item {
+            position: relative;
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 12.5px;
-            font-style: normal;
-            line-height: 1.4;
-            color: rgba(255, 255, 255, 0.4);
-            padding: 4px 6px;
-            border-radius: 6px;
-            transition: color 0.15s ease, background 0.15s ease;
+            gap: 10px;
+            padding: 4px 2px;
+            border-radius: 8px;
+            transition: background 0.15s ease;
         }
         .ai-steps-trace-item-icon {
+            position: relative;
+            z-index: 1;
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            border-radius: 7px;
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 16px;
-            height: 16px;
-            flex-shrink: 0;
-            color: rgba(255, 255, 255, 0.32);
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.4);
+            transition: background 0.2s ease, color 0.2s ease;
         }
         .ai-steps-trace-item-icon svg {
-            width: 13px;
-            height: 13px;
-            display: block;
+            width: 12px;
+            height: 12px;
         }
-        .ai-steps-trace-item-label {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .ai-steps-trace-item.active {
-            color: rgba(255, 255, 255, 0.85);
-            background: rgba(255, 255, 255, 0.04);
+        .ai-steps-trace-item-text {
+            font-size: 12.5px;
+            line-height: 1.4;
+            color: rgba(255, 255, 255, 0.4);
+            transition: color 0.2s ease;
         }
         .ai-steps-trace-item.active .ai-steps-trace-item-icon {
+            background: rgba(47, 208, 92, 0.16);
             color: #2fd05c;
             animation: docSpinPulse 1.1s ease-in-out infinite;
         }
-        .ai-steps-trace-item.active .ai-steps-trace-item-icon.spin svg {
-            animation: cavdo-spin 0.9s linear infinite;
+        .ai-steps-trace-item.active .ai-steps-trace-item-text {
+            color: rgba(255, 255, 255, 0.8);
+        }
+        .ai-steps-trace-item.done .ai-steps-trace-item-icon {
+            color: rgba(255, 255, 255, 0.55);
+        }
+        .ai-steps-trace.live .ai-steps-trace-list {
+            margin-top: 2px;
         }
 
         /* ---- Logo animation shown next to the "thinking" text (no wrapping container) ---- */
@@ -8489,37 +8499,46 @@
             return null;
         }
 
-        // Builds the small, faded "step trace" shown above a reply — modeled on
-        // Claude's collapsed thinking/step list. While live (still generating),
-        // it renders every step reached so far as a connected vertical list with
-        // the current one highlighted and animated. Once finished, it collapses
-        // down to a single clickable summary line ("Thought through N steps")
-        // that expands to show the same list on demand.
-        // Small keyword → icon map so each row gets an icon that actually
-        // matches what that step was doing (search vs. read vs. reasoning
-        // vs. wrap-up), instead of every step looking identical. Falls back
-        // to a generic "activity" dot icon for anything unmatched.
-        const STEP_ICON_RULES = [
-            { test: /search|look|source|checking|research/i, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' },
-            { test: /image|photo|picture|visual/i, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>' },
-            { test: /read|message|context/i, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>' },
-            { test: /structur|think|reason|plan/i, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M12 2a7 7 0 0 0-4 12.75V17h8v-2.25A7 7 0 0 0 12 2z"></path></svg>' },
-            { test: /polish|almost|final|done/i, svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' }
-        ];
-        const STEP_ICON_LOADER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 10 10"></path></svg>';
-        const STEP_ICON_DEFAULT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle></svg>';
-        function stepIconSvg(stepText) {
-            const rule = STEP_ICON_RULES.find(r => r.test.test(stepText || ''));
-            return rule ? rule.svg : STEP_ICON_DEFAULT;
+        // Icon set for the step trace (feather-style, matches the rest of the
+        // UI's stroke icons). Picked per-step by keyword so each row gets a
+        // badge that actually reflects what that step was doing, instead of
+        // a plain dot — mirrors how Claude's own step list uses a different
+        // glyph per action type (search vs. write vs. check, etc).
+        const AI_STEP_ICONS = {
+            search: '<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>',
+            file: '<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline>',
+            edit: '<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path>',
+            code: '<polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>',
+            check: '<polyline points="20 6 9 17 4 12"></polyline>',
+            plan: '<line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>',
+            think: '<path d="M9.09 9a3 3 0 1 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line><circle cx="12" cy="12" r="10"></circle>',
+            build: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"></path>',
+            fix: '<path d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
+            data: '<ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>',
+            zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>'
+        };
+        function pickAiStepIcon(stepText) {
+            const t = (stepText || '').toLowerCase();
+            if (/\b(search|look(ing)? up|research|grounding|browsing)\b/.test(t)) return AI_STEP_ICONS.search;
+            if (/\b(read|reading|open(ing)? file|attach(ment|ed))\b/.test(t)) return AI_STEP_ICONS.file;
+            if (/\b(edit|editing|revis|adjust|refin|updat)\b/.test(t)) return AI_STEP_ICONS.edit;
+            if (/\b(fix|fixing|debug|error|bug)\b/.test(t)) return AI_STEP_ICONS.fix;
+            if (/\b(check|verify|review|confirm|validat)\b/.test(t)) return AI_STEP_ICONS.check;
+            if (/\b(plan|planning|outline|structur|step)\b/.test(t)) return AI_STEP_ICONS.plan;
+            if (/\b(data|numbers|calculat|analy)\b/.test(t)) return AI_STEP_ICONS.data;
+            if (/\b(code|coding|function|script|implement)\b/.test(t)) return AI_STEP_ICONS.code;
+            if (/\b(build|creat|generat|writ(e|ing) (the|a) (reply|response|answer))\b/.test(t)) return AI_STEP_ICONS.build;
+            if (/\b(think|consider|reason|weigh)\b/.test(t)) return AI_STEP_ICONS.think;
+            return AI_STEP_ICONS.zap;
         }
 
-        // Builds the same kind of collapsed "trace" Claude shows above a
-        // reply — a list of the steps taken, each on its own row with an
-        // icon that matches what that step actually did. While live (still
-        // generating), the current step gets a spinning icon and stays
-        // highlighted; once finished, it collapses to a single clickable
-        // "Thought through N steps" summary that expands the same rows on
-        // demand.
+        // Builds the small, faded "step trace" shown above a reply — modeled on
+        // Claude's collapsed thinking/step list: a clean vertical row layout
+        // with a per-step icon badge (not just a plain dot), connected by a
+        // thin line. While live (still generating), it renders every step
+        // reached so far with the current one highlighted and animated. Once
+        // finished, it collapses down to a single clickable summary line
+        // ("Thought through N steps") that expands to show the same list.
         function buildStepsTraceEl(steps, opts) {
             opts = opts || {};
             const live = !!opts.live;
@@ -8541,18 +8560,18 @@
             steps.forEach((step, i) => {
                 const isActive = live && i === steps.length - 1;
                 const item = document.createElement('div');
-                item.className = 'ai-steps-trace-item' + (isActive ? ' active' : '');
+                item.className = 'ai-steps-trace-item' + (isActive ? ' active' : (live ? ' done' : ''));
 
                 const icon = document.createElement('span');
-                icon.className = 'ai-steps-trace-item-icon' + (isActive ? ' spin' : '');
-                icon.innerHTML = isActive ? STEP_ICON_LOADER : stepIconSvg(step);
+                icon.className = 'ai-steps-trace-item-icon';
+                icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${isActive ? AI_STEP_ICONS.zap : pickAiStepIcon(step)}</svg>`;
 
-                const label = document.createElement('span');
-                label.className = 'ai-steps-trace-item-label';
-                label.textContent = step;
+                const text = document.createElement('span');
+                text.className = 'ai-steps-trace-item-text';
+                text.textContent = step;
 
                 item.appendChild(icon);
-                item.appendChild(label);
+                item.appendChild(text);
                 list.appendChild(item);
             });
             wrap.appendChild(list);
@@ -11522,15 +11541,7 @@
                     // key attempt per tier — this only sweeps across MODEL_TIERS
                     // (e.g. Ultimate -> Speed -> Lite fallback on a limit), same as
                     // downgradeAfterLimit() already implements below.
-                    // +2 spare attempts on top of one per tier: our own backend
-                    // (the NVIDIA proxy behind Ultimate/Speed/Lite) occasionally
-                    // hiccups with a transient 5xx/timeout that has nothing to do
-                    // with quota — those get a couple of quick, invisible retries
-                    // (see "isTransientBackendError" below) before we ever fall
-                    // back a tier or show the user anything, instead of surfacing
-                    // a raw error on the very first blip.
-                    const maxAttempts = MODEL_TIERS.length + 2;
-                    let transientBackendRetries = 0;
+                    const maxAttempts = MODEL_TIERS.length;
                     // Keys tried against the *current* tier — resets every time we
                     // move to a different tier, so each tier gets its own full sweep
                     // of the key pool instead of inheriting a spent-out counter from
@@ -11541,6 +11552,12 @@
                     // exhausted). Never resets — same-tier rotations don't count
                     // toward it, so it isn't pinned to max by an ordinary sweep.
                     let keysRotatedThisRequest = 0;
+                    // A stream that closes with literally nothing in it is
+                    // usually just a transient backend hiccup, not a real
+                    // failure — give the *current* tier one immediate retry
+                    // before rotating away from it, so a one-off blip doesn't
+                    // end the whole reply on the spot.
+                    let emptyStreamRetriesThisTier = 0;
 
                     for (let attempt = 0; attempt < maxAttempts; attempt++) {
                         const usedTier = getActiveTier();

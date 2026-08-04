@@ -11211,12 +11211,12 @@
 
                 } else {
                     let sysInstruction = (selectedMode === 'code') 
-                        ? "You are a senior developer inside Cavdo AI. Write like a principal engineer producing a finished, production-grade deliverable — thorough beats terse. Never hand back a bare-minimum sketch when a complete, robust, well-organized implementation is possible instead. Provide complete scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
+                        ? "You are a senior developer inside Cavdo AI. Write clean, correct, working code — and keep it SHORT. Solve exactly what was asked with the simplest implementation that actually works well; do not pad the response with extra features, options, configurability, or defensive handling nobody asked for. A shorter file that is complete and correct is always better than a longer one that covers more ground. Provide complete scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
                     if (selectedMode === 'code') {
-                        sysInstruction += " Favor completeness over brevity, but stay within what fits comfortably in a single response — this backend has a real per-response token ceiling, and a reply that runs past it gets cut off mid-file and has to be stitched back together, which is worse than a slightly leaner but complete file. A small, single-purpose ask (one component, one function, one script) should still be fleshed out properly — realistic input validation, sensible error handling, clear naming, and a short header comment explaining what it does — typically landing around 100-200 lines rather than a bare 20-line stub. A real page/app/dashboard with a handful of features should be solid and cover the obvious edge/empty/error states without over-building, typically 200-400 lines. Only go toward the 400-500 line range for something the user explicitly calls full/production/complete or that names several distinct features, and even then stop there rather than pushing further — if the request is genuinely too large to finish well within that budget, build the most important part completely and working, and briefly say in prose what you left out and offer to continue it, rather than writing a giant file that gets cut off partway through. Use meaningful section-header comments to organize the file, explain non-obvious logic (why, not just what), and prefer small well-named helper functions over one giant block. Never sacrifice correctness or clarity to hit a length target in either direction; the goal is thorough, professional code that actually arrives complete.";
-                        sysInstruction += " Visual quality always matters — never hand back a bare, unstyled skeleton. Whenever the request involves a UI, webpage, app, dashboard, or game (HTML/CSS/JS, or any framework), build something that actually looks finished and premium: a real deliberate color palette (not browser defaults), thoughtful typography with a clear hierarchy, generous and consistent spacing/alignment, and smooth CSS transitions/animations wherever they naturally belong (hover states, button feedback, entry animations, micro-interactions) — for games specifically, include real visual feedback (score/state on screen, simple effects on key events, a styled win/game-over state, sound-ready hooks) rather than console.log or alert(). Add sensible extra features a thoughtful engineer would include even if not explicitly requested — a reset/undo button, a dark mode toggle, subtle empty/loading states — as long as they clearly serve the core request rather than bloating it into something unrelated. Keep everything self-contained (no external dependencies unless a framework was requested) and fully working — correctness always comes first, but craft and completeness are the expected bar, not a nice-to-have.";
+                        sysInstruction += " Length discipline matters more than impressiveness: this backend has a real per-response length ceiling, and a long reply risks getting cut off mid-file, which is always worse than a shorter one that arrives complete. Default to the leanest correct solution. A single component/function/script should typically be well under 100 lines — clear naming and, only where genuinely non-obvious, a brief comment; skip input-validation/error-handling scaffolding the request didn't call for. A small multi-file or multi-feature page/app should typically stay under 150-200 lines total — cover the feature(s) actually asked for and nothing else; don't add empty-state handling, extra settings, or 'nice to have' extras unless asked. Only go longer than that if the user explicitly asks for something full/production/complete, or lists several distinct features that genuinely can't be done shorter — and even then, stop as soon as it works; do not keep adding polish once the core request is satisfied. If a request is genuinely too large to finish well within a short response, build the most important part completely and working, then briefly say in prose what you left out and offer to continue — never write a sprawling file that risks getting cut off partway through. Prefer fewer, more direct lines over splitting trivial logic into many small helper functions. Never sacrifice correctness or readability to hit a length target, but when a shorter and a longer version would both work equally well, always pick the shorter one.";
+                        sysInstruction += " Visual quality still matters for anything with a UI — don't hand back a bare, unstyled skeleton — but achieve that with a few deliberate choices (a real color palette instead of browser defaults, sensible spacing, one or two purposeful transitions) rather than by adding more elements, states, or features. Keep everything self-contained (no external dependencies unless a framework was requested) and fully working. Do not proactively add a reset/undo button, dark mode toggle, or other extras unless asked — every added feature is more code and more risk of the response running long.";
                     }
 
                     // Ground the model in real wall-clock time on every request — without
@@ -11298,7 +11298,7 @@
                         // implementation instead of a bare-minimum demo.
                         let attemptSysInstruction = sysInstruction;
                         if (selectedMode === 'code' && usedTier.key === 'ultimate') {
-                            attemptSysInstruction += " You are running as Cavdo Ultimate, the top tier — this is the response other AI coding tools get compared against, so hold yourself to the highest bar of craft: the best-organized, best-commented, best-looking implementation you're capable of for what was asked, within the length guidance above. Prioritize a complete, polished, working result over squeezing in more — a shorter file that's fully finished and genuinely well-crafted beats a longer one that gets cut off.";
+                            attemptSysInstruction += " You are running as Cavdo Ultimate, the top tier — hold yourself to the highest bar of craft, but craft here means precision and taste, not quantity: the best engineers write the least code that correctly and cleanly solves the problem. Show that skill by being more concise than a mid-tier model would be, not less — tighter, more confident, more direct. A short response that's flawless beats a long one that's merely thorough.";
                         }
 
                         let endpoint, fetchBody;
@@ -11653,25 +11653,41 @@
                         // budget (see MAX_TOTAL_GENERATION_MS below) — a long response
                         // should finish within a predictable window instead of chaining
                         // continuations for however long the model feels like.
+                        // Declared here (not inside the block below) so it's still
+                        // readable at finalize time regardless of whether the
+                        // auto-continue block below even runs.
+                        let stillIncompleteAfterLimit = false;
                         if (!abortController.signal.aborted) {
                             const CONTINUE_INSTRUCTION = "Continue exactly where you left off. Do not repeat anything you already wrote, do not restart the code, and do not add any explanation before or after — output ONLY the raw continuation text, picking back up mid-line if needed, and close the ``` code fence once the code is actually complete. If you were cut off in the middle of a markdown table row, resume with the EXACT SAME pipe-delimited table syntax and the same number of columns as the table above — do not switch to bullet points or plain text partway through a table, and do not restart the table from its header.";
                             let continueRounds = 0;
                             let consecutiveEmptyRounds = 0;
-                            const MAX_CONTINUE_ROUNDS = 6;
-                            // Whole generation (initial stream + every continuation round)
-                            // is capped at 10 minutes of actual work. This has to stay
-                            // comfortably ABOVE a single round's own ceiling (280s, see
-                            // ultimate-chat.js) or a legitimately long first round would
-                            // get killed by this budget before it even had a chance to
-                            // auto-continue — 10 minutes leaves room for a couple of
-                            // full-length rounds back to back.
-                            const MAX_TOTAL_GENERATION_MS = 10 * 60 * 1000;
+                            // This cap exists ONLY to stop a truly runaway/looping
+                            // generation from costing forever, not to police response
+                            // length — actual stopping in the normal case is driven by
+                            // the model finishing (fence closed, no truncation signal)
+                            // or by genuine failure (see consecutiveEmptyRounds below),
+                            // never by hitting this number. 60 rounds is far beyond
+                            // anything a real answer should ever need.
+                            const MAX_CONTINUE_ROUNDS = 60;
+                            // Same idea for time: this is a runaway-cost backstop, not a
+                            // response-length policy. 45 minutes comfortably covers even
+                            // a legitimately huge multi-round answer; in the vast
+                            // majority of replies this is never approached.
+                            const MAX_TOTAL_GENERATION_MS = 45 * 60 * 1000;
+                            // Set true only if the loop below gives up (round cap or time
+                            // budget hit) while the response was STILL genuinely
+                            // incomplete (open fence / API-reported truncation). Read
+                            // after the loop to decide whether to leave the person a
+                            // visible, actionable note instead of silently stopping —
+                            // this is the last-resort fallback for the rare case the
+                            // generous limits above still aren't enough.
                             while (continueRounds < MAX_CONTINUE_ROUNDS) {
                                 const openCount = (fullText.match(/```/g) || []).length;
                                 const fenceOpen = openCount % 2 !== 0;
                                 if (!fenceOpen && !truncatedByLength) break; // fence closed AND API says it finished normally — nothing truncated
                                 if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) {
                                     console.warn('Cavdo: auto-continue stopped — hit MAX_TOTAL_GENERATION_MS time budget.');
+                                    stillIncompleteAfterLimit = true;
                                     break;
                                 }
                                 continueRounds++;
@@ -11771,22 +11787,41 @@
                                         consecutiveEmptyRounds++;
                                         // A single empty round can just be a transient blip
                                         // (dropped connection, momentary backend error) — worth
-                                        // one immediate retry before assuming the model/backend
-                                        // genuinely has nothing more to give. Only give up once
-                                        // two rounds IN A ROW come back empty.
+                                        // several retries, with a short backoff between them,
+                                        // before assuming the model/backend genuinely has
+                                        // nothing more to give.
                                         console.warn(`Cavdo: auto-continue round ${continueRounds} came back empty (${consecutiveEmptyRounds} in a row).`);
-                                        if (consecutiveEmptyRounds >= 2) {
-                                            console.warn('Cavdo: two consecutive empty continuations — giving up.');
+                                        if (consecutiveEmptyRounds >= 5) {
+                                            console.warn('Cavdo: five consecutive empty continuations — giving up.');
+                                            stillIncompleteAfterLimit = true;
                                             break;
                                         }
+                                        await new Promise(r => setTimeout(r, 800 * consecutiveEmptyRounds));
                                     } else {
                                         consecutiveEmptyRounds = 0;
                                     }
                                 } catch (contErr) {
-                                    console.error('Auto-continue of truncated response failed, keeping partial content:', contErr);
-                                    break;
+                                    // Treated exactly like an empty round rather than an
+                                    // immediate hard stop — a fetch throwing (dropped wifi,
+                                    // a momentary 5xx, a proxy hiccup) is exactly the kind
+                                    // of transient failure a retry-with-backoff recovers
+                                    // from. Only genuinely repeated failure gives up.
+                                    consecutiveEmptyRounds++;
+                                    console.error(`Auto-continue round ${continueRounds} threw (${consecutiveEmptyRounds} failures in a row), will retry if under the limit:`, contErr);
+                                    if (consecutiveEmptyRounds >= 5) {
+                                        console.error('Cavdo: five consecutive failed continuations — giving up, keeping partial content.');
+                                        stillIncompleteAfterLimit = true;
+                                        break;
+                                    }
+                                    await new Promise(r => setTimeout(r, 800 * consecutiveEmptyRounds));
                                 }
                             }
+                            // Catches the remaining exit path: the round counter itself
+                            // ran out (continueRounds reached MAX_CONTINUE_ROUNDS) while
+                            // still genuinely truncated — the two break sites above only
+                            // cover giving up mid-round, not this one.
+                            const stillFenceOpen = ((fullText.match(/```/g) || []).length % 2) !== 0;
+                            if (stillFenceOpen || truncatedByLength) stillIncompleteAfterLimit = true;
                         }
                         } finally {
                             // Whatever happens above — clean finish, thrown error,
@@ -11821,6 +11856,22 @@
                             fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
                             text
                         ) + buildGroundingSourcesBlock(groundingMetadata);
+
+                        // With MAX_CONTINUE_ROUNDS/MAX_TOTAL_GENERATION_MS above now set
+                        // as pure runaway-cost backstops (60 rounds / 45 minutes) rather
+                        // than a length policy, and every round retrying transient
+                        // failures with backoff, stillIncompleteAfterLimit being true
+                        // here means something genuinely and repeatedly went wrong
+                        // (backend down, network gone) — not "the answer was long".
+                        // Matching how Claude/Gemini degrade in that rare case: the
+                        // person gets whatever real content was generated, with nothing
+                        // bolted onto the visible text — no inline warning banner. This
+                        // is a diagnostics-only signal for now (console), not user-facing
+                        // copy; it's the hook to wire up a real "Continue" affordance in
+                        // the UI later if this ever actually fires in practice.
+                        if (stillIncompleteAfterLimit && !abortController.signal.aborted) {
+                            console.warn('Cavdo: generation ended still incomplete after exhausting all automatic recovery — this should be extremely rare. Keeping partial content, no user-facing message.');
+                        }
 
                         const finalizeChat = JSON.parse(localStorage.getItem(requestContextChatId));
                         if (finalizeChat && finalizeChat.messages[aiMsgIndex]) {

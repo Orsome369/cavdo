@@ -6295,14 +6295,40 @@
         // Respects autoScrollDuringGeneration: if the person scrolled away
         // on purpose, this is a no-op until the scroll listener above sees
         // them come back near the bottom and re-arms the magnet.
+        //
+        // This used to be ONE OF TWO separate places computing this same
+        // pin (the other lived inline inside renderActiveChatMessages(),
+        // which also fires repeatedly during generation — thinking-phase
+        // ticks, key-rotation/tier-switch status messages, etc). Both used
+        // `behavior: 'smooth'`, called independently and at different
+        // rates, on the SAME element — two competing smooth-scroll
+        // animations, each retargeting mid-flight based on a scrollTop
+        // that was itself still moving from the other one. That's what
+        // was behind the chat randomly jumping to the top while a reply
+        // was generating. Now there is exactly one place this is computed
+        // (renderActiveChatMessages calls this function instead of doing
+        // its own version), and it moves the scroll position directly
+        // (no animation) instead of queueing yet another smooth-scroll on
+        // top of whatever's already in flight — instant per-tick moves at
+        // this frequency (every ~30ms) already look smooth to the eye
+        // without any animation competing for the scrollTop.
         function followScrollDuringGeneration() {
             if (!autoScrollDuringGeneration) return;
+            if (!chatContainer || !chatWrapper) return;
             const userGroups = chatWrapper.querySelectorAll('.message-group.user');
             const lastUserGroup = userGroups[userGroups.length - 1];
             if (!lastUserGroup) return;
             const currentOffset = lastUserGroup.getBoundingClientRect().top - chatContainer.getBoundingClientRect().top;
             const targetTop = Math.max(0, chatContainer.scrollTop + currentOffset - PINNED_MSG_TOP_GAP);
-            chatContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
+            // Defensive clamp: a correctly-pinned message should need at most
+            // a small nudge each tick — content only grows a little between
+            // 30ms ticks. If a transient bad measurement (mid-reflow,
+            // image/font load shifting layout, etc.) ever produces a
+            // wildly different target, ignore that single tick rather than
+            // jump the whole view — the next tick recomputes fresh anyway.
+            const MAX_SANE_JUMP_PX = Math.max(600, chatContainer.clientHeight * 1.5);
+            if (Math.abs(targetTop - chatContainer.scrollTop) > MAX_SANE_JUMP_PX) return;
+            chatContainer.scrollTop = targetTop;
         }
 
         let abortController = null;
@@ -9078,20 +9104,12 @@
                     // position instead of yanking them back down.
                     chatContainer.scrollTop = preservedScrollTop;
                 } else {
-                    const userGroups = chatWrapper.querySelectorAll('.message-group.user');
-                    const lastUserGroup = userGroups[userGroups.length - 1];
-                    if (lastUserGroup) {
-                        const currentOffset = lastUserGroup.getBoundingClientRect().top - chatContainer.getBoundingClientRect().top;
-                        const targetTop = Math.max(0, chatContainer.scrollTop + currentOffset - PINNED_MSG_TOP_GAP);
-                        // Smooth scrollTo (not a raw scrollTop assignment) so that
-                        // repeated calls toward this same target, fired on every
-                        // re-render while the reply streams in, keep continuing
-                        // the same motion instead of freezing wherever a prior
-                        // in-flight animation happened to be.
-                        chatContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
-                    } else {
-                        chatContainer.scrollTop = preservedScrollTop;
-                    }
+                    // Delegate to the single shared implementation (see its
+                    // own comment for why this used to duplicate the pin
+                    // logic here with a second, competing smooth-scroll
+                    // animation — that was the cause of the chat randomly
+                    // jumping to the top mid-generation).
+                    followScrollDuringGeneration();
                 }
             } else if (scrollToLatest) {
                 // Opening a chat fresh (page load/refresh, switching chats,
@@ -11316,7 +11334,7 @@
                                 // cause is the serverless function's own execution
                                 // timeout rather than a token limit — that part can only
                                 // be fixed in the backend repo, not from this file.
-                                max_tokens: 8192,
+                                max_tokens: 16384,
                                 messages: [
                                     { role: 'system', content: attemptSysInstruction },
                                     ...buildApiPayload(chatData.messages.slice(0, -1)).map(m => ({
@@ -11479,6 +11497,19 @@
                         // block in it previously had nothing to trigger the
                         // auto-continue logic, so it just silently stopped mid-sentence.
                         let truncatedByLength = false;
+                        // True the moment ANY finish_reason/finishReason field arrives
+                        // from the API, regardless of its value ('stop' included). This
+                        // is what the silent-timeout heuristic further down checks
+                        // before guessing truncation from elapsed time alone — if the
+                        // API explicitly told us the reply finished normally, a long
+                        // wall-clock time is just a long legitimate generation
+                        // (a big single-file request can genuinely take a while), not
+                        // evidence of a killed connection. Without this gate, a
+                        // perfectly complete reply that simply took a while could get
+                        // falsely flagged as truncated, triggering an unwanted
+                        // auto-continue round that just appends "already complete, no
+                        // continuation needed" style text onto the real answer.
+                        let receivedFinishReason = false;
                         // Covers the initial stream AND every auto-continue round below —
                         // used to keep a long, multi-round response wrapping up within a
                         // fixed overall time budget instead of chaining continuations
@@ -11590,13 +11621,14 @@
                                     if (usingUltimateProxy) {
                                         const delta = evt?.choices?.[0]?.delta?.content;
                                         if (delta) streamer.process(delta);
-                                        if (evt?.choices?.[0]?.finish_reason === 'length') truncatedByLength = true;
+                                        const fr = evt?.choices?.[0]?.finish_reason;
+                                        if (fr) { receivedFinishReason = true; if (fr === 'length') truncatedByLength = true; }
                                     } else {
                                         const candidate = evt?.candidates?.[0];
                                         const parts = candidate?.content?.parts || [];
                                         for (const part of parts) { if (part.text) streamer.process(part.text); }
                                         if (candidate?.groundingMetadata) groundingMetadata = candidate.groundingMetadata;
-                                        if (candidate?.finishReason === 'MAX_TOKENS') truncatedByLength = true;
+                                        if (candidate?.finishReason) { receivedFinishReason = true; if (candidate.finishReason === 'MAX_TOKENS') truncatedByLength = true; }
                                     }
                                 }
                             }
@@ -11632,9 +11664,9 @@
                         // when the stream closed, assume it was cut off and route it
                         // through the same auto-continue path below rather than
                         // treating it as done.
-                        if (usingUltimateProxy && !truncatedByLength && (performance.now() - generationStartTime) > 260000) {
+                        if (usingUltimateProxy && !truncatedByLength && !receivedFinishReason && (performance.now() - generationStartTime) > 260000) {
                             truncatedByLength = true;
-                            console.warn('Cavdo: near the proxy timeout with no finish_reason — assuming truncation.');
+                            console.warn('Cavdo: near the proxy timeout with no finish_reason at all — assuming truncation.');
                         }
                         // Visibility: log exactly what the stream told us, every time,
                         // so "response stopped and nothing showed in console" can never
@@ -11703,7 +11735,7 @@
                                         contBody = JSON.stringify({
                                             tier: usedTier.key,
                                             requestId: `${requestId}-cont${continueRounds}`,
-                                            max_tokens: 8192,
+                                            max_tokens: 16384,
                                             messages: [
                                                 { role: 'system', content: attemptSysInstruction },
                                                 ...buildApiPayload(chatData.messages.slice(0, -1)).map(m => ({
@@ -11740,6 +11772,12 @@
                                     const contDecoder = new TextDecoder();
                                     let contBuffer = '';
                                     let gotAny = false;
+                                    let roundReceivedFinishReason = false;
+                                    // Where fullText was before this round started — used
+                                    // below to detect and roll back a "declining" reply
+                                    // (the model correctly saying it's already complete,
+                                    // which we don't want spliced visibly into the answer).
+                                    const roundStartLength = fullText.length;
                                     while (true) {
                                         if (abortController.signal.aborted) { try { contReader.cancel(); } catch (e) {} break; }
                                         if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) { try { contReader.cancel(); } catch (e) {} break; }
@@ -11769,18 +11807,43 @@
                                             if (usingUltimateProxy) {
                                                 const cDelta = cEvt?.choices?.[0]?.delta?.content;
                                                 if (cDelta) { gotAny = true; streamer.process(cDelta); }
-                                                if (cEvt?.choices?.[0]?.finish_reason === 'length') truncatedByLength = true;
+                                                const cfr = cEvt?.choices?.[0]?.finish_reason;
+                                                if (cfr) { roundReceivedFinishReason = true; if (cfr === 'length') truncatedByLength = true; }
                                             } else {
                                                 const cCandidate = cEvt?.candidates?.[0];
                                                 const cParts = cCandidate?.content?.parts || [];
                                                 for (const cPart of cParts) { if (cPart.text) { gotAny = true; streamer.process(cPart.text); } }
-                                                if (cCandidate?.finishReason === 'MAX_TOKENS') truncatedByLength = true;
+                                                if (cCandidate?.finishReason) { roundReceivedFinishReason = true; if (cCandidate.finishReason === 'MAX_TOKENS') truncatedByLength = true; }
                                             }
                                         }
                                     }
                                     streamer.finish();
-                                    if (usingUltimateProxy && !truncatedByLength && (performance.now() - roundStartedAt) > 260000) {
+                                    if (usingUltimateProxy && !truncatedByLength && !roundReceivedFinishReason && (performance.now() - roundStartedAt) > 260000) {
                                         truncatedByLength = true; // same silent-timeout heuristic as the initial round, applied per round
+                                    }
+                                    // The model was told "you were cut off, continue" but if
+                                    // it actually wasn't (the false-trigger case this whole
+                                    // block exists to prevent), a compliant model will say so
+                                    // in prose instead of emitting more code — exactly the
+                                    // "already complete / no continuation needed" text this
+                                    // was written in response to. Catch that here as a second
+                                    // line of defense (on top of the receivedFinishReason gate
+                                    // above, which should prevent most of these from
+                                    // triggering in the first place): if this round's own
+                                    // reply is short, declining prose, roll it back out of
+                                    // fullText rather than leaving it spliced into the answer,
+                                    // and treat the response as finished.
+                                    const roundAddedText = fullText.slice(roundStartLength);
+                                    const looksLikeDecline = gotAny
+                                        && roundAddedText.length < 400
+                                        && !roundAddedText.includes('```')
+                                        && /\b(already complete|no continuation(?: is)? needed|nothing (?:more|else) to add|implementation is complete|no further (?:changes|continuation) (?:is )?needed|code is already complete)\b/i.test(roundAddedText);
+                                    if (looksLikeDecline) {
+                                        console.warn('Cavdo: auto-continue round came back as a "declining" reply, not real continuation — rolling it back and treating the response as complete:', JSON.stringify(roundAddedText));
+                                        fullText = fullText.slice(0, roundStartLength);
+                                        revealedLength = Math.min(revealedLength, fullText.length);
+                                        truncatedByLength = false;
+                                        break;
                                     }
                                     console.log(`Cavdo: auto-continue round ${continueRounds} ended. gotAny=${gotAny}, truncatedByLength=${truncatedByLength}, totalChars=${fullText.length}`);
                                     if (!gotAny) {

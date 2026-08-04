@@ -7701,6 +7701,18 @@
             return CODE_LANG_EXTENSIONS[key] || 'txt';
         }
 
+        // Icon shown on the compact "file ready" card for ordinary (non-document)
+        // code blocks — same visual language as the pdf/docx/pptx cards above,
+        // just keyed by programming language instead of document type.
+        const CODE_FILE_ICONS = {
+            html: '🌐', css: '🎨', javascript: '📜', js: '📜', typescript: '📜', ts: '📜',
+            python: '🐍', py: '🐍', java: '☕', c: '🔧', cpp: '🔧', 'c++': '🔧',
+            csharp: '🔧', 'c#': '🔧', php: '🐘', ruby: '💎', go: '🐹', golang: '🐹',
+            rust: '⚙️', swift: '🕊️', kotlin: '🔶', json: '🗂️', yaml: '🗂️', yml: '🗂️',
+            xml: '🗂️', sql: '🗃️', bash: '💻', shell: '💻', sh: '💻', markdown: '📝',
+            md: '📝', dart: '🎯', r: '📊', lua: '🌙', csv: '🗃️', zip: '🗜️'
+        };
+
         // Applies GitHub-style syntax highlighting (via highlight.js, loaded
         // in <head>) to a code block. Most of our language tags already
         // match hljs's own language names/aliases directly; the couple that
@@ -8532,70 +8544,71 @@
                             }
                         }
                     } else {
-                        const tray = document.createElement('div');
-                        tray.className = 'code-tray';
+                        // Ordinary code blocks now render exactly like the pdf/docx/pptx
+                        // cards above — a compact "file ready" line with Open + Download
+                        // buttons — instead of a big block of raw, visible source code
+                        // sitting in the chat. The real text still lives in a hidden
+                        // <pre><code>, so copy/download/preview/zip-bundle logic below is
+                        // completely unchanged; only what's ON SCREEN changes.
+                        const langKey = language.toLowerCase().trim();
+                        const codeIcon = CODE_FILE_ICONS[langKey] || '📄';
+                        const friendlyName = `${langKey || 'file'}.${getCodeFileExtension(language)}`;
+                        const isHtmlBlock = langKey === 'html';
 
-                        const isHtmlBlock = language.toLowerCase().trim() === 'html' && !isLive;
-                        // Every finished block — code or plain text — gets an Open
-                        // button that previews it in the corner split panel with
-                        // its own Download button, not just HTML blocks.
-                        const canPreview = !isLive;
-                        const previewBtnHtml = canPreview
-                            ? `<button class="preview-toggle-btn" data-preview-id="${elementId}" title="${isHtmlBlock ? 'Split-screen preview' : 'Open preview'}">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                                    ${isHtmlBlock ? 'preview' : 'open'}
-                               </button>`
-                            : '';
-
-                        tray.innerHTML = `
-                            <div class="code-tray-header">
-                                <div class="code-lang">${escapeHtml(language)}</div>
-                                <div class="code-tray-actions">
-                                    ${previewBtnHtml}
-                                    <button class="code-btn" onclick="window.downloadCodeToFile(this, '${elementId}', '${escapeHtml(language)}')" title="Download this snippet">⬇ download</button>
-                                    <button class="code-btn" onclick="window.copyCodeToClipboard(this, '${elementId}')">copy</button>
+                        if (isLive) {
+                            // Still streaming: show a quiet "writing…" placeholder, same
+                            // treatment as an in-progress pdf/docx/pptx card, rather than
+                            // a half-typed wall of code.
+                            const genCard = document.createElement('div');
+                            genCard.className = 'zip-bundle-card doc-file-card doc-file-generating';
+                            genCard.innerHTML = `
+                                <div class="zip-bundle-icon doc-generating-spinner">${codeIcon}</div>
+                                <div class="zip-bundle-info">
+                                    <div class="zip-bundle-title">Writing ${escapeHtml(friendlyName)}…</div>
+                                    <div class="zip-bundle-sub">Finishing generation — the file will be ready in a moment</div>
                                 </div>
-                            </div>
-                            <pre><code id="${elementId}"></code></pre>
-                        `;
-                        tray.querySelector('code').textContent = codeContent;
-                        // Highlighting used to hard-cut-off at 400 characters while
-                        // live, then never re-color until the block finished — on
-                        // any normal-sized code block that showed up as the syntax
-                        // colors visibly disappearing partway through typing, then
-                        // popping back once it finished. The original concern (a big
-                        // highlightElement() call on every single SSE chunk blocking
-                        // the main thread) is now handled by the adaptive render-gap
-                        // in pushVisibleChunk, which already spaces out full
-                        // re-renders (and therefore re-highlights) as the message
-                        // grows — so this limit only needs to guard against truly
-                        // huge blocks, not ordinary ones.
-                        const LIVE_HIGHLIGHT_CHAR_LIMIT = 20000;
-                        if (!isLive || codeContent.length <= LIVE_HIGHLIGHT_CHAR_LIMIT) {
-                            applySyntaxHighlight(tray.querySelector('code'), language);
-                        }
-                        targetElement.appendChild(tray);
+                            `;
+                            targetElement.appendChild(genCard);
+                        } else {
+                            const fileCard = document.createElement('div');
+                            fileCard.className = 'zip-bundle-card doc-file-card';
+                            fileCard.innerHTML = `
+                                <div class="zip-bundle-icon">${codeIcon}</div>
+                                <div class="zip-bundle-info">
+                                    <div class="zip-bundle-title">${escapeHtml(friendlyName)}</div>
+                                    <div class="zip-bundle-sub">${isHtmlBlock ? 'Click to preview, then download' : 'Ready — open to preview or download the file'}</div>
+                                </div>
+                                <button class="zip-bundle-btn" id="${elementId}-open-btn">Open</button>
+                                <button class="zip-bundle-btn" id="${elementId}-dl-btn" title="Download this file" style="margin-left:6px;">⬇</button>
+                                <pre style="display:none"><code id="${elementId}"></code></pre>
+                            `;
+                            fileCard.querySelector('code').textContent = codeContent;
+                            targetElement.appendChild(fileCard);
 
-                        if (canPreview) {
-                            const previewBtn = tray.querySelector(`.preview-toggle-btn[data-preview-id="${elementId}"]`);
-                            if (previewBtn) {
-                                previewBtn.onclick = () => {
+                            const openBtn = fileCard.querySelector(`#${elementId}-open-btn`);
+                            if (openBtn) {
+                                openBtn.onclick = () => {
                                     if (isHtmlBlock) {
                                         window.openSplitPreviewPanel(codeContent, `${elementId}.html`);
                                     } else {
                                         window.openDocPreviewPanel({
                                             rawText: codeContent,
                                             previewHtml: buildPlainTextPreviewHTML(codeContent, language),
-                                            filename: `${elementId}.${getCodeFileExtension(language)}`,
-                                            downloadFn: () => window.downloadCodeToFile(previewBtn, elementId, language)
+                                            filename: friendlyName,
+                                            downloadFn: () => window.downloadCodeToFile(openBtn, elementId, language)
                                         });
                                     }
                                 };
                             }
+                            const dlBtn = fileCard.querySelector(`#${elementId}-dl-btn`);
+                            if (dlBtn) {
+                                dlBtn.onclick = () => window.downloadCodeToFile(dlBtn, elementId, language);
+                            }
+
                             // If the split panel is already open on this same HTML block
                             // (e.g. the user asked for an edit to code they were already
                             // previewing), refresh its content in place instead of making
-                            // them click "preview" again.
+                            // them click "Open" again.
                             if (isHtmlBlock) {
                                 const openPanel = document.getElementById('splitPreviewPanel');
                                 if (openPanel && openPanel.classList.contains('open')) {

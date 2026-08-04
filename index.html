@@ -11325,6 +11325,13 @@
                             fetchBody = JSON.stringify({
                                 tier: usedTier.key,
                                 requestId,
+                                // Lets the backend (see ultimate-chat.js's TIER_CONFIG)
+                                // route to a coding-specialist model instead of the
+                                // tier's default generalist one when this is a code
+                                // request — never used to pick the model/tier/budget
+                                // directly, only as a hint the backend cross-checks
+                                // against its own pre-approved config.
+                                mode: selectedMode,
                                 // Best-effort: if the backend proxy forwards extra
                                 // fields through to the upstream NVIDIA/OpenAI-compatible
                                 // API (most thin proxies do), this raises the response's
@@ -11735,6 +11742,7 @@
                                         contBody = JSON.stringify({
                                             tier: usedTier.key,
                                             requestId: `${requestId}-cont${continueRounds}`,
+                                            mode: selectedMode,
                                             max_tokens: 16384,
                                             messages: [
                                                 { role: 'system', content: attemptSysInstruction },
@@ -14094,4 +14102,4 @@
         })();
     </script>
 </body>
-</html>
+</html>a

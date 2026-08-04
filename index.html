@@ -3329,6 +3329,85 @@
             50% { opacity: 0.95; }
         }
 
+        /* ---- Faded "step trace" list (Claude-style inner steps) ---- */
+        .ai-steps-trace {
+            margin: 2px 0 10px;
+        }
+        .ai-steps-trace-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12.5px;
+            color: rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+            user-select: none;
+            padding: 2px 0;
+            background: none;
+            border: none;
+            font-family: inherit;
+        }
+        .ai-steps-trace-toggle:hover {
+            color: rgba(255, 255, 255, 0.68);
+        }
+        .ai-steps-trace-chevron {
+            display: inline-block;
+            font-size: 10px;
+            transition: transform 0.15s ease;
+        }
+        .ai-steps-trace.expanded .ai-steps-trace-chevron {
+            transform: rotate(90deg);
+        }
+        .ai-steps-trace .ai-steps-trace-list {
+            display: none;
+        }
+        .ai-steps-trace.expanded .ai-steps-trace-list {
+            display: flex;
+        }
+        .ai-steps-trace-list {
+            flex-direction: column;
+            gap: 3px;
+            position: relative;
+            padding-left: 16px;
+            margin-top: 4px;
+        }
+        .ai-steps-trace-list::before {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 5px;
+            bottom: 5px;
+            width: 1px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+        .ai-steps-trace-item {
+            position: relative;
+            font-size: 12.5px;
+            font-style: italic;
+            line-height: 1.55;
+            color: rgba(255, 255, 255, 0.38);
+            padding: 1px 0;
+        }
+        .ai-steps-trace-item::before {
+            content: '';
+            position: absolute;
+            left: -16px;
+            top: 8px;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.26);
+        }
+        .ai-steps-trace-item.active {
+            color: rgba(255, 255, 255, 0.75);
+        }
+        .ai-steps-trace-item.active::before {
+            background: #2fd05c;
+            animation: docSpinPulse 1.1s ease-in-out infinite;
+        }
+        .ai-steps-trace.live .ai-steps-trace-list {
+            margin-top: 0;
+        }
+
         /* ---- Logo animation shown next to the "thinking" text (no wrapping container) ---- */
         .thinking-logo-mark {
             width: 18px;
@@ -8402,6 +8481,40 @@
             return null;
         }
 
+        // Builds the small, faded "step trace" shown above a reply — modeled on
+        // Claude's collapsed thinking/step list. While live (still generating),
+        // it renders every step reached so far as a connected vertical list with
+        // the current one highlighted and animated. Once finished, it collapses
+        // down to a single clickable summary line ("Thought through N steps")
+        // that expands to show the same list on demand.
+        function buildStepsTraceEl(steps, opts) {
+            opts = opts || {};
+            const live = !!opts.live;
+            const wrap = document.createElement('div');
+            wrap.className = 'ai-steps-trace' + (live ? ' expanded live' : '');
+            if (!steps || !steps.length) return wrap;
+
+            if (!live) {
+                const toggle = document.createElement('button');
+                toggle.type = 'button';
+                toggle.className = 'ai-steps-trace-toggle';
+                toggle.innerHTML = `<span class="ai-steps-trace-chevron">▸</span><span>Thought through ${steps.length} step${steps.length === 1 ? '' : 's'}</span>`;
+                toggle.onclick = () => wrap.classList.toggle('expanded');
+                wrap.appendChild(toggle);
+            }
+
+            const list = document.createElement('div');
+            list.className = 'ai-steps-trace-list';
+            steps.forEach((step, i) => {
+                const item = document.createElement('div');
+                item.className = 'ai-steps-trace-item' + (live && i === steps.length - 1 ? ' active' : '');
+                item.textContent = step;
+                list.appendChild(item);
+            });
+            wrap.appendChild(list);
+            return wrap;
+        }
+
         function renderAIContent(targetElement, rawText, isStopped = false, originalPrompt = '', isLive = false) {
             targetElement.innerHTML = '';
 
@@ -8554,6 +8667,10 @@
                         const codeIcon = CODE_FILE_ICONS[langKey] || '📄';
                         const friendlyName = `${langKey || 'file'}.${getCodeFileExtension(language)}`;
                         const isHtmlBlock = langKey === 'html';
+                        // A ```zip block is a JSON manifest of files, not something
+                        // that makes sense to "preview" as text — skip the Open
+                        // button entirely and go straight to a real .zip download.
+                        const isZipBlock = langKey === 'zip';
 
                         if (isLive) {
                             // Still streaming: show a quiet "writing…" placeholder, same
@@ -8564,22 +8681,26 @@
                             genCard.innerHTML = `
                                 <div class="zip-bundle-icon doc-generating-spinner">${codeIcon}</div>
                                 <div class="zip-bundle-info">
-                                    <div class="zip-bundle-title">Writing ${escapeHtml(friendlyName)}…</div>
+                                    <div class="zip-bundle-title">${isZipBlock ? 'Packaging zip archive…' : `Writing ${escapeHtml(friendlyName)}…`}</div>
                                     <div class="zip-bundle-sub">Finishing generation — the file will be ready in a moment</div>
                                 </div>
                             `;
                             targetElement.appendChild(genCard);
                         } else {
+                            let zipFileCount = null;
+                            if (isZipBlock) {
+                                try { zipFileCount = parseZipManifest(codeContent, 'file.txt').length; } catch (e) { /* fall back to generic label below */ }
+                            }
                             const fileCard = document.createElement('div');
                             fileCard.className = 'zip-bundle-card doc-file-card';
                             fileCard.innerHTML = `
                                 <div class="zip-bundle-icon">${codeIcon}</div>
                                 <div class="zip-bundle-info">
-                                    <div class="zip-bundle-title">${escapeHtml(friendlyName)}</div>
-                                    <div class="zip-bundle-sub">${isHtmlBlock ? 'Click to preview, then download' : 'Ready — open to preview or download the file'}</div>
+                                    <div class="zip-bundle-title">${isZipBlock ? (zipFileCount ? `Archive ready (${zipFileCount} file${zipFileCount === 1 ? '' : 's'})` : 'Archive ready') : escapeHtml(friendlyName)}</div>
+                                    <div class="zip-bundle-sub">${isZipBlock ? 'Download as a .zip file' : (isHtmlBlock ? 'Click to preview, then download' : 'Ready — open to preview or download the file')}</div>
                                 </div>
-                                <button class="zip-bundle-btn" id="${elementId}-open-btn">Open</button>
-                                <button class="zip-bundle-btn" id="${elementId}-dl-btn" title="Download this file" style="margin-left:6px;">⬇</button>
+                                ${isZipBlock ? '' : `<button class="zip-bundle-btn" id="${elementId}-open-btn">Open</button>`}
+                                <button class="zip-bundle-btn" id="${elementId}-dl-btn" title="Download this file" style="${isZipBlock ? '' : 'margin-left:6px;'}">${isZipBlock ? '⬇ Download .zip' : '⬇'}</button>
                                 <pre style="display:none"><code id="${elementId}"></code></pre>
                             `;
                             fileCard.querySelector('code').textContent = codeContent;
@@ -8876,6 +8997,14 @@
                             // (or the just-finished response) simply vanishing.
                             console.error('renderActiveChatMessages: failed to render one message, showing plain text instead:', renderErr);
                             textDiv.textContent = msg.text || '';
+                        }
+                        // Once the reply is done, show the collapsed, faded
+                        // "thought through N steps" trace above it — same idea
+                        // as Claude's collapsed step list, expandable on click.
+                        // Skipped for trivial replies that finished before any
+                        // extra step was ever recorded (steps.length <= 1).
+                        if (!msg.isThinking && Array.isArray(msg.steps) && msg.steps.length > 1) {
+                            textDiv.prepend(buildStepsTraceEl(msg.steps, { live: false }));
                         }
                         if (msg.relatedImages && msg.relatedImages.length) {
                             renderRelatedImagesGallery(textDiv, msg.relatedImages);
@@ -11048,7 +11177,7 @@
                     ? ['✨ Reading your request', '✨ Planning the code', '✨ Writing the implementation', '✨ Double-checking syntax']
                     : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
 
-            const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true };
+            const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true, steps: [thinkingPhrases[0].replace(/^✨\s*/, '')] };
             autoScrollDuringGeneration = true;
             chatData.messages.push(aiMsg);
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
@@ -11067,17 +11196,33 @@
             abortController = new AbortController();
 
             let thinkingPhraseIdx = 0;
+            let dotsTick = 0;
             let internalThinkingInterval = setInterval(() => {
                 const innerChat = JSON.parse(localStorage.getItem(requestContextChatId));
                 if (!innerChat || !innerChat.isGeneratingInBg) {
                     clearInterval(internalThinkingInterval);
                     return;
                 }
+                const msgRef = innerChat.messages[aiMsgIndex];
+                if (!msgRef || !msgRef.isThinking) return;
+
+                dotsTick++;
+                // Advance to the next canned phrase — but never loop back once
+                // every phrase has been shown, so the step trace grows a fixed,
+                // sensible list instead of repeating the same step forever on a
+                // slow response. Once exhausted, only the dots on the last step
+                // keep animating.
+                if (thinkingPhraseIdx < thinkingPhrases.length - 1) {
+                    thinkingPhraseIdx++;
+                    if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
+                    msgRef.steps.push(thinkingPhrases[thinkingPhraseIdx].replace(/^✨\s*/, ''));
+                    localStorage.setItem(requestContextChatId, JSON.stringify(innerChat));
+                }
+
                 if (currentChatId === requestContextChatId) {
                     const targetNode = getLastMessageNode()?.querySelector('.text-container-node');
-                    if (targetNode && innerChat.messages[aiMsgIndex].isThinking) {
-                        thinkingPhraseIdx = (thinkingPhraseIdx + 1) % thinkingPhrases.length;
-                        let dots = '.'.repeat((thinkingPhraseIdx % 3) + 1);
+                    if (targetNode) {
+                        const steps = (msgRef.steps && msgRef.steps.length) ? msgRef.steps : [thinkingPhrases[0].replace(/^✨\s*/, '')];
                         targetNode.classList.add('thinking-status-text');
                         targetNode.innerHTML = '';
                         const thinkLogo = document.createElement('img');
@@ -11085,7 +11230,13 @@
                         thinkLogo.alt = '';
                         thinkLogo.className = 'thinking-logo-mark';
                         targetNode.appendChild(thinkLogo);
-                        targetNode.appendChild(document.createTextNode(thinkingPhrases[thinkingPhraseIdx] + dots));
+                        const traceEl = buildStepsTraceEl(steps, { live: true });
+                        const activeItem = traceEl.querySelector('.ai-steps-trace-item.active');
+                        if (activeItem) {
+                            const dots = '.'.repeat((dotsTick % 3) + 1);
+                            activeItem.textContent = steps[steps.length - 1] + dots;
+                        }
+                        targetNode.appendChild(traceEl);
                     }
                 }
             }, 550);

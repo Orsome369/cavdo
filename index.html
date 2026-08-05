@@ -8008,8 +8008,35 @@
                 const content = m[2];
                 if (!content || !content.trim()) continue;
                 idx++;
-                if (JS_CSS_LANGS.has(lang)) jsCss.push({ id: 'snippet' + idx, lang, content });
-                else if (PY_LANGS.has(lang)) python.push({ id: 'snippet' + idx, lang: 'python', content });
+                if (JS_CSS_LANGS.has(lang)) {
+                    jsCss.push({ id: 'snippet' + idx, lang, content });
+                } else if (PY_LANGS.has(lang)) {
+                    python.push({ id: 'snippet' + idx, lang: 'python', content });
+                } else if (lang === 'html' || lang === '') {
+                    // This was the real gap: an HTML fence (by far the most common
+                    // output — every game/app request lands here) never reached the
+                    // real esbuild/postcss checkers at all, only the much weaker
+                    // client-side new Function() heuristic in findFirstSyntaxError.
+                    // Pull the embedded <script>/<style> blocks out and send THOSE
+                    // to the real linter, the same way findFirstSyntaxError already
+                    // extracts <script> content for its own (weaker) local check.
+                    const scriptRe = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+                    let sm, sub = 0;
+                    while ((sm = scriptRe.exec(content))) {
+                        if (sm[2] && sm[2].trim() && !/\bsrc\s*=/.test(sm[1] || '')) {
+                            sub++;
+                            jsCss.push({ id: 'snippet' + idx + '-script' + sub, lang: 'js', content: sm[2] });
+                        }
+                    }
+                    const styleRe = /<style(\s[^>]*)?>([\s\S]*?)<\/style>/gi;
+                    let stm, styleSub = 0;
+                    while ((stm = styleRe.exec(content))) {
+                        if (stm[2] && stm[2].trim()) {
+                            styleSub++;
+                            jsCss.push({ id: 'snippet' + idx + '-style' + styleSub, lang: 'css', content: stm[2] });
+                        }
+                    }
+                }
             }
             return { jsCss, python };
         }
@@ -8063,14 +8090,15 @@
         // original code — a failed fix attempt never leaves the person worse off
         // than before the check existed.
         async function requestSyntaxFix({ errorMessage, userText, priorCode, sysInstruction, tierKey, requestId, signal }) {
-            // Bounded to 60s independent of the user's own Stop button — without
+            // Bounded to 30s independent of the user's own Stop button — without
             // this, a slow/stuck reasoning pass on the corrective call had nothing
             // capping it client-side except Vercel's own 280s (4:40) server-side
             // maxDuration eventually killing the function, which is exactly what
             // "stuck for 5 minutes" looks like from the outside. AbortSignal.any
-            // combines both: whichever fires first (user Stop, or this 60s cap)
-            // aborts the fetch.
-            const timeoutSignal = AbortSignal.timeout(60000);
+            // combines both: whichever fires first (user Stop, or this 30s cap)
+            // aborts the fetch. (Was 60s — halved since this now only ever runs
+            // once per reply instead of up to twice.)
+            const timeoutSignal = AbortSignal.timeout(30000);
             const combinedSignal = (typeof AbortSignal.any === 'function')
                 ? AbortSignal.any([signal, timeoutSignal])
                 : signal; // very old browser fallback — no client-side cap, same as before
@@ -11533,6 +11561,15 @@
 
             setGeneratingState(true);
             abortController = new AbortController();
+            // Every reference inside this function body from here on uses this
+            // local const, NOT the shared module-level `abortController` var —
+            // that global gets reassigned (or nulled in the finally block below)
+            // every time ANY chat's generation starts or finishes, including a
+            // totally different background chat while this one is still running.
+            // Reading the global mid-function was throwing "can't access property
+            // 'signal', abortController is null" whenever another generation's
+            // cleanup ran first. A local const can't be pulled out from under us.
+            const myAbortController = abortController;
 
             // Extra steps that can trickle in on an unusually long generation,
             // after all 4 canned phrases have already been shown — so a slow
@@ -11996,12 +12033,65 @@
                             });
                         }
 
-                        const response = await fetch(endpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: fetchBody,
-                            signal: abortController.signal
-                        });
+                        // Hard 15s cap on how long we wait for the model to even
+                        // START responding (not the total generation — once real
+                        // content is streaming, this timer is irrelevant). Without
+                        // this, a slow/hung backend just left the "Finalizing the
+                        // file" trace sitting there indefinitely with nothing to
+                        // show for it. Now: if 15s pass with no response headers,
+                        // this attempt is cancelled and automatically retried /
+                        // switched to another tier — the SAME retry path already
+                        // used for a real 5xx/429, just triggered by a clock
+                        // instead of an actual error from the server. A separate
+                        // AbortController (not the shared one) is used so this
+                        // only kills THIS attempt — a real user Stop click still
+                        // works exactly as before via the forwarded listener.
+                        const RESPONSE_START_TIMEOUT_MS = 15000;
+                        const attemptController = new AbortController();
+                        // Snapshot the signal ONCE, synchronously, right now — never
+                        // re-read the shared `abortController` variable later (inside
+                        // the timeout callback or the catch block below). That global
+                        // isn't scoped to this one attempt: it gets reset to null once
+                        // a generation's cleanup runs, and a stray reference to it from
+                        // a callback firing after that point threw exactly this bug —
+                        // "can't access property 'signal', abortController is null".
+                        // A local const can't be reassigned out from under us like that.
+                        const outerSignal = myAbortController.signal;
+                        const forwardOuterAbort = () => attemptController.abort();
+                        outerSignal.addEventListener('abort', forwardOuterAbort);
+                        const responseStartTimeout = setTimeout(() => {
+                            if (!outerSignal.aborted) attemptController.abort('cavdo-response-timeout');
+                        }, RESPONSE_START_TIMEOUT_MS);
+
+                        let response;
+                        try {
+                            response = await fetch(endpoint, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: fetchBody,
+                                signal: attemptController.signal
+                            });
+                        } catch (fetchErr) {
+                            clearTimeout(responseStartTimeout);
+                            outerSignal.removeEventListener('abort', forwardOuterAbort);
+                            if (outerSignal.aborted) throw fetchErr; // real user Stop — propagate as-is
+                            console.warn(`Cavdo: ${usedTier.label} took over ${RESPONSE_START_TIMEOUT_MS / 1000}s to respond — treating as a timeout and retrying.`);
+                            if (proxyErrorRetriesThisTier < 2) {
+                                proxyErrorRetriesThisTier++;
+                                pushRealThinkingStep(`${usedTier.label} is slow to respond — retrying`);
+                                continue;
+                            }
+                            const nextTier = downgradeAfterLimit();
+                            if (nextTier) {
+                                proxyErrorRetriesThisTier = 0;
+                                emptyStreamRetriesThisTier = 0;
+                                pushRealThinkingStep(`${usedTier.label} timed out — switching to ${nextTier.label}`);
+                                continue;
+                            }
+                            throw new Error(`${usedTier.label} took too long to respond and no other tier is available. Please try again.`);
+                        }
+                        clearTimeout(responseStartTimeout);
+                        outerSignal.removeEventListener('abort', forwardOuterAbort);
 
                         // A rejected request (bad key, rate limit, etc.) comes back
                         // as a normal single JSON error body, not a stream — safe
@@ -12268,7 +12358,7 @@
                         // of this function already handled.
                         try {
                             while (true) {
-                                if (abortController.signal.aborted) { try { reader.cancel(); } catch (e) {} break; }
+                                if (myAbortController.signal.aborted) { try { reader.cancel(); } catch (e) {} break; }
                                 if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) {
                                     console.warn('Cavdo: hit the 2-minute ceiling during the initial stream — cutting off here.');
                                     try { reader.cancel(); } catch (e) {}
@@ -12303,7 +12393,7 @@
                                 }
                             }
                         } catch (readErr) {
-                            if (abortController.signal.aborted) {
+                            if (myAbortController.signal.aborted) {
                                 // User hit Stop — let the existing abort handling below take it.
                             } else if (sawAnyOutput) {
                                 // We already have real, partial content. Treat this exactly
@@ -12359,7 +12449,7 @@
                         // readable at finalize time regardless of whether the
                         // auto-continue block below even runs.
                         let stillIncompleteAfterLimit = false;
-                        if (!abortController.signal.aborted) {
+                        if (!myAbortController.signal.aborted) {
                             const CONTINUE_INSTRUCTION = "Continue exactly where you left off. Do not repeat anything you already wrote, do not restart the code, and do not add any explanation before or after — output ONLY the raw continuation text, picking back up mid-line if needed, and close the ``` code fence once the code is actually complete. If you were cut off in the middle of a markdown table row, resume with the EXACT SAME pipe-delimited table syntax and the same number of columns as the table above — do not switch to bullet points or plain text partway through a table, and do not restart the table from its header.";
                             let continueRounds = 0;
                             let consecutiveEmptyRounds = 0;
@@ -12431,7 +12521,7 @@
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: contBody,
-                                        signal: abortController.signal
+                                        signal: myAbortController.signal
                                     });
                                     if (!contResp.ok || !contResp.body) {
                                         console.warn(`Cavdo: auto-continue round ${continueRounds} fetch failed — status ${contResp.status}`);
@@ -12448,7 +12538,7 @@
                                     // which we don't want spliced visibly into the answer).
                                     const roundStartLength = fullText.length;
                                     while (true) {
-                                        if (abortController.signal.aborted) { try { contReader.cancel(); } catch (e) {} break; }
+                                        if (myAbortController.signal.aborted) { try { contReader.cancel(); } catch (e) {} break; }
                                         if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) { try { contReader.cancel(); } catch (e) {} break; }
                                         const { done: contDone, value: contValue } = await contReader.read();
                                         if (contDone) break;
@@ -12577,7 +12667,7 @@
                         const openFenceCount = (fullText.match(/```/g) || []).length;
                         if (openFenceCount % 2 !== 0) fullText += '\n```';
 
-                        if (!sawAnyOutput && !abortController.signal.aborted) {
+                        if (!sawAnyOutput && !myAbortController.signal.aborted) {
                             // Stream closed with literally nothing in it — usually a
                             // transient backend hiccup. This used to throw straight out
                             // unconditionally: emptyStreamRetriesThisTier was declared
@@ -12619,8 +12709,15 @@
                         // if the person hit Stop) and only costs anything when a real
                         // parse error is actually found — most replies never trigger
                         // this extra round-trip at all.
-                        if (runSyntaxCheck && !stillIncompleteAfterLimit && !abortController.signal.aborted && fullText.includes('```')) {
-                            const MAX_FIX_ATTEMPTS = 2;
+                        if (runSyntaxCheck && !stillIncompleteAfterLimit && !myAbortController.signal.aborted && fullText.includes('```')) {
+                            // Dropped from 2 attempts to 1: the second corrective round
+                            // was rare (most fixes land on the first try) but expensive
+                            // when it *did* fire — up to another full LLM round trip on
+                            // top of everything else, which is exactly the kind of
+                            // invisible added latency that reads as "this takes forever"
+                            // for code requests. One attempt covers the common case;
+                            // shipping-with-a-warning beats a silent multi-minute wait.
+                            const MAX_FIX_ATTEMPTS = 1;
                             let attempt = 0;
 
                             // Local heuristic first (free, instant, zero network): catches
@@ -12634,10 +12731,29 @@
                                 return await checkRealSyntaxIssues(text);
                             }
 
+                            // Nothing told the person this was even happening before —
+                            // the message just sat there, fully rendered, while a real
+                            // network round trip (up to 8s for the linter, up to 30s for
+                            // a corrective fix) ran silently in the background. That
+                            // silence is a big part of what reads as "stuck"/slow, even
+                            // when the actual work is brief.
+                            let syntaxCheckBadge = null;
+                            if (currentChatId === requestContextChatId) {
+                                const checkNode = getLastMessageNode()?.querySelector('.text-container-node');
+                                if (checkNode) {
+                                    syntaxCheckBadge = document.createElement('div');
+                                    syntaxCheckBadge.className = 'syntax-check-badge';
+                                    syntaxCheckBadge.style.cssText = 'font-size:12px;opacity:0.6;margin-top:8px;font-style:italic;';
+                                    syntaxCheckBadge.textContent = '🔍 Checking code for errors…';
+                                    checkNode.appendChild(syntaxCheckBadge);
+                                }
+                            }
+
                             let syntaxError = await detectIssue(fullText);
-                            while (syntaxError && attempt < MAX_FIX_ATTEMPTS && !abortController.signal.aborted) {
+                            while (syntaxError && attempt < MAX_FIX_ATTEMPTS && !myAbortController.signal.aborted) {
                                 attempt++;
                                 console.warn(`Cavdo: issue detected in generated code (attempt ${attempt}/${MAX_FIX_ATTEMPTS}), requesting corrective fix:`, syntaxError.message);
+                                if (syntaxCheckBadge) syntaxCheckBadge.textContent = '🔧 Found an issue — fixing it…';
                                 const fixedText = await requestSyntaxFix({
                                     errorMessage: syntaxError.message,
                                     userText: text,
@@ -12645,7 +12761,7 @@
                                     sysInstruction,
                                     tierKey: usedTier.key,
                                     requestId: requestId + '-attempt' + attempt,
-                                    signal: abortController.signal
+                                    signal: myAbortController.signal
                                 });
                                 if (!fixedText) {
                                     // The fix call itself failed (network/timeout/etc.) — leave
@@ -12655,6 +12771,7 @@
                                 fullText = downgradeUnrequestedDocFences(fixedText, text);
                                 syntaxError = await detectIssue(fullText);
                             }
+                            if (syntaxCheckBadge && syntaxCheckBadge.parentNode) syntaxCheckBadge.parentNode.removeChild(syntaxCheckBadge);
                             if (syntaxError) {
                                 console.warn(`Cavdo: still had an issue after ${attempt} corrective attempt(s) — shipping it anyway rather than looping further:`, syntaxError.message);
                             }
@@ -12666,7 +12783,7 @@
                         // can genuinely fire on a big enough answer, not only on rare
                         // backend failures. Make that visible, not just logged: append a
                         // plain note the person can act on immediately.
-                        if (stillIncompleteAfterLimit && !abortController.signal.aborted) {
+                        if (stillIncompleteAfterLimit && !myAbortController.signal.aborted) {
                             console.warn('Cavdo: hit the 2-minute generation ceiling still incomplete — showing partial content with a continue prompt.');
                             fullText += '\n\n*Hit the 2-minute limit, so here\'s what\'s ready so far — reply "continue" and I\'ll pick up exactly where this left off.*';
                         }
@@ -12760,7 +12877,15 @@
                 if (currentChatId === requestContextChatId) {
                     setGeneratingState(false);
                 }
-                abortController = null;
+                // Only clear the shared global if it's still pointing at the
+                // controller THIS call created — if another sendMessage() call
+                // (a different chat generating in the background) has since
+                // taken over that global, nulling it here would crash that
+                // other, still-running generation the next time it touches
+                // `abortController`. This was the actual bug behind the
+                // TypeError in the console — this finally block is exactly
+                // what fired it.
+                if (abortController === myAbortController) abortController = null;
             }
         }
 

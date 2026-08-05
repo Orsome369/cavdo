@@ -7865,6 +7865,95 @@
             return (MIME_TYPES[ext] || 'text/plain') + ';charset=utf-8';
         }
 
+        // --- Generated-code syntax validation (real check, not just a prompt ask) ---
+        // Scans every fenced code block for a genuine JS parse-time error — unclosed
+        // brackets/quotes, invalid tokens, mismatched braces — using new Function()
+        // to actually attempt compilation. Deliberately does NOT execute the code
+        // (only compiles it), since running arbitrary AI-generated code just to check
+        // it isn't safe. Covers plain ```javascript/```js blocks and inline <script>
+        // tags inside ```html blocks, which is the vast majority of what this app
+        // generates (games, animations, interactive pages). This is a real,
+        // deterministic check — it will catch actual syntax errors every time — but
+        // it can't catch logic bugs (wrong physics, a blank canvas from bad camera
+        // math, etc.), since those aren't parse errors.
+        function findFirstSyntaxError(codeText) {
+            const fenceRe = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+            let m;
+            while ((m = fenceRe.exec(codeText))) {
+                const lang = (m[1] || '').toLowerCase();
+                const content = m[2];
+                const jsSnippets = [];
+                if (lang === 'javascript' || lang === 'js') {
+                    jsSnippets.push(content);
+                } else if (lang === 'html' || lang === '') {
+                    const scriptRe = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+                    let sm;
+                    while ((sm = scriptRe.exec(content))) {
+                        if (sm[2] && sm[2].trim() && !/\bsrc\s*=/.test(sm[1] || '')) jsSnippets.push(sm[2]);
+                    }
+                }
+                for (const snippet of jsSnippets) {
+                    try { new Function(snippet); }
+                    catch (e) { if (e instanceof SyntaxError) return { message: e.message, lang: lang || 'html' }; }
+                }
+            }
+            return null;
+        }
+
+        // One best-effort corrective round, fired only when findFirstSyntaxError
+        // actually catches a real parse error — reuses the exact tier/model that
+        // just generated the broken code, names the specific error, and asks for
+        // the complete corrected file back. Returns null (never throws) if the fix
+        // call itself fails for any reason, so the caller can just keep the
+        // original code — a failed fix attempt never leaves the person worse off
+        // than before the check existed.
+        async function requestSyntaxFix({ errorMessage, userText, priorCode, sysInstruction, tierKey, requestId, signal }) {
+            try {
+                const resp = await fetch(ULTIMATE_CHAT_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tier: tierKey,
+                        requestId: requestId + '-syntaxfix',
+                        mode: 'code',
+                        max_tokens: 16384,
+                        messages: [
+                            { role: 'system', content: sysInstruction },
+                            { role: 'user', content: userText },
+                            { role: 'assistant', content: priorCode },
+                            { role: 'user', content: `That code has a real syntax error: ${errorMessage}. Return the COMPLETE corrected file in a single fenced code block — the whole file, not just an explanation or a diff.` }
+                        ]
+                    }),
+                    signal
+                });
+                if (!resp.ok) return null;
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '', text = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed.startsWith('data:')) continue;
+                        const jsonStr = trimmed.slice(5).trim();
+                        if (!jsonStr || jsonStr === '[DONE]') continue;
+                        let evt;
+                        try { evt = JSON.parse(jsonStr); } catch (e) { continue; }
+                        const delta = evt?.choices?.[0]?.delta?.content;
+                        if (delta) text += delta;
+                    }
+                }
+                return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim() || null;
+            } catch (e) {
+                console.warn('Cavdo: syntax-fix follow-up failed, keeping original code:', e);
+                return null;
+            }
+        }
+
         // Attempts to parse a ```zip fenced block as a JSON manifest of files:
         // [{"name": "file1.txt", "content": "..."}, ...]. Falls back to a single file.
         function parseZipManifest(text, fallbackName) {
@@ -12248,9 +12337,33 @@
                         if (openFenceCount % 2 !== 0) fullText += '\n```';
 
                         if (!sawAnyOutput && !abortController.signal.aborted) {
-                            // Stream closed with literally nothing in it — treat like
-                            // any other failed attempt so the rotation logic above
-                            // gets a chance to retry on the next key/tier.
+                            // Stream closed with literally nothing in it — usually a
+                            // transient backend hiccup. This used to throw straight out
+                            // unconditionally: emptyStreamRetriesThisTier was declared
+                            // above but never actually wired to anything, so despite the
+                            // comment here claiming "the rotation logic gets a chance to
+                            // retry", nothing ever caught this and every empty stream
+                            // ended the whole generation on the spot — the exact "Empty
+                            // stream received" hard failure this was supposed to prevent.
+                            // Now it actually retries the same tier a couple of times,
+                            // then falls back to the next tier, before finally giving up.
+                            emptyStreamRetriesThisTier++;
+                            if (emptyStreamRetriesThisTier <= 2) {
+                                console.warn(`Cavdo: empty stream (retry ${emptyStreamRetriesThisTier}/2 on ${usedTier.label}) — retrying shortly.`);
+                                await new Promise(r => setTimeout(r, 900 * emptyStreamRetriesThisTier));
+                                continue;
+                            }
+                            const nextTier = downgradeAfterLimit();
+                            if (nextTier) {
+                                emptyStreamRetriesThisTier = 0;
+                                proxyErrorRetriesThisTier = 0;
+                                const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                                if (switchChat) {
+                                    switchChat.messages[aiMsgIndex].text = `✨ ${usedTier.label} came back empty — switching to ${nextTier.label}, thinking`;
+                                    localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
+                                }
+                                continue;
+                            }
                             throw new Error('Empty stream received.');
                         }
 
@@ -12258,6 +12371,37 @@
                             fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
                             text
                         ) + buildGroundingSourcesBlock(groundingMetadata);
+
+                        // Real syntax check, not just a prompt asking the model to be
+                        // careful: only runs on a genuinely complete response (skipped
+                        // if it's about to show the "still incomplete" note anyway, or
+                        // if the person hit Stop) and only costs anything when a real
+                        // parse error is actually found — most replies never trigger
+                        // this extra round-trip at all.
+                        if (usingUltimateProxy && !stillIncompleteAfterLimit && !abortController.signal.aborted && fullText.includes('```')) {
+                            const syntaxError = findFirstSyntaxError(fullText);
+                            if (syntaxError) {
+                                console.warn('Cavdo: syntax error detected in generated code, requesting one corrective fix:', syntaxError.message);
+                                const fixedText = await requestSyntaxFix({
+                                    errorMessage: syntaxError.message,
+                                    userText: text,
+                                    priorCode: fullText,
+                                    sysInstruction,
+                                    tierKey: usedTier.key,
+                                    requestId,
+                                    signal: abortController.signal
+                                });
+                                if (fixedText) {
+                                    fullText = downgradeUnrequestedDocFences(fixedText, text);
+                                    if (findFirstSyntaxError(fullText)) {
+                                        console.warn('Cavdo: corrective fix still had a syntax issue — using it anyway rather than looping further.');
+                                    }
+                                }
+                                // fixedText null (the fix call itself failed) simply
+                                // leaves fullText as originally generated — never worse
+                                // off than before this check existed.
+                            }
+                        }
 
                         // With MAX_TOTAL_GENERATION_MS now a hard 2-minute ceiling on the
                         // entire request (initial round included), stillIncompleteAfterLimit

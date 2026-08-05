@@ -10885,6 +10885,45 @@
             return node;
         }
 
+        // --- SEARCH/REPLACE diff editing ------------------------------------
+        // For a follow-up edit on existing code ("make it nicer", "fix the
+        // bug"), re-generating and re-streaming the ENTIRE file for a change
+        // that might be 3 lines is the single biggest avoidable chunk of
+        // latency in the whole app — output tokens are the slow part, and a
+        // full file is enormously more of them than a localized diff. Instead,
+        // an edit request asks the model for one or more SEARCH/REPLACE
+        // blocks (same format Claude Code/aider use) identifying the exact
+        // old text and its replacement; this reconstructs the real full file
+        // client-side by applying those blocks to the previous version, so
+        // everything downstream (file cards, syntax check, download) still
+        // sees a complete file exactly like before — the model just never had
+        // to generate/stream the unchanged 95% of it.
+        function parseSearchReplaceBlocks(diffText) {
+            const blocks = [];
+            const re = /<{5,}\s*SEARCH\r?\n([\s\S]*?)\r?\n={5,}\r?\n([\s\S]*?)\r?\n>{5,}\s*REPLACE/g;
+            let m;
+            while ((m = re.exec(diffText))) {
+                blocks.push({ search: m[1], replace: m[2] });
+            }
+            return blocks;
+        }
+        // Returns the patched text, or null if any block couldn't be applied
+        // safely (its SEARCH text isn't found, or is ambiguous — appears more
+        // than once, which risks silently editing the wrong spot). null means
+        // "don't trust this patch" — the caller falls back rather than ever
+        // showing a mangled file.
+        function applySearchReplaceBlocks(originalText, blocks) {
+            let result = originalText;
+            for (const { search, replace } of blocks) {
+                if (!search) return null;
+                const firstIdx = result.indexOf(search);
+                if (firstIdx === -1) return null;
+                if (result.indexOf(search, firstIdx + 1) !== -1) return null; // ambiguous match
+                result = result.slice(0, firstIdx) + replace + result.slice(firstIdx + search.length);
+            }
+            return result;
+        }
+
         // The system prompt tells the model to only use ```pdf/```docx/```pptx
         // fences when the user explicitly asked for that document type — but
         // a model instruction is a request, not a guarantee, and it can still
@@ -11894,7 +11933,7 @@
                         promptParts.push("The user attached video — you can actually see and hear its content; never say you can't view video. Most attachments are a problem to diagnose: describe specifically what goes wrong (what's on screen, what triggers it, roughly when), the likely cause, and concrete fix steps, referencing real details from the footage. If it's not about a problem, just describe what happens and answer what was asked.");
                     }
                     if (isCodeEditRequest && lastCodeContext) {
-                        promptParts.push("This message is a follow-up on the code you just gave ('make it nicer', 'clean this up') — not a new topic. Treat it as edit instructions for that exact code, same language/structure unless told otherwise, and return the complete updated code in one fenced block, not just the diff.");
+                        promptParts.push("This message is a follow-up on the code you just gave ('make it nicer', 'clean this up') — not a new topic. Treat it as edit instructions for that exact code, same language/structure unless told otherwise. DO NOT return the whole file again. Instead return ONLY the changed parts as one or more SEARCH/REPLACE blocks, back to back inside a single fenced code block (same language tag as before), in exactly this format and nothing else: <<<<<<< SEARCH then the exact original lines being changed (verbatim — must match the previous code character-for-character, including whitespace) then ======= then the new replacement lines then >>>>>>> REPLACE. Keep each SEARCH block as short as possible while still being unique in the file (a couple of anchor lines of context around the actual change is enough — never paste unrelated unchanged code). Only fall back to returning the complete file if the requested change genuinely rewrites most of it (e.g. a full redesign or language change) — in that case return the whole file as normal, no SEARCH/REPLACE markers.");
                     }
 
                     let sysInstruction = promptParts.join(' ');
@@ -12702,6 +12741,43 @@
                             fullText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
                             text
                         ) + buildGroundingSourcesBlock(groundingMetadata);
+
+                        // If this was an edit request, the model was asked for a
+                        // SEARCH/REPLACE diff instead of the whole file — reconstruct
+                        // the real full file now by applying it to the previous
+                        // version, so every downstream step (file card, syntax check,
+                        // download) works on a complete file exactly as before. If the
+                        // model ignored the format and just returned the full file
+                        // anyway, parseSearchReplaceBlocks finds nothing and this is a
+                        // no-op. If the diff doesn't apply cleanly (SEARCH text not
+                        // found or ambiguous — never guess), one follow-up request
+                        // asks for the complete file instead of risking a corrupted one.
+                        if (isCodeEditRequest && lastCodeContext && !myAbortController.signal.aborted) {
+                            const diffBlocks = parseSearchReplaceBlocks(fullText);
+                            if (diffBlocks.length) {
+                                const priorFileMatch = lastCodeContext.match(/```([a-zA-Z0-9]*)\n([\s\S]*?)```/);
+                                const priorLang = priorFileMatch ? (priorFileMatch[1] || '') : '';
+                                const priorCode = priorFileMatch ? priorFileMatch[2] : lastCodeContext;
+                                const patched = applySearchReplaceBlocks(priorCode, diffBlocks);
+                                if (patched !== null) {
+                                    fullText = '```' + priorLang + '\n' + patched + '\n```';
+                                } else {
+                                    console.warn('Cavdo: edit diff did not apply cleanly (SEARCH text not found or ambiguous) — asking for the complete file instead.');
+                                    const fallbackText = await requestSyntaxFix({
+                                        errorMessage: "your SEARCH/REPLACE diff didn't match the previous code exactly, so it couldn't be applied — please resend the COMPLETE updated file in one fenced code block this time, no diff markers",
+                                        userText: text,
+                                        priorCode: lastCodeContext,
+                                        sysInstruction,
+                                        tierKey: usedTier.key,
+                                        requestId: requestId + '-fullfile-fallback',
+                                        signal: myAbortController.signal
+                                    });
+                                    fullText = fallbackText
+                                        ? downgradeUnrequestedDocFences(fallbackText, text)
+                                        : (lastCodeContext + '\n\n*(That edit didn\'t apply cleanly — mind describing the change again?)*');
+                                }
+                            }
+                        }
 
                         // Real syntax check, not just a prompt asking the model to be
                         // careful: only runs on a genuinely complete response (skipped

@@ -12030,11 +12030,14 @@
                             // never by hitting this number. 60 rounds is far beyond
                             // anything a real answer should ever need.
                             const MAX_CONTINUE_ROUNDS = 60;
-                            // Same idea for time: this is a runaway-cost backstop, not a
-                            // response-length policy. 45 minutes comfortably covers even
-                            // a legitimately huge multi-round answer; in the vast
-                            // majority of replies this is never approached.
-                            const MAX_TOTAL_GENERATION_MS = 45 * 60 * 1000;
+                            // Same idea for time, but now a real user-facing ceiling, not
+                            // just a runaway-cost backstop: 45 minutes of silent chained
+                            // continuations was indistinguishable from "frozen" to anyone
+                            // watching it, with zero feedback the whole time. 5 minutes is
+                            // the longest a person should ever sit looking at nothing —
+                            // past that, stop and show whatever's ready, with a visible
+                            // note (see stillIncompleteAfterLimit below) instead of silence.
+                            const MAX_TOTAL_GENERATION_MS = 5 * 60 * 1000;
                             // Set true only if the loop below gives up (round cap or time
                             // budget hit) while the response was STILL genuinely
                             // incomplete (open fence / API-reported truncation). Read
@@ -12250,20 +12253,16 @@
                             text
                         ) + buildGroundingSourcesBlock(groundingMetadata);
 
-                        // With MAX_CONTINUE_ROUNDS/MAX_TOTAL_GENERATION_MS above now set
-                        // as pure runaway-cost backstops (60 rounds / 45 minutes) rather
-                        // than a length policy, and every round retrying transient
-                        // failures with backoff, stillIncompleteAfterLimit being true
-                        // here means something genuinely and repeatedly went wrong
-                        // (backend down, network gone) — not "the answer was long".
-                        // Matching how Claude/Gemini degrade in that rare case: the
-                        // person gets whatever real content was generated, with nothing
-                        // bolted onto the visible text — no inline warning banner. This
-                        // is a diagnostics-only signal for now (console), not user-facing
-                        // copy; it's the hook to wire up a real "Continue" affordance in
-                        // the UI later if this ever actually fires in practice.
+                        // With MAX_TOTAL_GENERATION_MS now a real 5-minute UX ceiling
+                        // (not just a runaway-cost backstop), stillIncompleteAfterLimit
+                        // can genuinely fire on a big enough answer, not only on rare
+                        // backend failures — so this needs to be visible, not just
+                        // logged to console. Append a plain note the person can act on
+                        // immediately, instead of leaving a silently truncated answer
+                        // that looks finished but isn't.
                         if (stillIncompleteAfterLimit && !abortController.signal.aborted) {
-                            console.warn('Cavdo: generation ended still incomplete after exhausting all automatic recovery — this should be extremely rare. Keeping partial content, no user-facing message.');
+                            console.warn('Cavdo: hit the 5-minute generation ceiling still incomplete — showing partial content with a continue prompt.');
+                            fullText += '\n\n*This is taking longer than 5 minutes, so here\'s what\'s ready so far — reply "continue" and I\'ll pick up exactly where this left off.*';
                         }
 
                         const finalizeChat = JSON.parse(localStorage.getItem(requestContextChatId));

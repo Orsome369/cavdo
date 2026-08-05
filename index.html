@@ -90,6 +90,14 @@
         // ever reaches the browser:
         const ULTIMATE_CHAT_API_URL = 'https://vercel-backend-umber-mu.vercel.app/api/ultimate-chat'; // see api/ultimate-chat.js (Vercel), key lives server-side in NVIDIA_API_KEY env var — this is a DIFFERENT Vercel project than the frontend, so it must be an absolute URL, not a relative path
         const GENERATION_STATUS_API_URL = 'https://vercel-backend-umber-mu.vercel.app/api/generation-status'; // see api/generation-status.js — polled after a refresh to resume a generation that was still in progress instead of losing it
+        // Real (not heuristic) syntax checkers — actual parsers running server-side,
+        // no secrets/API key involved, so these two are safe to call even before
+        // the local findFirstSyntaxError heuristic decides whether it's worth it.
+        // lint-code.js (Node/esbuild+postcss) covers JS/JSX/TS/TSX/CSS; lint-python.py
+        // (CPython's own ast.parse) covers Python — see those files for why each is
+        // a genuine grammar check rather than a bracket-balance approximation.
+        const REAL_LINT_JS_CSS_API_URL = 'https://vercel-backend-umber-mu.vercel.app/api/lint-code';
+        const REAL_LINT_PYTHON_API_URL = 'https://vercel-backend-umber-mu.vercel.app/api/lint-python';
         //
         // Shims so leftover legacy code paths (image-edit fallback loops,
         // the deleted admin panel's stray references, etc.) don't throw —
@@ -7876,7 +7884,67 @@
         // deterministic check — it will catch actual syntax errors every time — but
         // it can't catch logic bugs (wrong physics, a blank canvas from bad camera
         // math, etc.), since those aren't parse errors.
+        // Non-fenced-language, non-JS check: doesn't require knowing the language's
+        // real grammar (no parser available client-side for Python/Java/C/etc.), so
+        // it can't catch every syntax error the way new Function() does for JS — but
+        // it catches the failure mode that actually matters most for AI-generated
+        // code: the response got cut off or malformed mid-structure. Balances
+        // (){}[] and quotes char-by-char (skipping char literals/escapes/line- and
+        // block-comments per a small per-language comment-style table so quotes/
+        // brackets *inside* comments don't throw off the count), and flags a
+        // handful of unambiguous truncation markers a person would immediately spot
+        // as broken (a code fence that never closes; a lone "..." line standing in
+        // for real content). Deliberately does NOT flag words like "TODO" on their
+        // own — too many legitimate TODO-list/task apps would false-positive.
+        function findLanguageAgnosticIssue(content, lang) {
+            const lines = content.split('\n');
+            for (const line of lines) {
+                const t = line.trim();
+                if (t === '...' || t === '// ...' || t === '# ...' || /^(\/\/|#)\s*\.\.\.\s*(rest of|remaining|continue)/i.test(t)) {
+                    return 'response appears truncated (a placeholder "..." line stands in for real content instead of the actual code)';
+                }
+            }
+            const lineComment = (lang === 'python' || lang === 'py' || lang === 'ruby' || lang === 'rb' || lang === 'yaml' || lang === 'yml' || lang === 'sh' || lang === 'bash' || lang === 'shell') ? '#' : '//';
+            const hasBlockComment = !(lang === 'python' || lang === 'py' || lang === 'ruby' || lang === 'rb' || lang === 'yaml' || lang === 'yml' || lang === 'sh' || lang === 'bash' || lang === 'shell');
+            const stack = [];
+            const pairs = { '(': ')', '[': ']', '{': '}' };
+            const closers = { ')': '(', ']': ']', '}': '{' };
+            closers[')'] = '('; closers[']'] = '['; closers['}'] = '{';
+            let inStr = null, inLineComment = false, inBlockComment = false;
+            for (let i = 0; i < content.length; i++) {
+                const c = content[i], next = content[i + 1];
+                if (inLineComment) { if (c === '\n') inLineComment = false; continue; }
+                if (inBlockComment) { if (c === '*' && next === '/') { inBlockComment = false; i++; } continue; }
+                if (inStr) {
+                    if (c === '\\') { i++; continue; }
+                    if (c === inStr) inStr = null;
+                    continue;
+                }
+                if (hasBlockComment && c === '/' && next === '*') { inBlockComment = true; i++; continue; }
+                if (c === lineComment[0] && (lineComment.length === 1 || next === lineComment[1])) { inLineComment = true; continue; }
+                if (c === '"' || c === "'" || c === '`') { inStr = c; continue; }
+                if (pairs[c]) stack.push(c);
+                else if (closers[c]) {
+                    if (stack.length === 0 || stack[stack.length - 1] !== closers[c]) {
+                        return `mismatched "${c}" (unbalanced brackets)`;
+                    }
+                    stack.pop();
+                }
+            }
+            if (inStr) return `unterminated string literal (missing closing ${inStr})`;
+            if (stack.length > 0) return `unclosed "${stack[stack.length - 1]}" — ${stack.length} bracket(s) never closed`;
+            return null;
+        }
+
         function findFirstSyntaxError(codeText) {
+            // Unclosed markdown fence: an odd number of ``` markers means the
+            // response was cut off mid code-block — the single clearest, zero-
+            // false-positive truncation signal there is.
+            const fenceMarkerCount = (codeText.match(/```/g) || []).length;
+            if (fenceMarkerCount % 2 !== 0) {
+                return { message: 'response was cut off mid code-block (unclosed ``` fence)', lang: 'unknown' };
+            }
+
             const fenceRe = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
             let m;
             while ((m = fenceRe.exec(codeText))) {
@@ -7896,8 +7964,95 @@
                     try { new Function(snippet); }
                     catch (e) { if (e instanceof SyntaxError) return { message: e.message, lang: lang || 'html' }; }
                 }
+
+                if (lang === 'json') {
+                    try { JSON.parse(content); }
+                    catch (e) { return { message: 'invalid JSON: ' + e.message, lang: 'json' }; }
+                    continue;
+                }
+
+                // For everything else (python, css, java, c/c++, go, rust, php, sql,
+                // xml, plain "" fences, ...): no real grammar available client-side,
+                // so fall back to the balance/truncation heuristic. Skip it for docs
+                // that are prose-not-code (md/markdown/text) where brackets are just
+                // punctuation and false positives would be common.
+                if (!['markdown', 'md', 'text', 'txt', 'zip'].includes(lang) && !jsSnippets.length) {
+                    const issue = findLanguageAgnosticIssue(content, lang);
+                    if (issue) return { message: issue, lang: lang || 'plain' };
+                }
             }
             return null;
+        }
+
+        // --- Real (non-heuristic) server-side syntax check -----------------
+        // findFirstSyntaxError() above is fast, free, and fully local — but for
+        // anything beyond plain JS/JSON it's a bracket-balance heuristic. It
+        // cannot catch a Python indentation error (Python's grammar is
+        // indentation-sensitive; brace-counting says nothing about that), and
+        // new Function() can't even parse TS/JSX/TSX syntax at all, valid or
+        // not. These two endpoints run real parsers server-side instead:
+        // esbuild for JS/JSX/TS/TSX, postcss for CSS, and CPython's own
+        // ast.parse() for Python — see api/lint-code.js and api/lint-python.py
+        // in the backend repo. Everything else (Java, C, Go, SQL, ...) still
+        // has no safe real checker available anywhere, so it stays on the
+        // local heuristic only; this function simply returns no snippets for
+        // those languages rather than pretending to cover them.
+        function extractRealLintableSnippets(codeText) {
+            const JS_CSS_LANGS = new Set(['js', 'javascript', 'jsx', 'ts', 'typescript', 'tsx', 'css']);
+            const PY_LANGS = new Set(['py', 'python']);
+            const fenceRe = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+            const jsCss = [], python = [];
+            let m, idx = 0;
+            while ((m = fenceRe.exec(codeText))) {
+                const lang = (m[1] || '').toLowerCase();
+                const content = m[2];
+                if (!content || !content.trim()) continue;
+                idx++;
+                if (JS_CSS_LANGS.has(lang)) jsCss.push({ id: 'snippet' + idx, lang, content });
+                else if (PY_LANGS.has(lang)) python.push({ id: 'snippet' + idx, lang: 'python', content });
+            }
+            return { jsCss, python };
+        }
+
+        // One real-checker network round, only attempted when there's actually
+        // lintable code present (most replies have none, so most replies never
+        // pay for this at all). Each endpoint gets an 8s hard timeout via
+        // AbortSignal.timeout — a slow/unreachable backend just means this pass
+        // reports nothing, never blocks shipping the response. Same "never
+        // worse off than before this existed" guarantee as the local check.
+        async function checkRealSyntaxIssues(fullText) {
+            const { jsCss, python } = extractRealLintableSnippets(fullText);
+            if (!jsCss.length && !python.length) return null;
+
+            async function callEndpoint(url, snippets) {
+                if (!snippets.length) return null;
+                try {
+                    const resp = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ snippets }),
+                        signal: AbortSignal.timeout(8000)
+                    });
+                    if (!resp.ok) return null;
+                    const data = await resp.json();
+                    const results = Array.isArray(data.results) ? data.results : [];
+                    const bad = results.find(r => r && r.ok === false);
+                    if (!bad) return null;
+                    const snippet = snippets.find(s => s.id === bad.id);
+                    const loc = (bad.line != null) ? ` (line ${bad.line}${bad.column != null ? ', col ' + bad.column : ''})` : '';
+                    return { message: `${bad.message}${loc}`, lang: snippet ? snippet.lang : 'unknown' };
+                } catch (e) {
+                    // Network failure/timeout/CORS/etc — never treated as a
+                    // syntax error itself, just nothing to report this pass.
+                    return null;
+                }
+            }
+
+            const [jsCssIssue, pyIssue] = await Promise.all([
+                callEndpoint(REAL_LINT_JS_CSS_API_URL, jsCss),
+                callEndpoint(REAL_LINT_PYTHON_API_URL, python)
+            ]);
+            return jsCssIssue || pyIssue || null;
         }
 
         // One best-effort corrective round, fired only when findFirstSyntaxError
@@ -11605,7 +11760,7 @@
 
                     const promptParts = [
                         (selectedMode === 'code')
-                            ? "You are a senior developer. Ship complete, correct, genuinely working code — never a stub, placeholder, or TODO left for the user. There's a real per-response length ceiling: don't pad with unrequested extras, but never cut the detail that makes the actual thing work and look real — convincing motion/easing if animated, a real color palette, sensible spacing, real error handling for failures that would actually occur (bad input, network failure, empty state). For any canvas/WebGL/3D scene (three.js, game, simulation): the content must actually be visible on load, not just a blank/black canvas with working UI around it — camera positioned to actually frame the scene, at least one light source if using a lit material (or use MeshBasicMaterial if not), a render loop that truly calls render every frame, and the canvas sized and appended to the DOM. Mentally trace it: would something visible actually appear the instant this loads, with zero interaction? If not, it's a failed response even if it doesn't throw an error. Always a fenced code block with the correct language tag, real newlines, consistent indentation — never <think> tags or unfenced code. Too big for one response? Finish the most important part fully working, say what's left, offer to continue."
+                            ? "You are a senior developer. Ship complete, correct, genuinely working code — never a stub, placeholder, or TODO left for the user. There's a real per-response length ceiling: don't pad with unrequested extras, but never cut the detail that makes the actual thing work and look real — convincing motion/easing if animated, a real color palette, sensible spacing, real error handling for failures that would actually occur (bad input, network failure, empty state). For any canvas/WebGL/3D scene (three.js, game, simulation): the content must actually be visible on load, not just a blank/black canvas with working UI around it — camera positioned to actually frame the scene, at least one light source if using a lit material (or use MeshBasicMaterial if not), a render loop that truly calls render every frame, and the canvas sized and appended to the DOM. Mentally trace it: would something visible actually appear the instant this loads, with zero interaction? If not, it's a failed response even if it doesn't throw an error. Before finalizing, silently verify: every bracket/quote/tag you opened is closed, every function or variable you reference is actually defined somewhere in the file, nothing is stubbed with '...' or 'rest of code here', and the file ends complete — not mid-line. Always a fenced code block with the correct language tag, real newlines, consistent indentation — never <think> tags or unfenced code. Too big for one response? Finish the most important part fully working, say what's left, offer to continue."
                             : "You are Cavdo AI — careful, thorough, direct. Give complete, accurate, well-organized answers: no filler, no truncating detail actually asked for, depth matched to the question (a quick fact gets a short answer; a build/compare/explain request gets a fully worked one). Clean GitHub-flavored markdown: '##'/'###' headings only for genuinely multi-section answers, '**bold**' for key terms, '-' bullets for lists, numbered lists for sequences. Tabular/comparison data MUST be a real markdown pipe table (header row + dash separator row directly under it, same column count every row) — never faked with dashes or spacing.",
 
                         "Never write raw HTML tags (<br>, <div>, <p>, etc.) outside a code fence — this renders as plain markdown, so a stray tag shows up as literal text on screen. New line for a line break, blank line for a paragraph break.",
@@ -11690,6 +11845,12 @@
                         // image editing and search-grounding only.
                         const NVIDIA_PROXY_TIERS = new Set(['ultimate', 'speed', 'lite']);
                         const usingUltimateProxy = NVIDIA_PROXY_TIERS.has(usedTier.key);
+                        // Syntax-check + auto-fix costs one extra real API round-trip when
+                        // it actually finds a problem, so it's gated to the two paid-feeling
+                        // tiers (Speed, Ultimate) and deliberately skipped on Lite — Lite stays
+                        // cheap/fast with just the prompt-level guidance, no verification pass.
+                        const SYNTAX_CHECK_TIERS = new Set(['ultimate', 'speed']);
+                        const runSyntaxCheck = SYNTAX_CHECK_TIERS.has(usedTier.key);
 
                         // Ultimate is the top paid tier, so for code requests push it
                         // further than the baseline instruction above: go the extra
@@ -12378,28 +12539,44 @@
                         // if the person hit Stop) and only costs anything when a real
                         // parse error is actually found — most replies never trigger
                         // this extra round-trip at all.
-                        if (usingUltimateProxy && !stillIncompleteAfterLimit && !abortController.signal.aborted && fullText.includes('```')) {
-                            const syntaxError = findFirstSyntaxError(fullText);
-                            if (syntaxError) {
-                                console.warn('Cavdo: syntax error detected in generated code, requesting one corrective fix:', syntaxError.message);
+                        if (runSyntaxCheck && !stillIncompleteAfterLimit && !abortController.signal.aborted && fullText.includes('```')) {
+                            const MAX_FIX_ATTEMPTS = 2;
+                            let attempt = 0;
+
+                            // Local heuristic first (free, instant, zero network): catches
+                            // truncation, real JS syntax errors, and generic bracket/quote
+                            // issues. Only when THAT finds nothing do we pay for the real
+                            // server-side parsers (esbuild/postcss/ast.parse) — most replies
+                            // never need either stage, and most that do only need the free one.
+                            async function detectIssue(text) {
+                                const local = findFirstSyntaxError(text);
+                                if (local) return local;
+                                return await checkRealSyntaxIssues(text);
+                            }
+
+                            let syntaxError = await detectIssue(fullText);
+                            while (syntaxError && attempt < MAX_FIX_ATTEMPTS && !abortController.signal.aborted) {
+                                attempt++;
+                                console.warn(`Cavdo: issue detected in generated code (attempt ${attempt}/${MAX_FIX_ATTEMPTS}), requesting corrective fix:`, syntaxError.message);
                                 const fixedText = await requestSyntaxFix({
                                     errorMessage: syntaxError.message,
                                     userText: text,
                                     priorCode: fullText,
                                     sysInstruction,
                                     tierKey: usedTier.key,
-                                    requestId,
+                                    requestId: requestId + '-attempt' + attempt,
                                     signal: abortController.signal
                                 });
-                                if (fixedText) {
-                                    fullText = downgradeUnrequestedDocFences(fixedText, text);
-                                    if (findFirstSyntaxError(fullText)) {
-                                        console.warn('Cavdo: corrective fix still had a syntax issue — using it anyway rather than looping further.');
-                                    }
+                                if (!fixedText) {
+                                    // The fix call itself failed (network/timeout/etc.) — leave
+                                    // fullText as-is rather than looping on a broken channel.
+                                    break;
                                 }
-                                // fixedText null (the fix call itself failed) simply
-                                // leaves fullText as originally generated — never worse
-                                // off than before this check existed.
+                                fullText = downgradeUnrequestedDocFences(fixedText, text);
+                                syntaxError = await detectIssue(fullText);
+                            }
+                            if (syntaxError) {
+                                console.warn(`Cavdo: still had an issue after ${attempt} corrective attempt(s) — shipping it anyway rather than looping further:`, syntaxError.message);
                             }
                         }
 

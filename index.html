@@ -8063,6 +8063,17 @@
         // original code — a failed fix attempt never leaves the person worse off
         // than before the check existed.
         async function requestSyntaxFix({ errorMessage, userText, priorCode, sysInstruction, tierKey, requestId, signal }) {
+            // Bounded to 60s independent of the user's own Stop button — without
+            // this, a slow/stuck reasoning pass on the corrective call had nothing
+            // capping it client-side except Vercel's own 280s (4:40) server-side
+            // maxDuration eventually killing the function, which is exactly what
+            // "stuck for 5 minutes" looks like from the outside. AbortSignal.any
+            // combines both: whichever fires first (user Stop, or this 60s cap)
+            // aborts the fetch.
+            const timeoutSignal = AbortSignal.timeout(60000);
+            const combinedSignal = (typeof AbortSignal.any === 'function')
+                ? AbortSignal.any([signal, timeoutSignal])
+                : signal; // very old browser fallback — no client-side cap, same as before
             try {
                 const resp = await fetch(ULTIMATE_CHAT_API_URL, {
                     method: 'POST',
@@ -8079,7 +8090,7 @@
                             { role: 'user', content: `That code has a real syntax error: ${errorMessage}. Return the COMPLETE corrected file in a single fenced code block — the whole file, not just an explanation or a diff.` }
                         ]
                     }),
-                    signal
+                    signal: combinedSignal
                 });
                 if (!resp.ok) return null;
                 const reader = resp.body.getReader();

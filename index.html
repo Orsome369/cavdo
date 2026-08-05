@@ -11842,8 +11842,13 @@
                         // Covers the initial stream AND every auto-continue round below —
                         // used to keep a long, multi-round response wrapping up within a
                         // fixed overall time budget instead of chaining continuations
-                        // indefinitely.
+                        // indefinitely. This is now a hard 2-minute ceiling on the WHOLE
+                        // request, not just the continuation rounds — previously only the
+                        // auto-continue loop checked this, so a slow *first* round could
+                        // still run past it with the clock never actually enforced. The
+                        // initial read loop below now checks it too.
                         const generationStartTime = performance.now();
+                        const MAX_TOTAL_GENERATION_MS = 2 * 60 * 1000;
 
                         function pushVisibleChunk(chunk) {
                             sawAnyOutput = true;
@@ -11934,6 +11939,12 @@
                         try {
                             while (true) {
                                 if (abortController.signal.aborted) { try { reader.cancel(); } catch (e) {} break; }
+                                if (performance.now() - generationStartTime > MAX_TOTAL_GENERATION_MS) {
+                                    console.warn('Cavdo: hit the 2-minute ceiling during the initial stream — cutting off here.');
+                                    try { reader.cancel(); } catch (e) {}
+                                    truncatedByLength = true; // treat exactly like a token-limit cutoff: close fence, offer continue
+                                    break;
+                                }
                                 const { done, value } = await reader.read();
                                 if (done) break;
                                 sseBuffer += decoder.decode(value, { stream: true });
@@ -12030,14 +12041,9 @@
                             // never by hitting this number. 60 rounds is far beyond
                             // anything a real answer should ever need.
                             const MAX_CONTINUE_ROUNDS = 60;
-                            // Same idea for time, but now a real user-facing ceiling, not
-                            // just a runaway-cost backstop: 45 minutes of silent chained
-                            // continuations was indistinguishable from "frozen" to anyone
-                            // watching it, with zero feedback the whole time. 5 minutes is
-                            // the longest a person should ever sit looking at nothing —
-                            // past that, stop and show whatever's ready, with a visible
-                            // note (see stillIncompleteAfterLimit below) instead of silence.
-                            const MAX_TOTAL_GENERATION_MS = 5 * 60 * 1000;
+                            // Same 2-minute budget from above (generationStartTime /
+                            // MAX_TOTAL_GENERATION_MS) applies here too — one clock for
+                            // the whole request, initial round included.
                             // Set true only if the loop below gives up (round cap or time
                             // budget hit) while the response was STILL genuinely
                             // incomplete (open fence / API-reported truncation). Read
@@ -12253,16 +12259,15 @@
                             text
                         ) + buildGroundingSourcesBlock(groundingMetadata);
 
-                        // With MAX_TOTAL_GENERATION_MS now a real 5-minute UX ceiling
-                        // (not just a runaway-cost backstop), stillIncompleteAfterLimit
+                        // With MAX_TOTAL_GENERATION_MS now a hard 2-minute ceiling on the
+                        // entire request (initial round included), stillIncompleteAfterLimit
+                        // — or a break out of the initial loop via truncatedByLength above —
                         // can genuinely fire on a big enough answer, not only on rare
-                        // backend failures — so this needs to be visible, not just
-                        // logged to console. Append a plain note the person can act on
-                        // immediately, instead of leaving a silently truncated answer
-                        // that looks finished but isn't.
+                        // backend failures. Make that visible, not just logged: append a
+                        // plain note the person can act on immediately.
                         if (stillIncompleteAfterLimit && !abortController.signal.aborted) {
-                            console.warn('Cavdo: hit the 5-minute generation ceiling still incomplete — showing partial content with a continue prompt.');
-                            fullText += '\n\n*This is taking longer than 5 minutes, so here\'s what\'s ready so far — reply "continue" and I\'ll pick up exactly where this left off.*';
+                            console.warn('Cavdo: hit the 2-minute generation ceiling still incomplete — showing partial content with a continue prompt.');
+                            fullText += '\n\n*Hit the 2-minute limit, so here\'s what\'s ready so far — reply "continue" and I\'ll pick up exactly where this left off.*';
                         }
 
                         const finalizeChat = JSON.parse(localStorage.getItem(requestContextChatId));

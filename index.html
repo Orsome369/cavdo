@@ -11577,13 +11577,19 @@
             // message a moment later.
             liveGeneratingChatIds.add(requestContextChatId);
 
-            const thinkingPhrases = (selectedMode === 'image')
-                ? ['✨ Looking into that', '✨ Searching for related images', '✨ Checking sources', '✨ Almost there']
+            // Only the very first line is still "scripted" — and it's true the
+            // instant it's shown: reading the message you just sent is a real,
+            // synchronous, already-complete step, not a guess about the future.
+            // Everything after this is now driven by real events (see
+            // pushRealThinkingStep below) instead of a timer reciting a fixed
+            // script regardless of what's actually happening.
+            const firstStepLabel = (selectedMode === 'image')
+                ? '✨ Looking into that'
                 : (selectedMode === 'code')
-                    ? ['✨ Reading your request', '✨ Planning the code', '✨ Writing the implementation', '✨ Double-checking syntax']
-                    : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
+                    ? '✨ Reading your request'
+                    : '✨ Reading your message';
 
-            const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true, steps: [thinkingPhrases[0].replace(/^✨\s*/, '')] };
+            const aiMsg = { role: 'ai', text: firstStepLabel, isThinking: true, steps: [firstStepLabel.replace(/^✨\s*/, '')] };
             autoScrollDuringGeneration = true;
             chatData.messages.push(aiMsg);
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
@@ -11610,55 +11616,33 @@
             // cleanup ran first. A local const can't be pulled out from under us.
             const myAbortController = abortController;
 
-            // Extra steps that can trickle in on an unusually long generation,
-            // after all 4 canned phrases have already been shown — so a slow
-            // response doesn't just sit frozen on "Double-checking syntax" for
-            // 20+ seconds with nothing new happening.
-            const EXTRA_THINKING_FILLERS = (selectedMode === 'image')
-                ? ['✨ Finalizing the image', '✨ Adding the final touches']
-                : (selectedMode === 'code')
-                    ? ['✨ Refining edge cases', '✨ Cleaning up the output', '✨ Finalizing the file']
-                    : ['✨ Refining the answer', '✨ Adding a few more details', '✨ Wrapping up'];
-
-            // If EVEN the extra fillers run out (a genuinely slow request —
-            // backend queueing, a tier retry loop, a big response), the trace
-            // used to just sit completely frozen on "Finalizing the file..."
-            // with nothing but blinking dots for however much longer the
-            // request took — which reads as hung/broken even though it's
-            // still working. This keeps it honestly cycling instead of lying
-            // by omission, on a slower cadence since these only kick in once
-            // things are already running long.
-            const ONGOING_FILLERS = ['Still working on it', "This one's taking a little longer than usual", 'Still generating — hang tight'];
-            const ONGOING_FILLER_EVERY_TICKS = 14; // ~9.8s apart
-
-            // Ticks run on a fixed clock, but steps are deliberately NOT
-            // revealed one-per-tick — real generation is uneven (a pause while
-            // the model "thinks", then a burst of output), so spacing all 4
-            // canned phrases evenly at a fast rate made the whole trace finish
-            // in ~2 seconds and then sit frozen on the last line for the rest
-            // of a much longer generation. This schedule spaces them out over
-            // roughly the first ~6-7 seconds instead, which reads as far more
-            // realistic, then hands off to the filler list above for anything
-            // longer than that.
+            // Once the initial "Reading your request" line is shown, nothing
+            // further is scripted — every subsequent line comes from a real
+            // event (see pushRealThinkingStep below: a tier connection
+            // actually starting, a retry actually happening, a switch
+            // actually occurring). The only thing this interval does on its
+            // own is animate the dots on whatever the last REAL step was, and
+            // — only if genuinely nothing new has happened in a while (a slow
+            // backend, waiting on a response) — say so honestly instead of
+            // reciting an unrelated scripted line or freezing silently.
+            const ONGOING_FILLERS = ['Still waiting on a response', "This one's taking a little longer than usual", 'Still working — hang tight'];
             const TICK_MS = 700;
-            const stepScheduleTicks = [2, 5, 9]; // ~1.4s, ~3.5s, ~6.3s in
-            const EXTRA_FILLER_EVERY_TICKS = 7; // ~4.9s apart from each other
-            let tickCount = 0;
-            let extraFillerIdx = 0;
+            const ONGOING_FILLER_AFTER_TICKS = 6; // ~4.2s of no real update before saying so
+            const ONGOING_FILLER_EVERY_TICKS = 14; // ~9.8s apart after that
+            let ticksSinceRealStep = 0;
             let ongoingFillerIdx = 0;
-            let thinkingPhraseIdx = 0;
             let dotsTick = 0;
 
             // Renders whatever the current step list is right now — shared by
-            // the scheduled filler tick below AND by pushRealThinkingStep, so
-            // a real event (tier switch, key rotation, a retry) shows up on
+            // the honest-filler tick below AND by pushRealThinkingStep, so a
+            // real event (tier switch, key rotation, a retry) shows up on
             // screen the instant it happens instead of waiting for the next
             // 700ms tick, and without duplicating this DOM-building logic.
             function renderThinkingUI(steps) {
                 if (currentChatId !== requestContextChatId) return;
                 const targetNode = getLastMessageNode()?.querySelector('.text-container-node');
                 if (!targetNode) return;
-                const shownSteps = (steps && steps.length) ? steps : [thinkingPhrases[0].replace(/^✨\s*/, '')];
+                const shownSteps = (steps && steps.length) ? steps : [firstStepLabel.replace(/^✨\s*/, '')];
                 targetNode.classList.add('thinking-status-text');
                 targetNode.innerHTML = '';
                 const thinkLogo = document.createElement('img');
@@ -11685,13 +11669,17 @@
             }
 
             // Fires immediately whenever something REAL happens during
-            // generation — a tier switch, a key rotation, a retry after an
-            // empty/failed stream — instead of those events only ever being
-            // written to msg.text (which the trace UI never actually read,
-            // so they were silently invisible before) or waiting for the
-            // canned filler schedule to catch up. Deduped against the last
-            // step so a repeated identical retry doesn't spam the trace.
+            // generation — connecting to a tier, a retry, a key rotation, a
+            // switch after an issue — instead of those events only ever being
+            // written to msg.text (which the trace UI never actually read, so
+            // they were silently invisible before) or being replaced by an
+            // unrelated scripted line. Deduped against the last step so a
+            // repeated identical retry doesn't spam the trace, and resets the
+            // "how long since anything real happened" clock the honest-filler
+            // fallback above uses.
             function pushRealThinkingStep(label) {
+                ticksSinceRealStep = 0;
+                ongoingFillerIdx = 0;
                 const liveChat = JSON.parse(localStorage.getItem(requestContextChatId));
                 if (!liveChat) return;
                 const msgRef = liveChat.messages[aiMsgIndex];
@@ -11713,30 +11701,11 @@
                 const msgRef = innerChat.messages[aiMsgIndex];
                 if (!msgRef || !msgRef.isThinking) return;
 
-                tickCount++;
                 dotsTick++;
+                ticksSinceRealStep++;
                 let addedNewStep = false;
 
-                if (thinkingPhraseIdx < thinkingPhrases.length - 1 && tickCount >= stepScheduleTicks[thinkingPhraseIdx]) {
-                    thinkingPhraseIdx++;
-                    if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
-                    msgRef.steps.push(thinkingPhrases[thinkingPhraseIdx].replace(/^✨\s*/, ''));
-                    addedNewStep = true;
-                } else if (
-                    thinkingPhraseIdx === thinkingPhrases.length - 1 &&
-                    extraFillerIdx < EXTRA_THINKING_FILLERS.length &&
-                    tickCount >= stepScheduleTicks[stepScheduleTicks.length - 1] + (extraFillerIdx + 1) * EXTRA_FILLER_EVERY_TICKS
-                ) {
-                    if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
-                    msgRef.steps.push(EXTRA_THINKING_FILLERS[extraFillerIdx].replace(/^✨\s*/, ''));
-                    extraFillerIdx++;
-                    addedNewStep = true;
-                } else if (
-                    extraFillerIdx >= EXTRA_THINKING_FILLERS.length &&
-                    tickCount >= stepScheduleTicks[stepScheduleTicks.length - 1]
-                        + EXTRA_THINKING_FILLERS.length * EXTRA_FILLER_EVERY_TICKS
-                        + (ongoingFillerIdx + 1) * ONGOING_FILLER_EVERY_TICKS
-                ) {
+                if (ticksSinceRealStep >= ONGOING_FILLER_AFTER_TICKS + ongoingFillerIdx * ONGOING_FILLER_EVERY_TICKS) {
                     if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
                     msgRef.steps.push(ONGOING_FILLERS[ongoingFillerIdx % ONGOING_FILLERS.length]);
                     ongoingFillerIdx++;
@@ -11960,7 +11929,6 @@
                     // key attempt per tier — this only sweeps across MODEL_TIERS
                     // (e.g. Ultimate -> Speed -> Lite fallback on a limit), same as
                     // downgradeAfterLimit() already implements below.
-                    const maxAttempts = MODEL_TIERS.length;
                     // Keys tried against the *current* tier — resets every time we
                     // move to a different tier, so each tier gets its own full sweep
                     // of the key pool instead of inheriting a spent-out counter from
@@ -11984,7 +11952,25 @@
                     // whole reply on the very first hiccup.
                     let proxyErrorRetriesThisTier = 0;
 
-                    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                    // This used to be `const maxAttempts = MODEL_TIERS.length; for (let
+                    // attempt = 0; attempt < maxAttempts; attempt++)` — a hard cap of 3
+                    // total loop iterations. That's fine if every `continue` in this loop
+                    // meant "switch to the next tier" (only 3 tiers exist, so 3 is
+                    // correct for that). But it ISN'T — most of the `continue`s below are
+                    // same-tier retries (a transient empty stream, a proxy hiccup, a slow-
+                    // to-respond timeout, a key rotation) that are already separately
+                    // bounded by their own counters (emptyStreamRetriesThisTier,
+                    // proxyErrorRetriesThisTier, etc.) and were NEVER meant to consume a
+                    // "real tier attempt". With a shared budget of only 3, two or three
+                    // ordinary in-place retries on the very first tier could exhaust the
+                    // whole loop before ever getting a real answer OR ever actually
+                    // falling back to Speed/Lite — the loop just silently ended, hitting
+                    // `if (aiText === null) throw new Error("Failed to get a response.")`
+                    // with no real underlying error to explain why. Genuine tier
+                    // exhaustion is already fully handled below (downgradeAfterLimit()
+                    // returns null and the caller throws a clear, specific error) — this
+                    // loop doesn't need its own separate, conflicting bound on top of that.
+                    while (true) {
                         const usedTier = getActiveTier();
                         const activeModel = (selectedMode === 'code') ? usedTier.codeModel : usedTier.textModel;
                         // Every current tier (Ultimate/Speed/Lite) is served by our own
@@ -12071,6 +12057,12 @@
                                 generationConfig: { maxOutputTokens: 32768 }
                             });
                         }
+
+                        // Real, not scripted: this fires exactly when a connection to
+                        // this tier is actually about to be attempted — first try or a
+                        // retry, same call either way — so it accurately reflects what's
+                        // happening instead of a canned "connecting" line on a timer.
+                        pushRealThinkingStep(`Connecting to ${usedTier.label}`);
 
                         // Hard 15s cap on how long we wait for the model to even
                         // START responding (not the total generation — once real

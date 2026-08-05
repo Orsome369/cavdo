@@ -11544,6 +11544,17 @@
                     ? ['✨ Refining edge cases', '✨ Cleaning up the output', '✨ Finalizing the file']
                     : ['✨ Refining the answer', '✨ Adding a few more details', '✨ Wrapping up'];
 
+            // If EVEN the extra fillers run out (a genuinely slow request —
+            // backend queueing, a tier retry loop, a big response), the trace
+            // used to just sit completely frozen on "Finalizing the file..."
+            // with nothing but blinking dots for however much longer the
+            // request took — which reads as hung/broken even though it's
+            // still working. This keeps it honestly cycling instead of lying
+            // by omission, on a slower cadence since these only kick in once
+            // things are already running long.
+            const ONGOING_FILLERS = ['Still working on it', "This one's taking a little longer than usual", 'Still generating — hang tight'];
+            const ONGOING_FILLER_EVERY_TICKS = 14; // ~9.8s apart
+
             // Ticks run on a fixed clock, but steps are deliberately NOT
             // revealed one-per-tick — real generation is uneven (a pause while
             // the model "thinks", then a burst of output), so spacing all 4
@@ -11558,8 +11569,65 @@
             const EXTRA_FILLER_EVERY_TICKS = 7; // ~4.9s apart from each other
             let tickCount = 0;
             let extraFillerIdx = 0;
+            let ongoingFillerIdx = 0;
             let thinkingPhraseIdx = 0;
             let dotsTick = 0;
+
+            // Renders whatever the current step list is right now — shared by
+            // the scheduled filler tick below AND by pushRealThinkingStep, so
+            // a real event (tier switch, key rotation, a retry) shows up on
+            // screen the instant it happens instead of waiting for the next
+            // 700ms tick, and without duplicating this DOM-building logic.
+            function renderThinkingUI(steps) {
+                if (currentChatId !== requestContextChatId) return;
+                const targetNode = getLastMessageNode()?.querySelector('.text-container-node');
+                if (!targetNode) return;
+                const shownSteps = (steps && steps.length) ? steps : [thinkingPhrases[0].replace(/^✨\s*/, '')];
+                targetNode.classList.add('thinking-status-text');
+                targetNode.innerHTML = '';
+                const thinkLogo = document.createElement('img');
+                thinkLogo.src = CAVDO_LOGO_DATA_URI;
+                thinkLogo.alt = '';
+                thinkLogo.className = 'thinking-logo-mark';
+                targetNode.appendChild(thinkLogo);
+                const traceEl = buildStepsTraceEl(shownSteps, { live: true });
+                const activeItem = traceEl.querySelector('.ai-steps-trace-item.active');
+                if (activeItem) {
+                    // Update only the text span, not the whole row — setting
+                    // .textContent on activeItem itself would wipe out the
+                    // icon badge it was just built with, collapsing the row
+                    // back down to plain text (this was the actual bug behind
+                    // the "just italic text" look; the row/icon markup was
+                    // always there, this line was destroying it every tick).
+                    const activeTextEl = activeItem.querySelector('.ai-steps-trace-item-text');
+                    if (activeTextEl) {
+                        const dots = '.'.repeat((dotsTick % 3) + 1);
+                        activeTextEl.textContent = shownSteps[shownSteps.length - 1] + dots;
+                    }
+                }
+                targetNode.appendChild(traceEl);
+            }
+
+            // Fires immediately whenever something REAL happens during
+            // generation — a tier switch, a key rotation, a retry after an
+            // empty/failed stream — instead of those events only ever being
+            // written to msg.text (which the trace UI never actually read,
+            // so they were silently invisible before) or waiting for the
+            // canned filler schedule to catch up. Deduped against the last
+            // step so a repeated identical retry doesn't spam the trace.
+            function pushRealThinkingStep(label) {
+                const liveChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                if (!liveChat) return;
+                const msgRef = liveChat.messages[aiMsgIndex];
+                if (!msgRef || !msgRef.isThinking) return;
+                if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
+                if (msgRef.steps[msgRef.steps.length - 1] !== label) {
+                    msgRef.steps.push(label);
+                    localStorage.setItem(requestContextChatId, JSON.stringify(liveChat));
+                }
+                renderThinkingUI(msgRef.steps);
+            }
+
             let internalThinkingInterval = setInterval(() => {
                 const innerChat = JSON.parse(localStorage.getItem(requestContextChatId));
                 if (!innerChat || !innerChat.isGeneratingInBg) {
@@ -11587,38 +11655,20 @@
                     msgRef.steps.push(EXTRA_THINKING_FILLERS[extraFillerIdx].replace(/^✨\s*/, ''));
                     extraFillerIdx++;
                     addedNewStep = true;
+                } else if (
+                    extraFillerIdx >= EXTRA_THINKING_FILLERS.length &&
+                    tickCount >= stepScheduleTicks[stepScheduleTicks.length - 1]
+                        + EXTRA_THINKING_FILLERS.length * EXTRA_FILLER_EVERY_TICKS
+                        + (ongoingFillerIdx + 1) * ONGOING_FILLER_EVERY_TICKS
+                ) {
+                    if (!Array.isArray(msgRef.steps)) msgRef.steps = [];
+                    msgRef.steps.push(ONGOING_FILLERS[ongoingFillerIdx % ONGOING_FILLERS.length]);
+                    ongoingFillerIdx++;
+                    addedNewStep = true;
                 }
                 if (addedNewStep) localStorage.setItem(requestContextChatId, JSON.stringify(innerChat));
 
-                if (currentChatId === requestContextChatId) {
-                    const targetNode = getLastMessageNode()?.querySelector('.text-container-node');
-                    if (targetNode) {
-                        const steps = (msgRef.steps && msgRef.steps.length) ? msgRef.steps : [thinkingPhrases[0].replace(/^✨\s*/, '')];
-                        targetNode.classList.add('thinking-status-text');
-                        targetNode.innerHTML = '';
-                        const thinkLogo = document.createElement('img');
-                        thinkLogo.src = CAVDO_LOGO_DATA_URI;
-                        thinkLogo.alt = '';
-                        thinkLogo.className = 'thinking-logo-mark';
-                        targetNode.appendChild(thinkLogo);
-                        const traceEl = buildStepsTraceEl(steps, { live: true });
-                        const activeItem = traceEl.querySelector('.ai-steps-trace-item.active');
-                        if (activeItem) {
-                            // Update only the text span, not the whole row — setting
-                            // .textContent on activeItem itself would wipe out the
-                            // icon badge it was just built with, collapsing the row
-                            // back down to plain text (this was the actual bug behind
-                            // the "just italic text" look; the row/icon markup was
-                            // always there, this line was destroying it every tick).
-                            const activeTextEl = activeItem.querySelector('.ai-steps-trace-item-text');
-                            if (activeTextEl) {
-                                const dots = '.'.repeat((dotsTick % 3) + 1);
-                                activeTextEl.textContent = steps[steps.length - 1] + dots;
-                            }
-                        }
-                        targetNode.appendChild(traceEl);
-                    }
-                }
+                renderThinkingUI(msgRef.steps);
             }, TICK_MS);
 
 
@@ -11993,6 +12043,7 @@
                                         switchChat.messages[aiMsgIndex].text = `✨ ${usedTier.label} had an issue — switching to ${nextTier.label}, thinking`;
                                         localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
                                     }
+                                    pushRealThinkingStep(`${usedTier.label} had an issue — switching to ${nextTier.label}`);
                                     continue;
                                 }
                                 throw new Error(errMsg || `Ultimate model request failed (${response.status})`);
@@ -12033,6 +12084,7 @@
                                         switchChat.messages[aiMsgIndex].text = `✨ Switching API key to keep ${usedTier.label}, thinking`;
                                         localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
                                     }
+                                    pushRealThinkingStep(`Switching API key to keep ${usedTier.label}`);
                                     continue;
                                 }
                                 const nextTier = downgradeAfterLimit();
@@ -12061,6 +12113,7 @@
                                             switchChat.messages[aiMsgIndex].text = `✨ Switching to another API key, thinking`;
                                             localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
                                         }
+                                        pushRealThinkingStep('Switching to another API key');
                                         continue;
                                     }
                                     throw new Error("All available API keys have hit their limit. Please try again later.");
@@ -12070,6 +12123,7 @@
                                     switchChat.messages[aiMsgIndex].text = `✨ ${usedTier.label} limit reached — switching to ${nextTier.label}, thinking`;
                                     localStorage.setItem(requestContextChatId, JSON.stringify(switchChat));
                                 }
+                                pushRealThinkingStep(`${usedTier.label} limit reached — switching to ${nextTier.label}`);
                                 continue;
                             }
                             throw new Error((responseData && responseData.error && responseData.error.message) || `API request failed (${response.status})`);

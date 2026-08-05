@@ -8875,14 +8875,29 @@
             // button. Now every segment that ISN'T already a matched
             // ```...``` pair gets checked individually, so this catches
             // both the whole-reply case and the partial-segment case.
-            rawText = rawText.split(/(```[\s\S]*?```)/g).map(function (segment) {
+            // Fences must be matched with the closing ``` on its own line —
+            // NOT just "the next ``` anywhere in the text". The old pattern
+            // (```[\s\S]*?```, no line anchors) would pair the opening fence
+            // with a stray ``` sitting mid-line INSIDE the code itself (e.g.
+            // a docstring/comment showing example markdown, or an f-string
+            // containing ```) and treat that as the close. Result: the real
+            // code block gets truncated to whatever came before that stray
+            // backtick run (sometimes almost nothing — an empty-looking file
+            // card), and the rest of the actual code spills out afterward as
+            // unfenced plain text. This is also what made large code replies
+            // feel painfully slow while streaming: every reveal tick kept
+            // re-classifying that growing "leftover" plain-text tail from
+            // scratch. Anchoring both fences to line starts (^```...) fixes
+            // both — a ``` inside a line of code can no longer close a block.
+            const FENCE_RE = /(^```[^\n]*\n[\s\S]*?\n^```[ \t]*$)/gm;
+            rawText = rawText.split(FENCE_RE).map(function (segment) {
                 if (segment.startsWith('```') && segment.endsWith('```')) return segment; // already fenced — leave alone
                 if (!segment.trim()) return segment;
                 const sniffed = sniffLanguageFromCode(segment);
                 return sniffed ? ('```' + sniffed + '\n' + segment + '\n```') : segment;
             }).join('');
 
-            const tokens = rawText.split(/(```[\s\S]*?```)/g);
+            const tokens = rawText.split(FENCE_RE);
             const generatedFiles = []; // { elementId, language, ext }
 
             tokens.forEach((token, idx) => {
@@ -9137,7 +9152,7 @@
                 alert("Sorry, this browser doesn't support text-to-speech.");
                 return;
             }
-            const cleanText = rawText.replace(/```[\s\S]*?```/g, ' code block omitted ').replace(/[*_#`>]/g, '');
+            const cleanText = rawText.replace(/^```[^\n]*\n[\s\S]*?\n^```[ \t]*$/gm, ' code block omitted ').replace(/[*_#`>]/g, '');
 
             if (window.speechSynthesis.speaking) {
                 window.speechSynthesis.cancel();

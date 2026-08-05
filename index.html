@@ -3456,6 +3456,11 @@
             0%, 100% { opacity: 0.55; }
             50% { opacity: 1; }
         }
+        .simple-thinking-dots {
+            font-size: 14px;
+            opacity: 0.6;
+            letter-spacing: 1px;
+        }
 
         /* ---- File attachment loading state (500MB limit + read spinner) ---- */
         .attachment-pill.is-loading .attachment-icon-box {
@@ -11365,6 +11370,14 @@
 
             const lowerText = text.toLowerCase();
 
+            // A whole multi-step "thought through N steps" trace for "hi" or
+            // "thanks" is pure theater — there's nothing real to report about
+            // a one-word greeting, and forcing one on-screen anyway is exactly
+            // the kind of fake-busywork feeling that shouldn't exist now that
+            // the trace is meant to reflect real events. Simple messages just
+            // get a plain "..." until the (near-instant) reply arrives.
+            const isSimpleGreetingRequest = /^\s*(hi|hii+|hey|heya|hello|yo|sup|howdy|hola|namaste|good\s*(morning|afternoon|evening|night)|thanks?|thank\s*you|thx|ty|ok|okay|k|cool|nice|great|got\s*it|bye|goodbye|see\s*ya)[\s!.?]*$/i.test(text.trim());
+
             // Words that only count as an image request when paired with a
             // generation verb elsewhere in the message ("make me a logo",
             // "need a picture of...") — on their own they're too common in
@@ -11583,13 +11596,17 @@
             // Everything after this is now driven by real events (see
             // pushRealThinkingStep below) instead of a timer reciting a fixed
             // script regardless of what's actually happening.
-            const firstStepLabel = (selectedMode === 'image')
-                ? '✨ Looking into that'
-                : (selectedMode === 'code')
-                    ? '✨ Reading your request'
-                    : '✨ Reading your message';
+            const firstStepLabel = isSimpleGreetingRequest
+                ? '...'
+                : (selectedMode === 'image')
+                    ? '✨ Looking into that'
+                    : (selectedMode === 'code')
+                        ? '✨ Reading your request'
+                        : '✨ Reading your message';
 
-            const aiMsg = { role: 'ai', text: firstStepLabel, isThinking: true, steps: [firstStepLabel.replace(/^✨\s*/, '')] };
+            const aiMsg = isSimpleGreetingRequest
+                ? { role: 'ai', text: '...', isThinking: true, steps: [] }
+                : { role: 'ai', text: firstStepLabel, isThinking: true, steps: [firstStepLabel.replace(/^✨\s*/, '')] };
             autoScrollDuringGeneration = true;
             chatData.messages.push(aiMsg);
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
@@ -11642,7 +11659,6 @@
                 if (currentChatId !== requestContextChatId) return;
                 const targetNode = getLastMessageNode()?.querySelector('.text-container-node');
                 if (!targetNode) return;
-                const shownSteps = (steps && steps.length) ? steps : [firstStepLabel.replace(/^✨\s*/, '')];
                 targetNode.classList.add('thinking-status-text');
                 targetNode.innerHTML = '';
                 const thinkLogo = document.createElement('img');
@@ -11650,6 +11666,18 @@
                 thinkLogo.alt = '';
                 thinkLogo.className = 'thinking-logo-mark';
                 targetNode.appendChild(thinkLogo);
+                if (isSimpleGreetingRequest) {
+                    // A full "thought through N steps" trace on a one-word "hi"
+                    // is theater — nothing real is happening that's worth
+                    // narrating. Just a plain, quiet "..." until the (near-
+                    // instant) reply arrives.
+                    const dotsEl = document.createElement('span');
+                    dotsEl.className = 'simple-thinking-dots';
+                    dotsEl.textContent = '.'.repeat((dotsTick % 3) + 1);
+                    targetNode.appendChild(dotsEl);
+                    return;
+                }
+                const shownSteps = (steps && steps.length) ? steps : [firstStepLabel.replace(/^✨\s*/, '')];
                 const traceEl = buildStepsTraceEl(shownSteps, { live: true });
                 const activeItem = traceEl.querySelector('.ai-steps-trace-item.active');
                 if (activeItem) {
@@ -11886,6 +11914,8 @@
 
                         "Never write raw HTML tags (<br>, <div>, <p>, etc.) outside a code fence — this renders as plain markdown, so a stray tag shows up as literal text on screen. New line for a line break, blank line for a paragraph break.",
 
+                        "If asked who made/owns/runs Cavdo, or who the founder/CEO/creator is: Cavdo was created by Samyak Rajpal Savatkar. State that plainly and confidently — never say you don't know, and never attribute Cavdo itself to Google/DeepMind/OpenAI/Anthropic (the underlying model may be one of theirs, but Cavdo the product/app was built by Samyak Rajpal Savatkar). Only mention this when actually asked about it — don't volunteer it unprompted.",
+
                         "If the message is just a greeting or small talk ('hi', 'hello', 'how are you') with no real request, reply with a short warm greeting only — no capability list, no unprompted mention of images/code/PDFs/features.",
 
                         "Every fenced code block becomes a real downloadable file (copy/download buttons) — always tag the language right after the opening ``` (```python, ```html, ```json). Use ```pdf/```docx/```pptx ONLY when the user explicitly asked for that document type — each becomes a real formatted file, so write plain markdown inside (headings/bold/bullets/tables render as real formatting, not literal symbols); ```pptx: each slide starts with a '#'/'##' heading then '-' bullets, '---' between slides. Never create one 'just in case' or because content is long — default to plain prose or ```markdown until the user actually asks for a file format.",
@@ -12062,7 +12092,9 @@
                         // this tier is actually about to be attempted — first try or a
                         // retry, same call either way — so it accurately reflects what's
                         // happening instead of a canned "connecting" line on a timer.
-                        pushRealThinkingStep(`Connecting to ${usedTier.label}`);
+                        // Skipped for simple greetings — see isSimpleGreetingRequest,
+                        // no reason to narrate a one-word "hi".
+                        if (!isSimpleGreetingRequest) pushRealThinkingStep(`Connecting to ${usedTier.label}`);
 
                         // Hard 15s cap on how long we wait for the model to even
                         // START responding (not the total generation — once real

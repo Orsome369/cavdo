@@ -12098,20 +12098,26 @@
                         // no reason to narrate a one-word "hi".
                         if (!isSimpleGreetingRequest) pushRealThinkingStep(`Connecting to ${usedTier.label}`);
 
-                        // Hard 15s cap on how long we wait for the model to even
-                        // START responding (not the total generation — once real
-                        // content is streaming, this timer is irrelevant). Without
-                        // this, a slow/hung backend just left the "Finalizing the
-                        // file" trace sitting there indefinitely with nothing to
-                        // show for it. Now: if 15s pass with no response headers,
-                        // this attempt is cancelled and automatically retried /
-                        // switched to another tier — the SAME retry path already
-                        // used for a real 5xx/429, just triggered by a clock
-                        // instead of an actual error from the server. A separate
-                        // AbortController (not the shared one) is used so this
-                        // only kills THIS attempt — a real user Stop click still
-                        // works exactly as before via the forwarded listener.
-                        const RESPONSE_START_TIMEOUT_MS = 15000;
+                        // Cap on how long we wait for the model to even START
+                        // responding (not the total generation — once real content is
+                        // streaming, this timer is irrelevant). Without this, a slow/
+                        // hung backend just left the "Finalizing" trace sitting there
+                        // indefinitely. If this passes with no response headers, the
+                        // attempt is cancelled and automatically retried / switched to
+                        // another tier — same retry path as a real 5xx/429, just
+                        // triggered by a clock instead of an actual server error.
+                        //
+                        // This was flat 15s for every tier, which was WRONG and caused
+                        // a real bug: Ultimate is the biggest/slowest-to-start model by
+                        // design — routinely taking longer than 15s to produce a first
+                        // token is normal for it, not a failure. Treating that normal
+                        // latency as a timeout meant Ultimate was constantly being
+                        // silently downgraded to Speed/Lite even when it was working
+                        // fine, just not finished warming up yet. Scaling the cap by
+                        // tier gives the slower, higher-quality model the time it
+                        // actually needs while still protecting against a genuinely
+                        // stuck request on the faster tiers.
+                        const RESPONSE_START_TIMEOUT_MS = usedTier.key === 'ultimate' ? 45000 : (usedTier.key === 'speed' ? 25000 : 15000);
                         const attemptController = new AbortController();
                         // Snapshot the signal ONCE, synchronously, right now — never
                         // re-read the shared `abortController` variable later (inside

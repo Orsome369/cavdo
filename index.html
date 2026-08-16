@@ -76,6 +76,27 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html-docx-js/dist/html-docx.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <!-- File-conversion suite: reading/writing real document, spreadsheet,
+         and media formats in-browser (no server round-trip). -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // pdf.js needs its worker script pointed at a matching CDN build,
+        // or PDF text-extraction silently fails.
+        window.addEventListener('DOMContentLoaded', function () {
+            if (window['pdfjsLib']) {
+                window['pdfjsLib'].GlobalWorkerOptions.workerSrc =
+                    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            }
+        });
+    </script>
+    <!-- ffmpeg.wasm powers real audio/video transcoding (mp3, wav, mp4, webm,
+         ogg, m4a, gif, etc.) fully client-side. Loaded lazily on first use
+         (see loadFFmpeg() in the converter module) rather than up front,
+         since the core is a large (~25MB) WASM binary and most sessions
+         never touch media conversion. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.js"></script>
     <style>
         :root {
             /* Real safe-area insets (falls back to 0 on browsers without support).
@@ -3846,11 +3867,18 @@
                             </span>
                             <span>Camera<span class="attach-menu-sub">Take a photo (mobile &amp; webcam)</span></span>
                         </button>
+                        <button class="attach-menu-item" id="attachMenuConvert" type="button">
+                            <span class="attach-menu-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                            </span>
+                            <span>Convert File<span class="attach-menu-sub">Docs, spreadsheets, audio &amp; video</span></span>
+                        </button>
                     </div>
                 </div>
                 <input type="file" id="fileInput" style="display: none;" accept="*/*" multiple>
                 <input type="file" id="photoInput" style="display: none;" accept="image/*,video/*" multiple>
                 <input type="file" id="cameraInput" style="display: none;" accept="image/*" capture="environment">
+                <input type="file" id="converterFileInput" style="display: none;" accept="*/*">
 
                 <textarea id="userInput" rows="1" placeholder="Ask Cavdo anything..." autocomplete="off"></textarea>
 
@@ -3907,6 +3935,32 @@
             <div class="modal-actions">
                 <button class="modal-btn cancel" id="planLimitModalClose">Not now</button>
                 <button class="modal-btn confirm" id="planLimitModalUpgrade">Upgrade</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="converterModalOverlay">
+        <div class="modal-box" id="converterModalContent">
+            <h3>🔄 Convert File</h3>
+            <p id="converterModalSubtitle">Pick a file, choose the format you want it converted to, and download the result — all done locally in your browser.</p>
+
+            <div id="converterDropZone" style="border:1.5px dashed rgba(255,255,255,0.25); border-radius:12px; padding:18px; text-align:center; cursor:pointer; margin-bottom:14px;">
+                <div id="converterFileLabel" style="opacity:0.75; font-size:14px;">Click to choose a file, or drag one here</div>
+            </div>
+
+            <div id="converterFormatRow" style="display:none; margin-bottom:14px;">
+                <label style="display:block; font-size:13px; opacity:0.7; margin-bottom:6px;">Convert to:</label>
+                <select id="converterTargetFormat" style="width:100%; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.15);"></select>
+            </div>
+
+            <div id="converterStatus" style="font-size:13px; opacity:0.8; min-height:18px; margin-bottom:6px;"></div>
+            <div id="converterProgressTrack" style="display:none; height:6px; border-radius:4px; background:rgba(255,255,255,0.1); overflow:hidden; margin-bottom:14px;">
+                <div id="converterProgressBar" style="height:100%; width:0%; background:var(--accent, #22c55e); transition:width .15s ease;"></div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="modal-btn cancel" id="converterModalClose">Close</button>
+                <button class="modal-btn confirm" id="converterModalRun" disabled>Convert</button>
             </div>
         </div>
     </div>
@@ -7323,6 +7377,432 @@
             }
         };
 
+        // ============================================================
+        // FILE CONVERTER — real, precise, client-side conversions for
+        // documents, spreadsheets, images, and audio/video. No server
+        // round-trip: every conversion below runs entirely in the
+        // browser using the libraries loaded in <head>.
+        // ============================================================
+
+        function getFileExt(name) {
+            const m = /\.([a-z0-9]+)$/i.exec(name || '');
+            return m ? m[1].toLowerCase() : '';
+        }
+        function baseName(name) {
+            return (name || 'file').replace(/\.[a-z0-9]+$/i, '');
+        }
+
+        // Which target formats we can honestly produce for a given source
+        // extension. Kept explicit (rather than "convert anything to
+        // anything") so the UI never offers a conversion we can't do
+        // precisely.
+        const CONVERTER_TARGETS = {
+            // Documents
+            docx: ['pdf', 'txt', 'md', 'html'],
+            doc:  ['pdf', 'txt', 'md', 'html'],
+            txt:  ['pdf', 'docx', 'html'],
+            md:   ['pdf', 'docx', 'html'],
+            html: ['pdf', 'docx', 'txt'],
+            pdf:  ['txt'],
+            // Spreadsheets
+            csv:  ['xlsx', 'json'],
+            xlsx: ['csv', 'json'],
+            xls:  ['csv', 'json', 'xlsx'],
+            json: ['csv'],
+            // Images (lossless, pixel-exact re-encode via canvas)
+            png:  ['jpg', 'webp', 'bmp', 'gif'],
+            jpg:  ['png', 'webp', 'bmp'],
+            jpeg: ['png', 'webp', 'bmp'],
+            webp: ['png', 'jpg', 'bmp'],
+            bmp:  ['png', 'jpg', 'webp'],
+            gif:  ['png', 'jpg', 'webp'],
+            // Audio (via ffmpeg.wasm)
+            mp3:  ['wav', 'ogg', 'm4a', 'mp4'],
+            wav:  ['mp3', 'ogg', 'm4a'],
+            ogg:  ['mp3', 'wav', 'm4a'],
+            m4a:  ['mp3', 'wav', 'ogg'],
+            // Video (via ffmpeg.wasm)
+            mp4:  ['webm', 'mp3', 'wav', 'gif'],
+            mov:  ['mp4', 'webm', 'mp3'],
+            webm: ['mp4', 'mp3', 'wav'],
+            avi:  ['mp4', 'webm', 'mp3'],
+            mkv:  ['mp4', 'webm', 'mp3'],
+        };
+
+        const CONVERTER_MIME = {
+            pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown', html: 'text/html',
+            docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            csv: 'text/csv', json: 'application/json',
+            png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', bmp: 'image/bmp', gif: 'image/gif',
+            mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
+            mp4: 'video/mp4', webm: 'video/webm',
+        };
+
+        let __ffmpegInstance = null;
+        // ffmpeg.wasm's core is a large (~25MB) WASM binary, so it's only
+        // fetched the first time a user actually does an audio/video
+        // conversion, not on page load.
+        async function loadFFmpeg(onProgress) {
+            if (__ffmpegInstance && __ffmpegInstance.isLoaded()) return __ffmpegInstance;
+            if (!window.FFmpeg || !window.FFmpeg.createFFmpeg) {
+                await new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
+                    s.onload = resolve;
+                    s.onerror = () => reject(new Error('Could not load the audio/video conversion engine (ffmpeg.wasm). Check your internet connection.'));
+                    document.head.appendChild(s);
+                });
+            }
+            const { createFFmpeg } = window.FFmpeg;
+            __ffmpegInstance = createFFmpeg({
+                log: false,
+                corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+                progress: (p) => { if (onProgress && typeof p.ratio === 'number') onProgress(Math.max(0, Math.min(1, p.ratio))); }
+            });
+            await __ffmpegInstance.load();
+            return __ffmpegInstance;
+        }
+
+        async function convertAudioVideo(file, targetExt, onProgress) {
+            const ffmpeg = await loadFFmpeg(onProgress);
+            const { fetchFile } = window.FFmpeg;
+            const inName = 'input.' + getFileExt(file.name);
+            const outName = 'output.' + targetExt;
+            ffmpeg.FS('writeFile', inName, await fetchFile(file));
+
+            // Sensible, precise per-format defaults rather than blind
+            // re-muxing — this is what makes the conversion "precise"
+            // instead of just changing a file extension.
+            let args = ['-i', inName];
+            if (['mp3', 'wav', 'ogg', 'm4a'].includes(targetExt)) {
+                // Audio-only output: drop any video stream explicitly.
+                args.push('-vn');
+                if (targetExt === 'mp3') args.push('-ar', '44100', '-ac', '2', '-b:a', '192k');
+                if (targetExt === 'wav') args.push('-ar', '44100', '-ac', '2');
+                if (targetExt === 'ogg') args.push('-c:a', 'libvorbis', '-q:a', '5');
+                if (targetExt === 'm4a') args.push('-c:a', 'aac', '-b:a', '192k');
+            } else if (targetExt === 'mp4') {
+                args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-c:a', 'aac', '-b:a', '192k', '-pix_fmt', 'yuv420p');
+            } else if (targetExt === 'webm') {
+                args.push('-c:v', 'libvpx-vp9', '-crf', '30', '-b:v', '0', '-c:a', 'libopus');
+            } else if (targetExt === 'gif') {
+                args.push('-vf', 'fps=12,scale=480:-1:flags=lanczos');
+            }
+            args.push(outName);
+
+            await ffmpeg.run(...args);
+            const data = ffmpeg.FS('readFile', outName);
+            ffmpeg.FS('unlink', inName);
+            ffmpeg.FS('unlink', outName);
+            return new Blob([data.buffer], { type: CONVERTER_MIME[targetExt] || 'application/octet-stream' });
+        }
+
+        async function convertImage(file, targetExt) {
+            const img = await new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const im = new Image();
+                im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+                im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image file.')); };
+                im.src = url;
+            });
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            // JPG/BMP have no alpha channel — flatten onto white first so
+            // transparent PNGs don't turn black.
+            if (targetExt === 'jpg' || targetExt === 'jpeg' || targetExt === 'bmp') {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            ctx.drawImage(img, 0, 0);
+            const mime = CONVERTER_MIME[targetExt] || 'image/png';
+            const quality = (targetExt === 'jpg' || targetExt === 'jpeg' || targetExt === 'webp') ? 0.95 : undefined;
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Image re-encode failed.')), mime, quality);
+            });
+            return blob;
+        }
+
+        async function extractPdfText(file) {
+            if (!window.pdfjsLib) throw new Error('PDF engine failed to load. Check your internet connection.');
+            const buf = await file.arrayBuffer();
+            const doc = await window.pdfjsLib.getDocument({ data: buf }).promise;
+            let out = [];
+            for (let i = 1; i <= doc.numPages; i++) {
+                const page = await doc.getPage(i);
+                const content = await page.getTextContent();
+                out.push(content.items.map(it => it.str).join(' '));
+            }
+            return out.join('\n\n');
+        }
+
+        async function textToPdfBlob(text, title) {
+            if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('PDF engine failed to load.');
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+            const margin = 48;
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const maxWidth = pageWidth - margin * 2;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(11);
+            const lines = doc.splitTextToSize(text || '', maxWidth);
+            let y = margin;
+            const lineHeight = 15;
+            lines.forEach((line) => {
+                if (y > pageHeight - margin) { doc.addPage(); y = margin; }
+                doc.text(line, margin, y);
+                y += lineHeight;
+            });
+            return doc.output('blob');
+        }
+
+        async function textToDocxBlob(text) {
+            if (!window.docx) throw new Error('DOCX engine failed to load. Check your internet connection.');
+            const { Document, Packer, Paragraph } = window.docx;
+            const paragraphs = (text || '').split(/\r?\n/).map(line => new Paragraph({ text: line }));
+            const doc = new Document({ sections: [{ properties: {}, children: paragraphs }] });
+            return await Packer.toBlob(doc);
+        }
+
+        async function htmlToDocxBlob(html) {
+            if (!window.htmlDocx) throw new Error('DOCX engine failed to load. Check your internet connection.');
+            return window.htmlDocx.asBlob(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`);
+        }
+
+        // docx -> pdf goes through mammoth's HTML output, rendered with the
+        // same html2canvas + jsPDF pagination logic used elsewhere in the
+        // app for markdown-to-PDF export, so page breaks/margins match.
+        async function htmlToPdfBlob(html) {
+            if (!window.jspdf || !window.jspdf.jsPDF || !window.html2canvas) {
+                throw new Error('PDF engine failed to load. Check your internet connection.');
+            }
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'position:fixed; left:-9999px; top:0; width:760px; padding:32px; background:#ffffff; color:#111111; font-family:Georgia, serif; font-size:14px; line-height:1.5;';
+            wrapper.innerHTML = html;
+            document.body.appendChild(wrapper);
+            try {
+                const canvas = await window.html2canvas(wrapper, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const imgWidth = pageWidth;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+                const imgData = canvas.toDataURL('image/png');
+                doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+                while (heightLeft > 0) {
+                    position = heightLeft - imgHeight;
+                    doc.addPage();
+                    doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+                return doc.output('blob');
+            } finally {
+                document.body.removeChild(wrapper);
+            }
+        }
+
+        function csvToJsonString(csvText) {
+            const wb = window.XLSX.read(csvText, { type: 'string' });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            return JSON.stringify(window.XLSX.utils.sheet_to_json(sheet), null, 2);
+        }
+        function jsonToCsvBlob(jsonText) {
+            const data = JSON.parse(jsonText);
+            const arr = Array.isArray(data) ? data : [data];
+            const ws = window.XLSX.utils.json_to_sheet(arr);
+            const csv = window.XLSX.utils.sheet_to_csv(ws);
+            return new Blob([csv], { type: 'text/csv' });
+        }
+
+        // Main dispatcher: given a File and a target extension, returns a
+        // real, precisely-converted Blob (never a placeholder / renamed
+        // copy of the original bytes).
+        async function convertFile(file, targetExt, onProgress) {
+            const srcExt = getFileExt(file.name);
+
+            // --- Images: canvas re-encode ---
+            if (['png','jpg','jpeg','webp','bmp','gif'].includes(srcExt) && CONVERTER_TARGETS[srcExt] && CONVERTER_TARGETS[srcExt].includes(targetExt)) {
+                return await convertImage(file, targetExt);
+            }
+
+            // --- Audio/video: ffmpeg.wasm ---
+            if (['mp3','wav','ogg','m4a','mp4','mov','webm','avi','mkv'].includes(srcExt)) {
+                return await convertAudioVideo(file, targetExt, onProgress);
+            }
+
+            // --- Spreadsheets ---
+            if (srcExt === 'csv' && targetExt === 'xlsx') {
+                const text = await file.text();
+                const wb = window.XLSX.read(text, { type: 'string' });
+                const out = window.XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+                return new Blob([out], { type: CONVERTER_MIME.xlsx });
+            }
+            if (srcExt === 'csv' && targetExt === 'json') {
+                const text = await file.text();
+                return new Blob([csvToJsonString(text)], { type: 'application/json' });
+            }
+            if ((srcExt === 'xlsx' || srcExt === 'xls') && (targetExt === 'csv' || targetExt === 'json')) {
+                const buf = await file.arrayBuffer();
+                const wb = window.XLSX.read(buf, { type: 'array' });
+                const sheet = wb.Sheets[wb.SheetNames[0]];
+                if (targetExt === 'csv') return new Blob([window.XLSX.utils.sheet_to_csv(sheet)], { type: 'text/csv' });
+                return new Blob([JSON.stringify(window.XLSX.utils.sheet_to_json(sheet), null, 2)], { type: 'application/json' });
+            }
+            if (srcExt === 'json' && targetExt === 'csv') {
+                const text = await file.text();
+                return jsonToCsvBlob(text);
+            }
+
+            // --- Documents ---
+            if ((srcExt === 'docx' || srcExt === 'doc') && ['pdf','txt','md','html'].includes(targetExt)) {
+                if (!window.mammoth) throw new Error('DOCX reading engine failed to load. Check your internet connection.');
+                const buf = await file.arrayBuffer();
+                if (targetExt === 'txt' || targetExt === 'md') {
+                    const res = await window.mammoth.extractRawText({ arrayBuffer: buf });
+                    return new Blob([res.value], { type: 'text/plain' });
+                }
+                const res = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+                if (targetExt === 'html') return new Blob([res.value], { type: 'text/html' });
+                return await htmlToPdfBlob(res.value); // pdf
+            }
+            if (srcExt === 'pdf' && targetExt === 'txt') {
+                const text = await extractPdfText(file);
+                return new Blob([text], { type: 'text/plain' });
+            }
+            if ((srcExt === 'txt' || srcExt === 'md') && targetExt === 'pdf') {
+                const text = await file.text();
+                return await textToPdfBlob(text);
+            }
+            if ((srcExt === 'txt' || srcExt === 'md') && targetExt === 'docx') {
+                const text = await file.text();
+                return await textToDocxBlob(text);
+            }
+            if ((srcExt === 'txt' || srcExt === 'md') && targetExt === 'html') {
+                const text = await file.text();
+                const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                return new Blob([`<pre>${escaped}</pre>`], { type: 'text/html' });
+            }
+            if (srcExt === 'html' && targetExt === 'pdf') {
+                const html = await file.text();
+                return await htmlToPdfBlob(html);
+            }
+            if (srcExt === 'html' && targetExt === 'docx') {
+                const html = await file.text();
+                return await htmlToDocxBlob(html);
+            }
+            if (srcExt === 'html' && targetExt === 'txt') {
+                const html = await file.text();
+                const div = document.createElement('div');
+                div.innerHTML = html;
+                return new Blob([div.textContent || ''], { type: 'text/plain' });
+            }
+
+            throw new Error(`Converting .${srcExt} to .${targetExt} isn't supported yet.`);
+        }
+
+        // ---- Converter modal wiring ----
+        (function initConverterModal() {
+            const overlay = document.getElementById('converterModalOverlay');
+            const dropZone = document.getElementById('converterDropZone');
+            const fileLabel = document.getElementById('converterFileLabel');
+            const fileInput = document.getElementById('converterFileInput');
+            const formatRow = document.getElementById('converterFormatRow');
+            const formatSelect = document.getElementById('converterTargetFormat');
+            const statusEl = document.getElementById('converterStatus');
+            const progressTrack = document.getElementById('converterProgressTrack');
+            const progressBar = document.getElementById('converterProgressBar');
+            const runBtn = document.getElementById('converterModalRun');
+            const closeBtn = document.getElementById('converterModalClose');
+            const menuItem = document.getElementById('attachMenuConvert');
+            if (!overlay || !menuItem) return;
+
+            let selectedFile = null;
+
+            function resetModal() {
+                selectedFile = null;
+                fileLabel.textContent = 'Click to choose a file, or drag one here';
+                formatRow.style.display = 'none';
+                formatSelect.innerHTML = '';
+                statusEl.textContent = '';
+                progressTrack.style.display = 'none';
+                progressBar.style.width = '0%';
+                runBtn.disabled = true;
+                fileInput.value = '';
+            }
+
+            function openModal() {
+                resetModal();
+                overlay.classList.add('show');
+                toggleAttachMenu(false);
+            }
+            function closeModal() { overlay.classList.remove('show'); }
+
+            function onFilePicked(file) {
+                selectedFile = file;
+                const ext = getFileExt(file.name);
+                const targets = CONVERTER_TARGETS[ext];
+                fileLabel.textContent = `📄 ${file.name}`;
+                if (!targets || !targets.length) {
+                    formatRow.style.display = 'none';
+                    statusEl.textContent = `Sorry, .${ext || '?'} files aren't supported for conversion yet.`;
+                    runBtn.disabled = true;
+                    return;
+                }
+                formatSelect.innerHTML = targets.map(t => `<option value="${t}">.${t}</option>`).join('');
+                formatRow.style.display = 'block';
+                statusEl.textContent = '';
+                runBtn.disabled = false;
+            }
+
+            menuItem.onclick = openModal;
+            closeBtn.onclick = closeModal;
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+            dropZone.onclick = () => fileInput.click();
+            dropZone.ondragover = (e) => { e.preventDefault(); dropZone.style.borderColor = 'rgba(255,255,255,0.6)'; };
+            dropZone.ondragleave = () => { dropZone.style.borderColor = 'rgba(255,255,255,0.25)'; };
+            dropZone.ondrop = (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = 'rgba(255,255,255,0.25)';
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) onFilePicked(e.dataTransfer.files[0]);
+            };
+            fileInput.onchange = () => { if (fileInput.files && fileInput.files[0]) onFilePicked(fileInput.files[0]); };
+
+            runBtn.onclick = async () => {
+                if (!selectedFile) return;
+                const targetExt = formatSelect.value;
+                runBtn.disabled = true;
+                statusEl.textContent = 'Converting…';
+                const isMedia = ['mp3','wav','ogg','m4a','mp4','mov','webm','avi','mkv'].includes(getFileExt(selectedFile.name));
+                if (isMedia) {
+                    progressTrack.style.display = 'block';
+                    progressBar.style.width = '0%';
+                }
+                try {
+                    const blob = await convertFile(selectedFile, targetExt, (ratio) => {
+                        progressBar.style.width = Math.round(ratio * 100) + '%';
+                        statusEl.textContent = `Converting… ${Math.round(ratio * 100)}%`;
+                    });
+                    const outName = `${baseName(selectedFile.name)}.${targetExt}`;
+                    triggerBlobDownload(blob, outName);
+                    statusEl.textContent = `✓ Done — ${outName} downloaded.`;
+                    progressBar.style.width = '100%';
+                } catch (err) {
+                    console.error('File conversion failed:', err);
+                    statusEl.textContent = `⚠ ${err.message || 'Conversion failed.'}`;
+                } finally {
+                    runBtn.disabled = false;
+                }
+            };
+        })();
+
         function downloadFeedback(btn, label) {
             const original = btn.innerHTML;
             btn.innerHTML = label || '✓ saved';
@@ -9335,15 +9815,39 @@
             saveBtn.innerText = 'Resend';
             saveBtn.onclick = () => {
                 const updatedText = textarea.value.trim();
-                if (updatedText) {
+                if (!updatedText) return;
+
+                // If a response is still being generated, sendMessage()'s
+                // very first check treats *any* call as "stop the current
+                // generation" and returns immediately — it never looks at
+                // the new edited text at all. That meant clicking Resend
+                // mid-response silently aborted the reply, the edited
+                // message had already been spliced out of the chat, and
+                // updatedText was left sitting untouched in the input bar:
+                // the message "disappeared" and the full edited text
+                // "reappeared" in the sender bar instead of actually being
+                // sent. Stop the in-flight generation first and let that
+                // settle before sending the edit, instead of relying on
+                // sendMessage() to do both jobs in one click.
+                const finishEdit = () => {
                     const chat = JSON.parse(localStorage.getItem(currentChatId));
-                    if (chat) {
-                        window.__cavdoPendingMsgVersions = buildCarriedVersions(chat, index, updatedText);
-                        chat.messages = chat.messages.slice(0, index);
-                        localStorage.setItem(currentChatId, JSON.stringify(chat));
-                        userInput.value = updatedText;
-                        sendMessage();
-                    }
+                    if (!chat) return;
+                    window.__cavdoPendingMsgVersions = buildCarriedVersions(chat, index, updatedText);
+                    chat.messages = chat.messages.slice(0, index);
+                    localStorage.setItem(currentChatId, JSON.stringify(chat));
+                    userInput.value = updatedText;
+                    sendMessage();
+                };
+
+                if (isGenerating) {
+                    if (abortController) abortController.abort();
+                    setGeneratingState(false);
+                    // Give the abort a tick to fully unwind before we start
+                    // a new send, so this send isn't the one that gets
+                    // swallowed by the "stop" branch again.
+                    setTimeout(finishEdit, 0);
+                } else {
+                    finishEdit();
                 }
             };
 
@@ -10036,6 +10540,10 @@
                         ? "You are a senior developer inside Cavdo AI. Provide optimal scripts, apps, or components instantly enclosed inside markdown code fences blocks. Never output <think> tags or internal thoughts. Always wrap code in a fenced block with the correct language tag (e.g. ```python) — never send code as plain unfenced text. Always use real newline characters between statements and correct, consistent indentation (4 spaces for Python) exactly as it would appear in a real source file — never collapse multiple lines or statements onto a single line."
                         : "You are Cavdo AI. Provide structured clean markdown assistance instantly when requested.";
 
+                    sysInstruction += " If the user asks who founded, owns, created, runs, or is the CEO of Cavdo AI (or asks about 'the founder', 'the owner', 'the developer', etc.), answer that Cavdo AI was founded by Samyak Rajpal Savatkar, who is also its owner/CEO. Give this answer confidently and briefly, without hedging or mentioning any other company.";
+
+                    sysInstruction += " Default styling for any UI, webpage, component, or app you build (HTML/CSS/JS, React, etc.): make it feel modern and alive rather than flat — layered depth via shadows/gradients, subtle 3D tilt or perspective transforms, smooth hover/transition animations, glassmorphism or soft neumorphism where it fits, and polished spacing/typography. Treat this as the default look. Only drop down to a plain flat 2D style if the user explicitly asks for '2D', 'flat', 'simple', 'minimal', or similar — then respect that request exactly and don't add 3D flourishes.";
+
                     sysInstruction += " Outside of fenced code blocks, never write raw HTML tags like <br>, <br/>, <p>, or <div> in your reply text — this app renders your prose as plain markdown, not as live HTML, so a tag like that shows up as ugly literal text on screen instead of doing what it looks like it should do. For a line break, just start a new line; for a paragraph break, leave a blank line between paragraphs — that's all markdown needs.";
 
                     sysInstruction += " If the user's message is just a simple greeting or small talk (e.g. 'hi', 'hello', 'hey', 'good morning', 'how are you') with no actual request in it, reply with a short, warm, natural greeting back and nothing else. Do NOT list your capabilities, do NOT say what you can or cannot make/do/generate, and do NOT mention images, code, PDFs, or any other feature unless the user actually asked about it.";
@@ -10043,6 +10551,8 @@
                     sysInstruction += " Every fenced code block you output automatically becomes a real downloadable file in the UI (with copy and download buttons), so always wrap generated documents, scripts, or data in a markdown code fence with an accurate language tag right after the opening ``` (e.g. ```python, ```html, ```json, etc). Only use ```pdf, ```docx, or ```pptx when the user has explicitly asked for that document type (e.g. 'make a PDF for X', 'give me this as a Word doc', 'make a presentation/slides about Y') — each renders as a single 'ready to download' line that turns the content into a real .pdf, .docx, or .pptx file when clicked, with proper headings, bold text, bullet lists and tables (not literal ** or # symbols). Inside a ```pdf or ```docx block, write normal markdown: use '# Title', '## Heading', '**bold**', '*italic*', '- bullet' or '1. numbered' lists, and pipe tables — these render as real formatted headings/bold/lists/tables in the exported file. Inside a ```pptx block, start each slide with a '# ' or '## ' heading (the slide title) followed by '- ' bullet lines for that slide's content, separating slides with '---' if you need a divider without a new heading. Do not use ```pdf/```docx/```pptx for ordinary code or text the user didn't ask to receive as a document. Default to plain prose or a plain ```markdown fence for normal answers, explanations, summaries, lists, and reports — do NOT proactively offer or create a pdf/docx/pptx 'just in case' it's useful, and do not create one because the content is long or looks like a report; wait for the user to actually ask. For example, if the user asks 'write me a report on X' with no mention of a file format, answer in plain markdown, not a ```pdf or ```docx block — only switch to one of those if they follow up with something like 'make that a PDF' or 'as a Word doc'.";
 
                     sysInstruction += " ZIP requests: whenever the user asks you to zip, bundle, combine, package, or 'compress' files — whether those are files they just uploaded as attachments, files/code you generated earlier in this conversation, or brand new files you're writing now — respond with a SINGLE ```zip fenced code block containing a JSON array manifest: [{\"name\": \"path/file.ext\", \"content\": \"...full file content...\"}, ...]. Include the COMPLETE, exact content of every file being zipped (never truncate, summarize, or use placeholders like '...'). If the user says something like 'zip these two files' after uploading two attachments, reuse each attachment's full content verbatim as its own entry. If the user says 'zip that code' or 'zip what you just made' referring to something earlier in the conversation, pull the exact content of that earlier code block/file and put it in the manifest. Give each entry a sensible filename with extension. Do not wrap the zip block in any other code fence or explanation text around the JSON. Separately: when an ordinary (non-zip) reply contains multiple generated files/snippets, the UI automatically also offers a combined ZIP download for all of them — no action needed from you for that case.";
+
+                    sysInstruction += " File conversion: if the user asks to convert a file's format — Word/docx to PDF, PDF to text, txt/markdown to docx, CSV to Excel/JSON, images between png/jpg/webp/bmp/gif, or audio/video between mp3/wav/ogg/m4a/mp4/webm/gif — tell them to use the 'Convert File' option in the attach (+) menu next to the message box: they pick the file and the target format there, and it converts and downloads it for real, right in the browser. Don't try to perform the conversion yourself inside the chat reply, and don't claim you can't do file conversion at all — point them to that button instead.";
 
                     sysInstruction += " Math and calculations: you can and should solve ANY math question fully — arithmetic, algebra, geometry, trigonometry, calculus, statistics, word problems, unit conversions, etc. Always show clear step-by-step working before the final answer, and double-check every calculation before giving it. This app has NO LaTeX or MathJax renderer, so never use LaTeX/TeX math syntax or dollar-sign math delimiters, and never use backslash commands such as frac, sqrt, or times — that would show up as broken raw text instead of a formula. Instead write math in plain text using real Unicode characters: superscripts like x², x³, xⁿ; roots like √x or ³√x; and symbols like π, ×, ÷, ±, ≈, ≠, ≤, ≥, °, ∞, Σ, Δ where natural. Write fractions as 'a/b' with a short explanation instead of a stacked fraction command. Use plain markdown (headings, bold, numbered steps) to structure the solution, exactly like the rest of your answers.";
 

@@ -8703,6 +8703,14 @@
             let consecutiveFailCount = 0;           // guards against an infinite restart loop
             const MAX_CONSECUTIVE_FAILS = 4;
 
+            // How long to wait after the person stops talking before treating
+            // the utterance as finished and sending it — like Gemini/Assistant
+            // voice mode, which listens through natural mid-sentence pauses
+            // instead of cutting out and restarting the whole mic session.
+            const SILENCE_MS = 1100;
+            let silenceTimer = null;
+            let utteranceBuffer = '';
+
             function listenOnce() {
                 if (!isActive || isMuted) return;
                 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -8711,9 +8719,14 @@
                     return;
                 }
                 lastSessionEndedInError = false;
+                utteranceBuffer = '';
                 recognizer = new SR();
                 recognizer.lang = 'en-US';
-                recognizer.continuous = false;
+                // continuous:true keeps ONE mic session open across pauses in
+                // speech instead of ending (and re-triggering Chrome's mic
+                // start/stop chime) after every short silence — that
+                // restart-per-utterance loop was the repeating "dutu" sound.
+                recognizer.continuous = true;
                 recognizer.interimResults = true;
                 isListening = true;
                 setStatus('Listening…');
@@ -8727,17 +8740,27 @@
                         if (r.isFinal) finalText += r[0].transcript;
                         else interim += r[0].transcript;
                     }
-                    setTranscript((finalText || interim).trim());
-                    if (finalText.trim()) {
+                    if (finalText) utteranceBuffer += (utteranceBuffer ? ' ' : '') + finalText.trim();
+                    setTranscript((utteranceBuffer + ' ' + interim).trim());
+
+                    // Any new speech (final or interim) resets the "they've
+                    // gone quiet" clock — this is what lets someone pause
+                    // mid-thought without the session ending.
+                    clearTimeout(silenceTimer);
+                    silenceTimer = setTimeout(() => {
+                        const said = utteranceBuffer.trim();
+                        if (!said) return;
+                        utteranceBuffer = '';
                         consecutiveFailCount = 0;
                         isListening = false;
                         try { recognizer.stop(); } catch (e) {}
-                        handleUserUtterance(finalText.trim());
-                    }
+                        handleUserUtterance(said);
+                    }, SILENCE_MS);
                 };
                 recognizer.onerror = (e) => {
                     isListening = false;
                     lastSessionEndedInError = true;
+                    clearTimeout(silenceTimer);
 
                     if (FATAL_SR_ERRORS.has(e.error)) {
                         // Don't auto-restart on a fatal error — that's exactly
@@ -8784,11 +8807,22 @@
                 };
                 recognizer.onend = () => {
                     isListening = false;
+                    clearTimeout(silenceTimer);
                     // onerror already decided whether/how to restart (or
                     // stopped cleanly on a fatal error) — onend firing right
                     // after it should never independently schedule its own
                     // restart, or every error double-fires a restart.
                     if (lastSessionEndedInError) return;
+                    // Chrome caps a single continuous session at roughly a
+                    // minute — if it cuts out mid-sentence, don't drop what
+                    // was already said; send it like a normal pause would.
+                    if (utteranceBuffer.trim()) {
+                        const said = utteranceBuffer.trim();
+                        utteranceBuffer = '';
+                        consecutiveFailCount = 0;
+                        handleUserUtterance(said);
+                        return;
+                    }
                     if (isActive && !isMuted && !isSpeaking) {
                         consecutiveFailCount = 0;
                         restartTimer = setTimeout(listenOnce, 250);
@@ -8808,6 +8842,8 @@
             }
             function stopListening() {
                 clearTimeout(restartTimer);
+                clearTimeout(silenceTimer);
+                utteranceBuffer = '';
                 consecutiveFailCount = 0;
                 if (recognizer) { try { recognizer.onend = null; recognizer.onerror = null; recognizer.stop(); } catch (e) {} }
                 isListening = false;

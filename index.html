@@ -8670,6 +8670,15 @@
             }
 
             // ---- Speech recognition ----
+            // Errors that mean "this session is dead, don't just retry in a
+            // fast loop" — retrying these immediately is what caused the
+            // mic start/stop chime to fire over and over with nothing ever
+            // actually getting recognized ("dutu sound loops").
+            const FATAL_SR_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'bad-grammar', 'language-not-supported']);
+            let lastSessionEndedInError = false;   // set by onerror, read by onend
+            let consecutiveFailCount = 0;           // guards against an infinite restart loop
+            const MAX_CONSECUTIVE_FAILS = 4;
+
             function listenOnce() {
                 if (!isActive || isMuted) return;
                 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -8677,6 +8686,7 @@
                     setStatus("This browser doesn't support voice input — try Chrome, then type instead.");
                     return;
                 }
+                lastSessionEndedInError = false;
                 recognizer = new SR();
                 recognizer.lang = 'en-US';
                 recognizer.continuous = false;
@@ -8695,6 +8705,7 @@
                     }
                     setTranscript((finalText || interim).trim());
                     if (finalText.trim()) {
+                        consecutiveFailCount = 0;
                         isListening = false;
                         try { recognizer.stop(); } catch (e) {}
                         handleUserUtterance(finalText.trim());
@@ -8702,23 +8713,79 @@
                 };
                 recognizer.onerror = (e) => {
                     isListening = false;
-                    if (e.error === 'no-speech' || e.error === 'aborted') {
-                        if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 400);
+                    lastSessionEndedInError = true;
+
+                    if (FATAL_SR_ERRORS.has(e.error)) {
+                        // Don't auto-restart on a fatal error — that's exactly
+                        // what produced the endless start/stop chime with no
+                        // real listening happening. Stop cleanly and tell the
+                        // person what actually went wrong so they can fix it
+                        // (grant mic permission, check connection, etc.) and
+                        // tap the mic to try again themselves.
+                        clearTimeout(restartTimer);
+                        consecutiveFailCount = 0;
+                        const messages = {
+                            'not-allowed': 'Microphone access was blocked — allow it in your browser to use Voice Mode.',
+                            'service-not-allowed': 'Voice input was blocked by the browser/OS. Check mic permissions and try again.',
+                            'audio-capture': 'No microphone was found. Check that one is connected and try again.',
+                            'network': "Couldn't reach the speech service — check your internet connection and tap the mic to retry.",
+                            'bad-grammar': 'Speech recognition ran into a problem. Tap the mic to retry.',
+                            'language-not-supported': 'This language isn\'t supported for voice input. Tap the mic to retry.'
+                        };
+                        setStatus(messages[e.error] || ('Mic error: ' + e.error + '. Tap the mic to retry.'));
                         return;
                     }
-                    setStatus('Mic error: ' + e.error + '. Tap the mic to retry.');
+
+                    if (e.error === 'no-speech' || e.error === 'aborted') {
+                        consecutiveFailCount++;
+                        if (consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) {
+                            consecutiveFailCount = 0;
+                            setStatus('Having trouble hearing you — tap the mic to try again.');
+                            return;
+                        }
+                        if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 500);
+                        return;
+                    }
+
+                    // Any other/unknown error: same guarded, backed-off retry
+                    // rather than an unconditional immediate one.
+                    consecutiveFailCount++;
+                    if (consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) {
+                        consecutiveFailCount = 0;
+                        setStatus('Mic error: ' + e.error + '. Tap the mic to retry.');
+                        return;
+                    }
+                    setStatus('Mic error: ' + e.error + '. Retrying…');
+                    if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 600);
                 };
                 recognizer.onend = () => {
                     isListening = false;
+                    // onerror already decided whether/how to restart (or
+                    // stopped cleanly on a fatal error) — onend firing right
+                    // after it should never independently schedule its own
+                    // restart, or every error double-fires a restart.
+                    if (lastSessionEndedInError) return;
                     if (isActive && !isMuted && !isSpeaking) {
+                        consecutiveFailCount = 0;
                         restartTimer = setTimeout(listenOnce, 250);
                     }
                 };
-                try { recognizer.start(); } catch (e) { /* already running; ignore */ }
+                try {
+                    recognizer.start();
+                } catch (e) {
+                    // start() throws if a recognizer is already running — don't
+                    // silently swallow it forever, back off and retry once.
+                    isListening = false;
+                    consecutiveFailCount++;
+                    if (consecutiveFailCount < MAX_CONSECUTIVE_FAILS && isActive && !isMuted) {
+                        restartTimer = setTimeout(listenOnce, 500);
+                    }
+                }
             }
             function stopListening() {
                 clearTimeout(restartTimer);
-                if (recognizer) { try { recognizer.onend = null; recognizer.stop(); } catch (e) {} }
+                consecutiveFailCount = 0;
+                if (recognizer) { try { recognizer.onend = null; recognizer.onerror = null; recognizer.stop(); } catch (e) {} }
                 isListening = false;
             }
 

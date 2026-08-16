@@ -2013,6 +2013,189 @@
             margin-top: 1px;
         }
 
+        /* ============ VOICE MODE ============ */
+        .voice-mode-launch-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.85);
+            cursor: pointer;
+            transition: background .15s ease, color .15s ease, transform .15s ease;
+        }
+        .voice-mode-launch-btn:hover {
+            background: rgba(168, 85, 247, 0.18);
+            color: #c084fc;
+            transform: scale(1.05);
+        }
+
+        .voice-mode-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 999;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: calc(28px + var(--safe-top, 0px)) 20px calc(34px + var(--safe-bottom, 0px));
+            /* Same radial gradient as the rest of the app, so voice mode
+               never feels like a different screen bolted on. */
+            background: radial-gradient(circle at 50% -20%, #2c5e3b 0%, #131a15 40%, #050705 100%);
+            color: #fff;
+        }
+        .voice-mode-overlay.show { display: flex; }
+
+        .voice-mode-top {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+        .voice-mode-close-btn {
+            position: absolute;
+            top: calc(20px + var(--safe-top, 0px));
+            right: 20px;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .voice-mode-close-btn:hover { background: rgba(255, 255, 255, 0.16); }
+
+        .voice-mode-logo-wrap {
+            width: 76px;
+            height: 76px;
+            border-radius: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.04);
+            box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.25), 0 0 40px 6px rgba(168, 85, 247, 0.28);
+            animation: voiceLogoPulse 2.4s ease-in-out infinite;
+        }
+        .voice-mode-logo-wrap img { width: 52px; height: 52px; border-radius: 14px; }
+        @keyframes voiceLogoPulse {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.25), 0 0 30px 4px rgba(168, 85, 247, 0.22); }
+            50%      { box-shadow: 0 0 0 1px rgba(217, 70, 239, 0.35), 0 0 55px 10px rgba(217, 70, 239, 0.38); }
+        }
+
+        .voice-mode-title {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            background: linear-gradient(90deg, #c084fc, #f0abfc, #a855f7, #c084fc);
+            background-size: 300% 100%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            animation: voiceRgbShift 5s linear infinite;
+        }
+        .voice-mode-status {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.55);
+            min-height: 18px;
+            text-align: center;
+        }
+        .voice-mode-transcript {
+            max-width: 640px;
+            width: 100%;
+            text-align: center;
+            font-size: 17px;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.92);
+            padding: 0 12px;
+            overflow-y: auto;
+            max-height: 40vh;
+        }
+
+        @keyframes voiceRgbShift {
+            0%   { background-position: 0% 50%; }
+            100% { background-position: 300% 50%; }
+        }
+
+        .voice-mode-bottom {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 22px;
+            width: 100%;
+        }
+
+        /* Neon purple / RGB wave — a row of bars whose height is driven
+           live from either the mic's real amplitude (while listening) or
+           a speech-synced pulse pattern (while Aura is speaking). */
+        .voice-wave {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 5px;
+            height: 84px;
+            width: 100%;
+            max-width: 420px;
+        }
+        .voice-wave-bar {
+            width: 6px;
+            min-height: 6px;
+            border-radius: 6px;
+            background: linear-gradient(180deg, #f0abfc, #c084fc 45%, #7c3aed 100%);
+            box-shadow: 0 0 10px 1px rgba(192, 132, 252, 0.55), 0 0 22px 4px rgba(124, 58, 237, 0.35);
+            transition: height 90ms ease-out;
+            animation: voiceBarHue 4s linear infinite;
+        }
+        .voice-wave-bar:nth-child(3n)  { animation-delay: -1.1s; }
+        .voice-wave-bar:nth-child(5n)  { animation-delay: -2.3s; }
+        .voice-wave-bar:nth-child(7n)  { animation-delay: -3.2s; }
+        @keyframes voiceBarHue {
+            0%   { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+        }
+
+        .voice-mode-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+        }
+        .voice-mode-mic-btn, .voice-mode-end-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            transition: transform .12s ease, filter .12s ease;
+        }
+        .voice-mode-mic-btn {
+            background: linear-gradient(135deg, #a855f7, #d946ef);
+            color: #fff;
+            box-shadow: 0 0 24px 4px rgba(168, 85, 247, 0.55);
+        }
+        .voice-mode-mic-btn.muted {
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: none;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        .voice-mode-mic-btn:hover, .voice-mode-end-btn:hover { transform: scale(1.06); }
+        .voice-mode-end-btn {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.35);
+        }
+
         .input-bar input,
         .input-bar textarea {
             flex: 1;
@@ -3882,6 +4065,10 @@
 
                 <textarea id="userInput" rows="1" placeholder="Ask Cavdo anything..." autocomplete="off"></textarea>
 
+                <button class="voice-mode-launch-btn" id="voiceModeLaunchBtn" title="Voice Mode" type="button">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                </button>
+
                 <div class="model-selector" id="modelSelector">
                     <button class="model-selector-btn" id="modelSelectorBtn" type="button" title="Choose model">
                         <span class="model-dot" id="modelDot"></span>
@@ -3935,6 +4122,33 @@
             <div class="modal-actions">
                 <button class="modal-btn cancel" id="planLimitModalClose">Not now</button>
                 <button class="modal-btn confirm" id="planLimitModalUpgrade">Upgrade</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="voice-mode-overlay" id="voiceModeOverlay">
+        <button class="voice-mode-close-btn" id="voiceModeCloseBtn" title="Close voice mode" type="button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+
+        <div class="voice-mode-top">
+            <div class="voice-mode-logo-wrap">
+                <img id="voiceModeLogoImg" src="" alt="Cavdo" />
+            </div>
+            <div class="voice-mode-title">Cavdo Voice</div>
+            <div class="voice-mode-status" id="voiceModeStatus">Tap the mic to start talking</div>
+            <div class="voice-mode-transcript" id="voiceModeTranscript"></div>
+        </div>
+
+        <div class="voice-mode-bottom">
+            <div class="voice-wave" id="voiceWave"></div>
+            <div class="voice-mode-controls">
+                <button class="voice-mode-mic-btn" id="voiceModeMicBtn" title="Mute/unmute mic" type="button">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                </button>
+                <button class="voice-mode-end-btn" id="voiceModeEndBtn" title="End voice mode" type="button">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </div>
         </div>
     </div>
@@ -8191,6 +8405,305 @@
             window.speechSynthesis.speak(utter);
             if (btnEl) btnEl.classList.add('speaking');
         }
+
+        // ============================================================
+        // VOICE MODE — full-screen live voice conversation. Real mic
+        // capture drives the waveform while listening; browser speech
+        // recognition transcribes what's said; replies go through the
+        // normal chat pipeline and come back spoken aloud in a tuned,
+        // deep "Aura" voice, with a synced neon wave while speaking.
+        // ============================================================
+        (function initVoiceMode() {
+            const overlay = document.getElementById('voiceModeOverlay');
+            const launchBtn = document.getElementById('voiceModeLaunchBtn');
+            const closeBtn = document.getElementById('voiceModeCloseBtn');
+            const endBtn = document.getElementById('voiceModeEndBtn');
+            const micBtn = document.getElementById('voiceModeMicBtn');
+            const statusEl = document.getElementById('voiceModeStatus');
+            const transcriptEl = document.getElementById('voiceModeTranscript');
+            const waveEl = document.getElementById('voiceWave');
+            const logoImg = document.getElementById('voiceModeLogoImg');
+            if (!overlay || !launchBtn) return;
+
+            logoImg.src = CAVDO_LOGO_DATA_URI;
+
+            // ---- Wave bars ----
+            const BAR_COUNT = 28;
+            const bars = [];
+            for (let i = 0; i < BAR_COUNT; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'voice-wave-bar';
+                waveEl.appendChild(bar);
+                bars.push(bar);
+            }
+            function setBarHeights(values) {
+                for (let i = 0; i < bars.length; i++) {
+                    const v = values[i] === undefined ? 0.05 : values[i];
+                    bars[i].style.height = Math.max(6, Math.round(v * 78)) + 'px';
+                }
+            }
+            function idleWaveValues(t) {
+                const vals = [];
+                for (let i = 0; i < BAR_COUNT; i++) vals.push(0.06 + 0.03 * Math.sin(t / 700 + i * 0.4));
+                return vals;
+            }
+
+            // ---- Aura voice selection: pick the deepest/most natural
+            // system voice available rather than whatever loads first. ----
+            let auraVoice = null;
+            function pickAuraVoice() {
+                const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+                if (!voices.length) return null;
+                const preferredNames = [
+                    'Google UK English Male', 'Microsoft Ryan', 'Microsoft Guy',
+                    'Daniel', 'Microsoft David', 'Google US English', 'Alex',
+                    'Microsoft Mark', 'Fred'
+                ];
+                for (const name of preferredNames) {
+                    const v = voices.find(v => v.name.includes(name));
+                    if (v) return v;
+                }
+                const enMale = voices.find(v => /en-/i.test(v.lang) && /male/i.test(v.name));
+                if (enMale) return enMale;
+                const en = voices.find(v => /en-/i.test(v.lang));
+                return en || voices[0];
+            }
+            if (window.speechSynthesis) {
+                window.speechSynthesis.onvoiceschanged = () => { auraVoice = pickAuraVoice(); };
+                auraVoice = pickAuraVoice();
+            }
+
+            // ---- State ----
+            let recognizer = null;
+            let micStream = null;
+            let audioCtx = null;
+            let analyser = null;
+            let micRafId = null;
+            let speakRafId = null;
+            let isMuted = false;
+            let isActive = false;
+            let isSpeaking = false;
+            let isListening = false;
+            let restartTimer = null;
+
+            function setStatus(text) { statusEl.textContent = text; }
+            function setTranscript(text) { transcriptEl.textContent = text || ''; }
+
+            function idleWaveLoop() {
+                function tick(t) {
+                    if (isActive && !isListening && !isSpeaking) {
+                        setBarHeights(idleWaveValues(t));
+                        requestAnimationFrame(tick);
+                    }
+                }
+                requestAnimationFrame(tick);
+            }
+
+            // ---- Real mic-amplitude wave while listening ----
+            async function startMicVisualizer() {
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                } catch (err) {
+                    setStatus('Microphone access was blocked — allow it in your browser to use Voice Mode.');
+                    return false;
+                }
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaStreamSource(micStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 64;
+                source.connect(analyser);
+                const data = new Uint8Array(analyser.frequencyBinCount);
+
+                function tick() {
+                    if (!isActive) return;
+                    analyser.getByteFrequencyData(data);
+                    const vals = [];
+                    for (let i = 0; i < BAR_COUNT; i++) {
+                        const idx = Math.floor((i / BAR_COUNT) * data.length);
+                        vals.push(Math.min(1, (data[idx] || 0) / 180));
+                    }
+                    if (isListening) setBarHeights(vals);
+                    micRafId = requestAnimationFrame(tick);
+                }
+                tick();
+                return true;
+            }
+            function stopMicVisualizer() {
+                if (micRafId) cancelAnimationFrame(micRafId);
+                micRafId = null;
+                if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+                if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+                analyser = null;
+            }
+
+            // ---- Synthetic wave while Aura speaks (browsers don't expose
+            // SpeechSynthesis audio to Web Audio API, so this drives a
+            // lively, speech-like pulse instead of true amplitude data) ----
+            function startSpeakingVisualizer() {
+                const start = performance.now();
+                function tick(now) {
+                    if (!isSpeaking) return;
+                    const t = now - start;
+                    const vals = [];
+                    for (let i = 0; i < BAR_COUNT; i++) {
+                        const phase = t / 130 + i * 0.55;
+                        const v = 0.18 + 0.42 * Math.abs(Math.sin(phase)) * (0.6 + 0.4 * Math.sin(t / 900 + i));
+                        vals.push(Math.min(1, v));
+                    }
+                    setBarHeights(vals);
+                    speakRafId = requestAnimationFrame(tick);
+                }
+                speakRafId = requestAnimationFrame(tick);
+            }
+            function stopSpeakingVisualizer() {
+                if (speakRafId) cancelAnimationFrame(speakRafId);
+                speakRafId = null;
+            }
+
+            // ---- Speech recognition ----
+            function listenOnce() {
+                if (!isActive || isMuted) return;
+                const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SR) {
+                    setStatus("This browser doesn't support voice input — try Chrome, then type instead.");
+                    return;
+                }
+                recognizer = new SR();
+                recognizer.lang = 'en-US';
+                recognizer.continuous = false;
+                recognizer.interimResults = true;
+                isListening = true;
+                setStatus('Listening…');
+                setTranscript('');
+
+                recognizer.onresult = (e) => {
+                    let finalText = '';
+                    let interim = '';
+                    for (let i = e.resultIndex; i < e.results.length; i++) {
+                        const r = e.results[i];
+                        if (r.isFinal) finalText += r[0].transcript;
+                        else interim += r[0].transcript;
+                    }
+                    setTranscript((finalText || interim).trim());
+                    if (finalText.trim()) {
+                        isListening = false;
+                        try { recognizer.stop(); } catch (e) {}
+                        handleUserUtterance(finalText.trim());
+                    }
+                };
+                recognizer.onerror = (e) => {
+                    isListening = false;
+                    if (e.error === 'no-speech' || e.error === 'aborted') {
+                        if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 400);
+                        return;
+                    }
+                    setStatus('Mic error: ' + e.error + '. Tap the mic to retry.');
+                };
+                recognizer.onend = () => {
+                    isListening = false;
+                    if (isActive && !isMuted && !isSpeaking) {
+                        restartTimer = setTimeout(listenOnce, 250);
+                    }
+                };
+                try { recognizer.start(); } catch (e) { /* already running; ignore */ }
+            }
+            function stopListening() {
+                clearTimeout(restartTimer);
+                if (recognizer) { try { recognizer.onend = null; recognizer.stop(); } catch (e) {} }
+                isListening = false;
+            }
+
+            // ---- Send the transcribed utterance through the app's normal
+            // chat pipeline, then speak whatever the AI answers back. ----
+            function handleUserUtterance(text) {
+                setStatus('Thinking…');
+                window.__cavdoVoiceModeActive = true;
+                userInput.value = text;
+                sendMessage();
+            }
+
+            // Called by the main reply pipeline once a reply is fully ready.
+            window.__cavdoSpeakVoiceModeReply = function (replyText) {
+                if (!isActive) return;
+                const clean = (replyText || '')
+                    .replace(/```[\s\S]*?```/g, ' — here is some code, check your screen — ')
+                    .replace(/[*_#`>]/g, '')
+                    .trim();
+                if (!clean) { listenOnce(); return; }
+
+                setTranscript(clean.length > 400 ? clean.slice(0, 400) + '…' : clean);
+                if (!('speechSynthesis' in window)) {
+                    setStatus("This browser can't speak replies aloud — showing text only.");
+                    setTimeout(listenOnce, 600);
+                    return;
+                }
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(clean);
+                if (auraVoice) utter.voice = auraVoice;
+                // Tuned for a deep, warm, precise delivery — a touch lower
+                // pitch and a touch slower than 1x so it reads clearly
+                // instead of sounding rushed or thin.
+                utter.pitch = 0.82;
+                utter.rate = 0.97;
+                utter.volume = 1;
+
+                isSpeaking = true;
+                setStatus('Speaking…');
+                startSpeakingVisualizer();
+
+                utter.onend = () => {
+                    isSpeaking = false;
+                    stopSpeakingVisualizer();
+                    if (isActive && !isMuted) { setStatus('Listening…'); listenOnce(); }
+                    else if (isActive) { setStatus('Muted — tap the mic to talk'); }
+                };
+                utter.onerror = () => {
+                    isSpeaking = false;
+                    stopSpeakingVisualizer();
+                    if (isActive && !isMuted) listenOnce();
+                };
+                window.speechSynthesis.speak(utter);
+            };
+
+            // ---- Open / close ----
+            async function openVoiceMode() {
+                overlay.classList.add('show');
+                isActive = true;
+                isMuted = false;
+                micBtn.classList.remove('muted');
+                setStatus('Getting the mic ready…');
+                setTranscript('');
+                idleWaveLoop();
+                const ok = await startMicVisualizer();
+                if (ok) listenOnce();
+            }
+            function closeVoiceMode() {
+                isActive = false;
+                window.__cavdoVoiceModeActive = false;
+                stopListening();
+                stopMicVisualizer();
+                stopSpeakingVisualizer();
+                if (window.speechSynthesis) window.speechSynthesis.cancel();
+                overlay.classList.remove('show');
+            }
+
+            launchBtn.onclick = openVoiceMode;
+            closeBtn.onclick = closeVoiceMode;
+            endBtn.onclick = closeVoiceMode;
+            micBtn.onclick = () => {
+                isMuted = !isMuted;
+                micBtn.classList.toggle('muted', isMuted);
+                if (isMuted) {
+                    stopListening();
+                    setStatus('Muted — tap the mic to talk');
+                } else if (!isSpeaking) {
+                    listenOnce();
+                }
+            };
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && overlay.classList.contains('show')) closeVoiceMode();
+            });
+        })();
 
         function branchChatFromMessage(uptoIndex) {
             if (!currentChatId) return;

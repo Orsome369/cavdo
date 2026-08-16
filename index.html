@@ -7244,7 +7244,8 @@
             ppt:    { icon: '📙', label: 'Presentation ready',  sub: 'Click to preview, then download as a .pptx file', btn: 'Open', kind: 'pptx' },
             powerpoint: { icon: '📙', label: 'Presentation ready', sub: 'Click to preview, then download as a .pptx file', btn: 'Open', kind: 'pptx' },
             presentation: { icon: '📙', label: 'Presentation ready', sub: 'Click to preview, then download as a .pptx file', btn: 'Open', kind: 'pptx' },
-            slides: { icon: '📙', label: 'Presentation ready',  sub: 'Click to preview, then download as a .pptx file', btn: 'Open', kind: 'pptx' }
+            slides: { icon: '📙', label: 'Presentation ready',  sub: 'Click to preview, then download as a .pptx file', btn: 'Open', kind: 'pptx' },
+            zip:    { icon: '🗜️', label: 'ZIP ready',           sub: 'Click to download as a .zip archive',            btn: 'Download', kind: 'zip' }
         };
 
         function getCodeFileExtension(language) {
@@ -8372,6 +8373,29 @@
                             if (docBtn) {
                                 docBtn.onclick = () => {
                                     const kind = docMeta.kind;
+
+                                    // ZIP is a real archive, not a previewable document —
+                                    // parse the JSON file-manifest the model was instructed
+                                    // to output and hand it straight to JSZip, instead of
+                                    // routing it through the text/PDF/DOCX preview panel
+                                    // (which was showing the raw manifest as if it were the
+                                    // file's contents).
+                                    if (kind === 'zip') {
+                                        const originalLabel = docBtn.textContent;
+                                        docBtn.disabled = true;
+                                        docBtn.textContent = '⏳ zipping…';
+                                        const files = parseZipManifest(codeContent, 'file.txt');
+                                        downloadFilesAsZip(files, `cavdo-archive-${Date.now()}.zip`)
+                                            .then(() => { docBtn.textContent = originalLabel; docBtn.disabled = false; })
+                                            .catch(err => {
+                                                console.error('Zip download failed:', err);
+                                                docBtn.textContent = originalLabel;
+                                                docBtn.disabled = false;
+                                                alert('Sorry, the zip could not be generated: ' + err.message);
+                                            });
+                                        return;
+                                    }
+
                                     const previewHtml = kind === 'pptx'
                                         ? buildSlidesPreviewHTML(codeContent)
                                         : buildDocPreviewHTML(codeContent);

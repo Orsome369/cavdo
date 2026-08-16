@@ -8607,7 +8607,6 @@
             }
 
             // ---- State ----
-            let recognizer = null;
             let micStream = null;
             let audioCtx = null;
             let analyser = null;
@@ -8693,159 +8692,181 @@
                 speakRafId = null;
             }
 
-            // ---- Speech recognition ----
-            // Errors that mean "this session is dead, don't just retry in a
-            // fast loop" — retrying these immediately is what caused the
-            // mic start/stop chime to fire over and over with nothing ever
-            // actually getting recognized ("dutu sound loops").
-            const FATAL_SR_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'bad-grammar', 'language-not-supported']);
-            let lastSessionEndedInError = false;   // set by onerror, read by onend
-            let consecutiveFailCount = 0;           // guards against an infinite restart loop
-            const MAX_CONSECUTIVE_FAILS = 4;
+            // ---- Listening, via real audio recording + Gemini transcription ----
+            // The Web Speech API's SpeechRecognition is a Chrome/Edge-only
+            // feature — Firefox and Safari never implemented it at all, so
+            // relying on it meant Voice Mode was simply broken there no
+            // matter what. MediaRecorder, by contrast, is supported
+            // everywhere, so instead we record real audio and send it to
+            // Gemini (which accepts audio input natively) for transcription
+            // — same approach, works on every browser.
+            let mediaRecorder = null;
+            let recordedChunks = [];
+            let vadRafId = null;
+            let hasHeardSpeech = false;
 
             // How long to wait after the person stops talking before treating
             // the utterance as finished and sending it — like Gemini/Assistant
             // voice mode, which listens through natural mid-sentence pauses
-            // instead of cutting out and restarting the whole mic session.
+            // instead of cutting the mic the instant it's quiet for a beat.
             const SILENCE_MS = 1100;
+            // Amplitude (0-1, from the same analyser driving the waveform)
+            // above which we consider it real speech rather than background
+            // noise — tuned loose enough to not need a quiet room, tight
+            // enough not to keep re-triggering on hiss/hum alone.
+            const VAD_THRESHOLD = 0.05;
             let silenceTimer = null;
-            let utteranceBuffer = '';
+
+            function pickRecorderMime() {
+                const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
+                for (const c of candidates) {
+                    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+                }
+                return '';
+            }
 
             function listenOnce() {
-                if (!isActive || isMuted) return;
-                const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!SR) {
-                    setStatus("This browser doesn't support voice input — try Chrome, then type instead.");
+                if (!isActive || isMuted || !micStream) return;
+                if (!window.MediaRecorder) {
+                    setStatus("This browser doesn't support audio recording — try Chrome, Firefox, or Edge, then type instead.");
                     return;
                 }
-                lastSessionEndedInError = false;
-                utteranceBuffer = '';
-                recognizer = new SR();
-                recognizer.lang = 'en-US';
-                // continuous:true keeps ONE mic session open across pauses in
-                // speech instead of ending (and re-triggering Chrome's mic
-                // start/stop chime) after every short silence — that
-                // restart-per-utterance loop was the repeating "dutu" sound.
-                recognizer.continuous = true;
-                recognizer.interimResults = true;
+                recordedChunks = [];
+                hasHeardSpeech = false;
+                clearTimeout(silenceTimer);
+
+                const mimeType = pickRecorderMime();
+                try {
+                    mediaRecorder = mimeType ? new MediaRecorder(micStream, { mimeType }) : new MediaRecorder(micStream);
+                } catch (e) {
+                    setStatus('Could not start the microphone recorder. Tap the mic to retry.');
+                    return;
+                }
+
+                mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    if (vadRafId) cancelAnimationFrame(vadRafId);
+                    vadRafId = null;
+                    if (!hasHeardSpeech || recordedChunks.length === 0) {
+                        // Nothing meaningful was captured (silence-only clip,
+                        // or stopped before any real speech) — just listen again.
+                        if (isActive && !isMuted && !isSpeaking) restartTimer = setTimeout(listenOnce, 200);
+                        return;
+                    }
+                    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || mimeType || 'audio/webm' });
+                    handleRecordedAudio(blob);
+                };
+
                 isListening = true;
                 setStatus('Listening…');
                 setTranscript('');
-
-                recognizer.onresult = (e) => {
-                    let finalText = '';
-                    let interim = '';
-                    for (let i = e.resultIndex; i < e.results.length; i++) {
-                        const r = e.results[i];
-                        if (r.isFinal) finalText += r[0].transcript;
-                        else interim += r[0].transcript;
-                    }
-                    if (finalText) utteranceBuffer += (utteranceBuffer ? ' ' : '') + finalText.trim();
-                    setTranscript((utteranceBuffer + ' ' + interim).trim());
-
-                    // Any new speech (final or interim) resets the "they've
-                    // gone quiet" clock — this is what lets someone pause
-                    // mid-thought without the session ending.
-                    clearTimeout(silenceTimer);
-                    silenceTimer = setTimeout(() => {
-                        const said = utteranceBuffer.trim();
-                        if (!said) return;
-                        utteranceBuffer = '';
-                        consecutiveFailCount = 0;
-                        isListening = false;
-                        try { recognizer.stop(); } catch (e) {}
-                        handleUserUtterance(said);
-                    }, SILENCE_MS);
-                };
-                recognizer.onerror = (e) => {
-                    isListening = false;
-                    lastSessionEndedInError = true;
-                    clearTimeout(silenceTimer);
-
-                    if (FATAL_SR_ERRORS.has(e.error)) {
-                        // Don't auto-restart on a fatal error — that's exactly
-                        // what produced the endless start/stop chime with no
-                        // real listening happening. Stop cleanly and tell the
-                        // person what actually went wrong so they can fix it
-                        // (grant mic permission, check connection, etc.) and
-                        // tap the mic to try again themselves.
-                        clearTimeout(restartTimer);
-                        consecutiveFailCount = 0;
-                        const messages = {
-                            'not-allowed': 'Microphone access was blocked — allow it in your browser to use Voice Mode.',
-                            'service-not-allowed': 'Voice input was blocked by the browser/OS. Check mic permissions and try again.',
-                            'audio-capture': 'No microphone was found. Check that one is connected and try again.',
-                            'network': "Couldn't reach the speech service — check your internet connection and tap the mic to retry.",
-                            'bad-grammar': 'Speech recognition ran into a problem. Tap the mic to retry.',
-                            'language-not-supported': 'This language isn\'t supported for voice input. Tap the mic to retry.'
-                        };
-                        setStatus(messages[e.error] || ('Mic error: ' + e.error + '. Tap the mic to retry.'));
-                        return;
-                    }
-
-                    if (e.error === 'no-speech' || e.error === 'aborted') {
-                        consecutiveFailCount++;
-                        if (consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) {
-                            consecutiveFailCount = 0;
-                            setStatus('Having trouble hearing you — tap the mic to try again.');
-                            return;
-                        }
-                        if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 500);
-                        return;
-                    }
-
-                    // Any other/unknown error: same guarded, backed-off retry
-                    // rather than an unconditional immediate one.
-                    consecutiveFailCount++;
-                    if (consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) {
-                        consecutiveFailCount = 0;
-                        setStatus('Mic error: ' + e.error + '. Tap the mic to retry.');
-                        return;
-                    }
-                    setStatus('Mic error: ' + e.error + '. Retrying…');
-                    if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 600);
-                };
-                recognizer.onend = () => {
-                    isListening = false;
-                    clearTimeout(silenceTimer);
-                    // onerror already decided whether/how to restart (or
-                    // stopped cleanly on a fatal error) — onend firing right
-                    // after it should never independently schedule its own
-                    // restart, or every error double-fires a restart.
-                    if (lastSessionEndedInError) return;
-                    // Chrome caps a single continuous session at roughly a
-                    // minute — if it cuts out mid-sentence, don't drop what
-                    // was already said; send it like a normal pause would.
-                    if (utteranceBuffer.trim()) {
-                        const said = utteranceBuffer.trim();
-                        utteranceBuffer = '';
-                        consecutiveFailCount = 0;
-                        handleUserUtterance(said);
-                        return;
-                    }
-                    if (isActive && !isMuted && !isSpeaking) {
-                        consecutiveFailCount = 0;
-                        restartTimer = setTimeout(listenOnce, 250);
-                    }
-                };
                 try {
-                    recognizer.start();
+                    mediaRecorder.start();
                 } catch (e) {
-                    // start() throws if a recognizer is already running — don't
-                    // silently swallow it forever, back off and retry once.
                     isListening = false;
-                    consecutiveFailCount++;
-                    if (consecutiveFailCount < MAX_CONSECUTIVE_FAILS && isActive && !isMuted) {
-                        restartTimer = setTimeout(listenOnce, 500);
+                    setStatus('Could not start recording. Tap the mic to retry.');
+                    return;
+                }
+                startVoiceActivityDetection();
+            }
+
+            // Watches the same analyser that drives the waveform to detect
+            // when the person is actually speaking, and auto-stops the
+            // recording after a pause — this is what lets Voice Mode behave
+            // like a real conversation instead of needing a manual
+            // start/stop tap for every single sentence.
+            function startVoiceActivityDetection() {
+                if (!analyser) return;
+                const data = new Uint8Array(analyser.frequencyBinCount);
+                function tick() {
+                    if (!isListening || !mediaRecorder || mediaRecorder.state !== 'recording') return;
+                    analyser.getByteFrequencyData(data);
+                    let sum = 0;
+                    for (let i = 0; i < data.length; i++) sum += data[i];
+                    const avg = sum / data.length / 255;
+                    if (avg > VAD_THRESHOLD) {
+                        hasHeardSpeech = true;
+                        clearTimeout(silenceTimer);
+                        silenceTimer = setTimeout(() => {
+                            isListening = false;
+                            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                                try { mediaRecorder.stop(); } catch (e) {}
+                            }
+                        }, SILENCE_MS);
                     }
+                    vadRafId = requestAnimationFrame(tick);
+                }
+                vadRafId = requestAnimationFrame(tick);
+            }
+
+            function blobToBase64(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(String(reader.result).split(',')[1] || '');
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            }
+
+            // Sends the recorded clip to Gemini for transcription — Gemini's
+            // text models accept audio natively as inline base64 data, the
+            // same way images are sent elsewhere in this app.
+            async function transcribeAudioViaGemini(blob) {
+                const base64 = await blobToBase64(blob);
+                const mimeType = (blob.type || 'audio/webm').split(';')[0];
+                const model = getActiveTier().textModel;
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getActiveGeminiKey()}`;
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            role: 'user',
+                            parts: [
+                                { inlineData: { data: base64, mimeType: mimeType } },
+                                { text: 'Transcribe exactly what is said in this audio clip. Reply with ONLY the transcription, no commentary, no quotes. If there is no clear speech, reply with nothing.' }
+                            ]
+                        }]
+                    })
+                });
+                if (!res.ok) {
+                    let msg = `Transcription failed (HTTP ${res.status})`;
+                    try { const d = await res.json(); if (d && d.error && d.error.message) msg = d.error.message; } catch (e) {}
+                    throw new Error(msg);
+                }
+                const data = await res.json();
+                const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+                let text = '';
+                for (const p of parts) if (p.text) text += p.text;
+                return text.trim();
+            }
+
+            async function handleRecordedAudio(blob) {
+                setStatus('Transcribing…');
+                try {
+                    const text = await transcribeAudioViaGemini(blob);
+                    if (text) {
+                        handleUserUtterance(text);
+                    } else {
+                        setStatus("Didn't catch that — tap the mic or just talk again.");
+                        if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 400);
+                    }
+                } catch (err) {
+                    console.error('Voice transcription failed:', err);
+                    setStatus('Transcription failed — tap the mic to retry.');
                 }
             }
+
             function stopListening() {
                 clearTimeout(restartTimer);
                 clearTimeout(silenceTimer);
-                utteranceBuffer = '';
-                consecutiveFailCount = 0;
-                if (recognizer) { try { recognizer.onend = null; recognizer.onerror = null; recognizer.stop(); } catch (e) {} }
+                if (vadRafId) cancelAnimationFrame(vadRafId);
+                vadRafId = null;
+                hasHeardSpeech = false;
+                if (mediaRecorder) {
+                    try { mediaRecorder.ondataavailable = null; mediaRecorder.onstop = null; if (mediaRecorder.state === 'recording') mediaRecorder.stop(); } catch (e) {}
+                    mediaRecorder = null;
+                }
                 isListening = false;
             }
 

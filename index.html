@@ -10748,7 +10748,7 @@
             return replyText.replace(/```(pdf|docx|pptx)(\s|\n|$)/gi, '```markdown$2');
         }
 
-        async function typeOutFullReply(rawText, requestContextChatId, aiMsgIndex, thinkingIntervalId, originalUserText) {
+        async function typeOutFullReply(rawText, requestContextChatId, aiMsgIndex, thinkingIntervalId, originalUserText, instant) {
             const fullReply = downgradeUnrequestedDocFences(
                 (rawText || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
                 originalUserText
@@ -10763,6 +10763,28 @@
             if (currentChatId === requestContextChatId) {
                 const tNode = getLastMessageNode()?.querySelector('.text-container-node');
                 if (tNode) tNode.classList.remove('thinking-status-text');
+            }
+
+            // Lite and Speed are chosen specifically for fast turnaround —
+            // the fake character-by-character typing animation was adding
+            // real, felt latency on top of an already-fast API response.
+            // Skip straight to rendering the whole reply for those tiers
+            // instead of animating it in.
+            if (instant) {
+                const instantChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                if (instantChat && instantChat.messages[aiMsgIndex]) {
+                    instantChat.messages[aiMsgIndex].text = fullReply;
+                    localStorage.setItem(requestContextChatId, JSON.stringify(instantChat));
+                }
+                if (currentChatId === requestContextChatId) {
+                    const lastMessageNode = getLastMessageNode();
+                    const textDiv = lastMessageNode ? lastMessageNode.querySelector('.text-container-node') : null;
+                    if (textDiv) {
+                        try { renderAIContent(textDiv, fullReply, false, originalUserText, true); }
+                        catch (renderErr) { console.error('Instant render error (text already saved):', renderErr); }
+                    }
+                }
+                return fullReply;
             }
 
             let fullText = '';
@@ -11538,7 +11560,7 @@
                         let rawText = '';
                         for (const part of rawParts) { if (part.text) rawText += part.text; }
 
-                        aiText = await typeOutFullReply(rawText, requestContextChatId, aiMsgIndex, internalThinkingInterval, text);
+                        aiText = await typeOutFullReply(rawText, requestContextChatId, aiMsgIndex, internalThinkingInterval, text, usedTier.key === 'lite' || usedTier.key === 'speed');
                         break;
                     }
 

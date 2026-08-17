@@ -8820,30 +8820,60 @@
                 // model gives the best voice-mode responsiveness with no
                 // real quality tradeoff.
                 const model = MODEL_TIERS.find(t => t.key === 'lite').textModel;
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getActiveGeminiKey()}`;
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{
-                            role: 'user',
-                            parts: [
-                                { inlineData: { data: base64, mimeType: mimeType } },
-                                { text: 'Transcribe exactly what is said in this audio clip. Reply with ONLY the transcription, no commentary, no quotes. If there is no clear speech, reply with nothing.' }
-                            ]
-                        }]
-                    })
+                const requestBody = JSON.stringify({
+                    contents: [{
+                        role: 'user',
+                        parts: [
+                            { inlineData: { data: base64, mimeType: mimeType } },
+                            { text: 'Transcribe exactly what is said in this audio clip. Reply with ONLY the transcription, no commentary, no quotes. If there is no clear speech, reply with nothing.' }
+                        ]
+                    }]
                 });
-                if (!res.ok) {
-                    let msg = `Transcription failed (HTTP ${res.status})`;
-                    try { const d = await res.json(); if (d && d.error && d.error.message) msg = d.error.message; } catch (e) {}
-                    throw new Error(msg);
+
+                // Same key-rotation shape used elsewhere in the app: on a
+                // rate-limit/access-denied response, advance to the next
+                // built-in key before giving up, instead of stalling
+                // Voice Mode on a single exhausted key.
+                const maxKeyAttempts = sessionGeminiKeyOverride ? 1 : KEY_POOL.length;
+                let lastErr = null;
+                for (let i = 0; i < maxKeyAttempts; i++) {
+                    let res;
+                    try {
+                        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getActiveGeminiKey()}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            // A hard timeout is essential here — without one,
+                            // a stalled network request left the whole
+                            // conversation stuck on "Transcribing…" forever
+                            // with no way to recover except manually tapping
+                            // the mic.
+                            signal: AbortSignal.timeout(12000),
+                            body: requestBody
+                        });
+                    } catch (netErr) {
+                        const isTimeout = netErr && (netErr.name === 'TimeoutError' || netErr.name === 'AbortError');
+                        throw new Error(isTimeout ? 'Transcription timed out.' : "Couldn't reach the transcription service — check your connection.");
+                    }
+
+                    let data = null;
+                    try { data = await res.json(); } catch (e) {}
+
+                    if (res.ok) {
+                        const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+                        let text = '';
+                        for (const p of parts) if (p.text) text += p.text;
+                        return text.trim();
+                    }
+
+                    lastErr = new Error((data && data.error && data.error.message) || `Transcription failed (HTTP ${res.status})`);
+                    const rateLimited = res.status === 429 || res.status === 403;
+                    if (rateLimited && !sessionGeminiKeyOverride && i < maxKeyAttempts - 1) {
+                        advanceApiKey();
+                        continue;
+                    }
+                    throw lastErr;
                 }
-                const data = await res.json();
-                const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-                let text = '';
-                for (const p of parts) if (p.text) text += p.text;
-                return text.trim();
+                throw lastErr || new Error('Transcription failed.');
             }
 
             async function handleRecordedAudio(blob) {
@@ -8853,12 +8883,17 @@
                     if (text) {
                         handleUserUtterance(text);
                     } else {
-                        setStatus("Didn't catch that — tap the mic or just talk again.");
+                        setStatus("Didn't catch that — go ahead and talk again.");
                         if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 400);
                     }
                 } catch (err) {
                     console.error('Voice transcription failed:', err);
-                    setStatus('Transcription failed — tap the mic to retry.');
+                    setStatus((err && err.message ? err.message : 'Transcription failed') + ' — listening again…');
+                    // Never leave the conversation stuck waiting on a manual
+                    // tap after a failed transcription — automatically pick
+                    // the mic back up so one bad request doesn't end the
+                    // whole conversation.
+                    if (isActive && !isMuted) restartTimer = setTimeout(listenOnce, 1200);
                 }
             }
 
@@ -8884,8 +8919,48 @@
                 sendMessage();
             }
 
+            // A real ElevenLabs voice, not the browser's built-in
+            // speechSynthesis — that's what actually makes Aura sound
+            // like a person talking instead of a robotic text reader.
+            // "Adam" is a warm, natural, deep male voice.
+            const AURA_ELEVENLABS_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
+            let voiceModeAudioEl = null;
+
+            async function speakViaElevenLabs(text) {
+                const key = getElevenLabsKey();
+                if (!key) throw new Error('No ElevenLabs key configured');
+                const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${AURA_ELEVENLABS_VOICE_ID}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'xi-api-key': key,
+                        'Accept': 'audio/mpeg'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        model_id: 'eleven_turbo_v2_5',
+                        voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true }
+                    }),
+                    signal: AbortSignal.timeout(20000)
+                });
+                if (!res.ok) {
+                    let detail = '';
+                    try { const d = await res.clone().json(); detail = (d && d.detail && (d.detail.message || JSON.stringify(d.detail))) || ''; } catch (e) {}
+                    throw new Error(`ElevenLabs voice failed (HTTP ${res.status})${detail ? ': ' + detail : ''}`);
+                }
+                const blob = await res.blob();
+                return URL.createObjectURL(blob);
+            }
+
+            function stopVoiceModeAudio() {
+                if (voiceModeAudioEl) {
+                    try { voiceModeAudioEl.pause(); voiceModeAudioEl.src = ''; } catch (e) {}
+                    voiceModeAudioEl = null;
+                }
+            }
+
             // Called by the main reply pipeline once a reply is fully ready.
-            window.__cavdoSpeakVoiceModeReply = function (replyText) {
+            window.__cavdoSpeakVoiceModeReply = async function (replyText) {
                 if (!isActive) return;
                 const clean = (replyText || '')
                     .replace(/```[\s\S]*?```/g, ' — here is some code, check your screen — ')
@@ -8894,36 +8969,49 @@
                 if (!clean) { listenOnce(); return; }
 
                 setTranscript(clean.length > 400 ? clean.slice(0, 400) + '…' : clean);
+
+                isSpeaking = true;
+                setStatus('Speaking…');
+                startSpeakingVisualizer();
+
+                function afterSpeaking() {
+                    isSpeaking = false;
+                    stopSpeakingVisualizer();
+                    if (isActive && !isMuted) { setStatus('Listening…'); listenOnce(); }
+                    else if (isActive) { setStatus('Muted — tap the mic to talk'); }
+                }
+
+                // Try the real, human-sounding voice first. Only fall back to
+                // the browser's built-in (noticeably more robotic) voice if
+                // that request fails — rate limited, offline, no key, etc.
+                try {
+                    const audioUrl = await speakViaElevenLabs(clean);
+                    if (!isActive) { URL.revokeObjectURL(audioUrl); isSpeaking = false; stopSpeakingVisualizer(); return; }
+                    const audioEl = new Audio(audioUrl);
+                    voiceModeAudioEl = audioEl;
+                    audioEl.onended = () => { URL.revokeObjectURL(audioUrl); voiceModeAudioEl = null; afterSpeaking(); };
+                    audioEl.onerror = () => { URL.revokeObjectURL(audioUrl); voiceModeAudioEl = null; afterSpeaking(); };
+                    await audioEl.play();
+                    return;
+                } catch (err) {
+                    console.error('ElevenLabs voice failed, falling back to the browser voice:', err);
+                }
+
                 if (!('speechSynthesis' in window)) {
                     setStatus("This browser can't speak replies aloud — showing text only.");
+                    isSpeaking = false;
+                    stopSpeakingVisualizer();
                     setTimeout(listenOnce, 600);
                     return;
                 }
                 window.speechSynthesis.cancel();
                 const utter = new SpeechSynthesisUtterance(clean);
                 if (auraVoice) utter.voice = auraVoice;
-                // Tuned for a deep, warm, precise delivery — a touch lower
-                // pitch and a touch slower than 1x so it reads clearly
-                // instead of sounding rushed or thin.
                 utter.pitch = 0.82;
                 utter.rate = 0.97;
                 utter.volume = 1;
-
-                isSpeaking = true;
-                setStatus('Speaking…');
-                startSpeakingVisualizer();
-
-                utter.onend = () => {
-                    isSpeaking = false;
-                    stopSpeakingVisualizer();
-                    if (isActive && !isMuted) { setStatus('Listening…'); listenOnce(); }
-                    else if (isActive) { setStatus('Muted — tap the mic to talk'); }
-                };
-                utter.onerror = () => {
-                    isSpeaking = false;
-                    stopSpeakingVisualizer();
-                    if (isActive && !isMuted) listenOnce();
-                };
+                utter.onend = afterSpeaking;
+                utter.onerror = afterSpeaking;
                 window.speechSynthesis.speak(utter);
             };
 
@@ -8945,6 +9033,7 @@
                 stopListening();
                 stopMicVisualizer();
                 stopSpeakingVisualizer();
+                stopVoiceModeAudio();
                 if (window.speechSynthesis) window.speechSynthesis.cancel();
                 overlay.classList.remove('show');
             }
@@ -8957,6 +9046,10 @@
                 micBtn.classList.toggle('muted', isMuted);
                 if (isMuted) {
                     stopListening();
+                    stopVoiceModeAudio();
+                    if (window.speechSynthesis) window.speechSynthesis.cancel();
+                    isSpeaking = false;
+                    stopSpeakingVisualizer();
                     setStatus('Muted — tap the mic to talk');
                 } else if (!isSpeaking) {
                     listenOnce();

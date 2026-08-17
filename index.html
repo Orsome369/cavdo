@@ -11296,11 +11296,54 @@
                         renderActiveChatMessages();
                     }
                 } else if (selectedMode === 'image' && isImageEditRequest) {
-                    // Editing feature removed — decline plainly instead of
-                    // attempting the (unreliable) edit pipeline.
+                    const genQuota = checkGenerationQuota();
+                    if (!genQuota.allowed) {
+                        const updatedChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                        updatedChat.messages[aiMsgIndex].text = genQuota.reason;
+                        updatedChat.messages[aiMsgIndex].isThinking = false;
+                        updatedChat.isGeneratingInBg = false;
+                        localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
+
+                        if (currentChatId === requestContextChatId) {
+                            isGenerating = false;
+                            renderActiveChatMessages();
+                        }
+                        clearInterval(internalThinkingInterval);
+                        return;
+                    }
+
+                    let editResult = null;
+                    let editError = null;
+                    try {
+                        editResult = await editImageViaGemini(text, lastImageContext.base64, lastImageContext.mimeType, lastImageContext.aspectRatio);
+                        incrementGenerationUsage();
+                    } catch (err) {
+                        editError = err;
+                        console.error('Image edit failed:', err);
+                    }
+
                     const updatedChat = JSON.parse(localStorage.getItem(requestContextChatId));
-                    updatedChat.messages[aiMsgIndex].text = "I can't edit existing images right now. Describe the whole picture you want and I'll generate a brand new one instead.";
-                    updatedChat.messages[aiMsgIndex].isThinking = false;
+
+                    if (editResult && editResult.base64) {
+                        const memEntry = saveImageToMemory({ prompt: text, base64: editResult.base64, mimeType: editResult.mimeType, sourceUrl: editResult.sourceUrl, aspectRatio: editResult.aspectRatio });
+                        updatedChat.messages[aiMsgIndex].text = text;
+                        updatedChat.messages[aiMsgIndex].isThinking = false;
+                        updatedChat.messages[aiMsgIndex].isGeneratedImage = true;
+                        if (memEntry) {
+                            updatedChat.messages[aiMsgIndex].memoryId = memEntry.id;
+                        } else {
+                            updatedChat.messages[aiMsgIndex].aiImgBytes = editResult.base64;
+                            updatedChat.messages[aiMsgIndex].aiImgMimeType = editResult.mimeType;
+                            updatedChat.messages[aiMsgIndex].aiImgSourceUrl = editResult.sourceUrl || null;
+                            updatedChat.messages[aiMsgIndex].aiImgAspect = editResult.aspectRatio || null;
+                        }
+                    } else {
+                        updatedChat.messages[aiMsgIndex].text = (editError && editError.message)
+                            ? `Sorry, I couldn't edit that image: ${editError.message}`
+                            : "Sorry, I couldn't edit that image — our servers are a little busy right now. Want to try again in a moment?";
+                        updatedChat.messages[aiMsgIndex].isThinking = false;
+                    }
+
                     updatedChat.isGeneratingInBg = false;
                     localStorage.setItem(requestContextChatId, JSON.stringify(updatedChat));
 

@@ -8924,7 +8924,92 @@
             // like a person talking instead of a robotic text reader.
             // "Adam" is a warm, natural, deep male voice.
             const AURA_ELEVENLABS_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
+            // Gemini's own native TTS model — tried first, since it uses
+            // the same API key pool as everything else in this app (no
+            // separate ElevenLabs key/quota needed). "Sulafat" is
+            // Google's built-in warm-sounding voice.
+            const GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+            const GEMINI_TTS_VOICE = 'Sulafat';
             let voiceModeAudioEl = null;
+
+            // Gemini's TTS endpoint returns raw 16-bit PCM audio with no
+            // container/header, which browsers can't play directly via
+            // <audio src="...">. This wraps it in a minimal WAV header so
+            // it becomes a normal playable audio file.
+            function pcmToWavBlob(base64Pcm, mimeType) {
+                const rateMatch = /rate=(\d+)/.exec(mimeType || '');
+                const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+                const numChannels = 1;
+                const bitsPerSample = 16;
+                const byteChars = atob(base64Pcm);
+                const pcmBytes = new Uint8Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) pcmBytes[i] = byteChars.charCodeAt(i);
+
+                const blockAlign = numChannels * bitsPerSample / 8;
+                const byteRate = sampleRate * blockAlign;
+                const dataSize = pcmBytes.length;
+                const buffer = new ArrayBuffer(44 + dataSize);
+                const view = new DataView(buffer);
+                function writeString(offset, str) { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); }
+                writeString(0, 'RIFF');
+                view.setUint32(4, 36 + dataSize, true);
+                writeString(8, 'WAVE');
+                writeString(12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, numChannels, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, byteRate, true);
+                view.setUint16(32, blockAlign, true);
+                view.setUint16(34, bitsPerSample, true);
+                writeString(36, 'data');
+                view.setUint32(40, dataSize, true);
+                new Uint8Array(buffer, 44).set(pcmBytes);
+                return new Blob([buffer], { type: 'audio/wav' });
+            }
+
+            // Same key-rotation shape used elsewhere: on rate-limit/access
+            // errors, advance to the next built-in key before giving up.
+            async function speakViaGemini(text) {
+                const maxKeyAttempts = sessionGeminiKeyOverride ? 1 : KEY_POOL.length;
+                let lastErr = null;
+                for (let i = 0; i < maxKeyAttempts; i++) {
+                    const apiKey = getActiveGeminiKey();
+                    try {
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent?key=${apiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            signal: AbortSignal.timeout(20000),
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: text }] }],
+                                generationConfig: {
+                                    responseModalities: ['AUDIO'],
+                                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_TTS_VOICE } } }
+                                }
+                            })
+                        });
+                        let data = null;
+                        try { data = await res.json(); } catch (e) {}
+                        if (!res.ok) {
+                            const err = new Error((data && data.error && data.error.message) || `Gemini voice failed (HTTP ${res.status})`);
+                            err.status = res.status;
+                            throw err;
+                        }
+                        const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+                        const audioPart = parts.find(p => p.inlineData && p.inlineData.data);
+                        if (!audioPart) throw new Error('Gemini did not return audio for that reply.');
+                        const blob = pcmToWavBlob(audioPart.inlineData.data, audioPart.inlineData.mimeType);
+                        return URL.createObjectURL(blob);
+                    } catch (err) {
+                        lastErr = err;
+                        const rotatable = !sessionGeminiKeyOverride && (err.status === 429 || err.status === 403) && i < maxKeyAttempts - 1;
+                        if (!rotatable) throw err;
+                        console.error(`Gemini voice failed on key ${i + 1}/${maxKeyAttempts}, rotating:`, err);
+                        advanceApiKey();
+                    }
+                }
+                throw lastErr || new Error('Gemini voice failed.');
+            }
 
             async function speakViaElevenLabs(text) {
                 const key = getElevenLabsKey();
@@ -8981,17 +9066,29 @@
                     else if (isActive) { setStatus('Muted — tap the mic to talk'); }
                 }
 
-                // Try the real, human-sounding voice first. Only fall back to
-                // the browser's built-in (noticeably more robotic) voice if
-                // that request fails — rate limited, offline, no key, etc.
-                try {
-                    const audioUrl = await speakViaElevenLabs(clean);
+                async function playFromUrl(audioUrl) {
                     if (!isActive) { URL.revokeObjectURL(audioUrl); isSpeaking = false; stopSpeakingVisualizer(); return; }
                     const audioEl = new Audio(audioUrl);
                     voiceModeAudioEl = audioEl;
                     audioEl.onended = () => { URL.revokeObjectURL(audioUrl); voiceModeAudioEl = null; afterSpeaking(); };
                     audioEl.onerror = () => { URL.revokeObjectURL(audioUrl); voiceModeAudioEl = null; afterSpeaking(); };
                     await audioEl.play();
+                }
+
+                // Real, human-sounding voices, tried in order — Gemini's own
+                // TTS first (same key pool as the rest of the app, no extra
+                // setup), then ElevenLabs, and only the browser's noticeably
+                // more robotic built-in voice as a last resort if both fail
+                // (rate limited, offline, etc).
+                try {
+                    await playFromUrl(await speakViaGemini(clean));
+                    return;
+                } catch (err) {
+                    console.error('Gemini voice failed, trying ElevenLabs:', err);
+                }
+
+                try {
+                    await playFromUrl(await speakViaElevenLabs(clean));
                     return;
                 } catch (err) {
                     console.error('ElevenLabs voice failed, falling back to the browser voice:', err);

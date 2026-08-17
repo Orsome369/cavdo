@@ -8814,7 +8814,12 @@
             async function transcribeAudioViaGemini(blob) {
                 const base64 = await blobToBase64(blob);
                 const mimeType = (blob.type || 'audio/webm').split(';')[0];
-                const model = getActiveTier().textModel;
+                // Always transcribe with Lite, regardless of whichever tier
+                // is active for the chat itself — transcription is a raw
+                // speech-to-text task, not a reasoning one, so the fastest
+                // model gives the best voice-mode responsiveness with no
+                // real quality tradeoff.
+                const model = MODEL_TIERS.find(t => t.key === 'lite').textModel;
                 const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getActiveGeminiKey()}`;
                 const res = await fetch(endpoint, {
                     method: 'POST',

@@ -11610,15 +11610,35 @@
                         const activeModel = (selectedMode === 'code') ? usedTier.codeModel : usedTier.textModel;
                         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${getActiveGeminiKey()}`;
 
-                        const response = await fetch(endpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                systemInstruction: { parts: [{ text: sysInstruction }] },
-                                contents: buildApiPayload(chatData.messages.slice(0, -1))
-                            }),
-                            signal: abortController.signal
-                        });
+                        // Combine the user's own "stop" button (abortController)
+                        // with a hard 45s timeout, so a stalled network request
+                        // can never leave the reply hanging on "Thinking…"
+                        // forever with nothing to actually throw an error.
+                        const requestSignal = (typeof AbortSignal.any === 'function')
+                            ? AbortSignal.any([abortController.signal, AbortSignal.timeout(45000)])
+                            : abortController.signal;
+
+                        let response;
+                        try {
+                            response = await fetch(endpoint, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    systemInstruction: { parts: [{ text: sysInstruction }] },
+                                    contents: buildApiPayload(chatData.messages.slice(0, -1))
+                                }),
+                                signal: requestSignal
+                            });
+                        } catch (fetchErr) {
+                            // A genuine user-initiated stop/edit-resend still
+                            // aborts abortController.signal itself — let that
+                            // case fall through to the existing silent
+                            // AbortError handling below. Anything else here
+                            // means OUR timeout fired, not the user, so it
+                            // needs to surface as a real, visible error.
+                            if (abortController.signal.aborted) throw fetchErr;
+                            throw new Error('The response took too long and timed out. Please try again.');
+                        }
 
                         let responseData = null;
                         try { responseData = await response.json(); } catch (e) {
@@ -11726,6 +11746,16 @@
                             console.error('Final render error (text already saved):', renderErr);
                         }
                     }
+
+                    // If this reply was triggered from Voice Mode, speak it
+                    // back now. This call was previously missing entirely —
+                    // the reply would finish generating and just sit there
+                    // silently, which is exactly what "stuck on thinking,
+                    // no audio" looks like from the outside.
+                    if (window.__cavdoVoiceModeActive && typeof window.__cavdoSpeakVoiceModeReply === 'function') {
+                        window.__cavdoVoiceModeActive = false; // consumed — re-armed by the next voice utterance
+                        window.__cavdoSpeakVoiceModeReply(finalChat ? finalChat.messages[aiMsgIndex].text : aiText);
+                    }
                 }
 
                 const finalRecord = JSON.parse(localStorage.getItem(requestContextChatId));
@@ -11759,6 +11789,10 @@
                     }
                     if (currentChatId === requestContextChatId) {
                         renderActiveChatMessages();
+                    }
+                    if (window.__cavdoVoiceModeActive && typeof window.__cavdoSpeakVoiceModeReply === 'function') {
+                        window.__cavdoVoiceModeActive = false;
+                        window.__cavdoSpeakVoiceModeReply("Sorry, something went wrong on my end there — go ahead and try again.");
                     }
                 }
             } finally {

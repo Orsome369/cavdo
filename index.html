@@ -7333,7 +7333,7 @@
             python: 'py', py: 'py', java: 'java', c: 'c',
             cpp: 'cpp', 'c++': 'cpp', csharp: 'cs', 'c#': 'cs',
             php: 'php', ruby: 'rb', go: 'go', golang: 'go', rust: 'rs',
-            swift: 'swift', kotlin: 'kt', html: 'html', css: 'css',
+            swift: 'swift', kotlin: 'kt', html: 'html', css: 'css', svg: 'svg',
             json: 'json', yaml: 'yml', yml: 'yml', xml: 'xml',
             sql: 'sql', bash: 'sh', shell: 'sh', sh: 'sh',
             markdown: 'md', md: 'md', dart: 'dart', r: 'r', lua: 'lua',
@@ -8381,6 +8381,11 @@
             // near the top of a real code file, so there's no need to scan the whole thing.
             const trimmed = full.length > 4000 ? full.slice(0, 4000) : full;
             const lower = trimmed.toLowerCase();
+            // A standalone <svg> root (not embedded in a full HTML page) gets checked
+            // before the generic markup test below — models often tag these as ```html
+            // since svg IS markup, but it should render as a direct graphic, not a
+            // code/HTML preview.
+            if (/^(<\?xml[^>]*\?>\s*)?(<!--[\s\S]*?-->\s*)?<svg[\s>]/i.test(full)) return 'svg';
             const looksLikeMarkup = lower.includes('<!doctype html') || /<html[\s>]|<head[\s>]|<body[\s>]|<script[\s>]|<div[\s>]/i.test(trimmed);
             if (looksLikeMarkup) return 'html';
             if (/^\s*(import\s+\w|from\s+\w+\s+import|def\s+\w+\s*\(|class\s+\w+.*:|if\s+__name__\s*==\s*['"]__main__['"])/m.test(trimmed)) {

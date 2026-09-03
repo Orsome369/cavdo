@@ -11832,6 +11832,28 @@
                                     }
                                     continue;
                                 }
+                                // Ultimate never silently cascades down to
+                                // Speed/Lite — instead of auto-swapping the
+                                // user to a lower-quality model mid-chat,
+                                // stop here, drop the empty "thinking"
+                                // placeholder, and surface the upgrade
+                                // prompt so the choice is explicit.
+                                if (usedTier.key === 'ultimate') {
+                                    markModelExhausted('ultimate');
+                                    renderModelDropdown();
+                                    const stopChat = JSON.parse(localStorage.getItem(requestContextChatId));
+                                    if (stopChat && stopChat.messages[aiMsgIndex]) {
+                                        stopChat.messages.splice(aiMsgIndex, 1);
+                                        localStorage.setItem(requestContextChatId, JSON.stringify(stopChat));
+                                    }
+                                    if (currentChatId === requestContextChatId) {
+                                        renderActiveChatMessages();
+                                    }
+                                    showPlanLimitModal("You've reached the limit for Cavdo Ultimate. Upgrade your plan for more Ultimate messages, or pick another model from the selector.", 'Ultimate limit reached');
+                                    const ultimateLimitErr = new Error('Ultimate limit reached');
+                                    ultimateLimitErr.name = 'AbortError';
+                                    throw ultimateLimitErr;
+                                }
                                 const nextTier = downgradeAfterLimit();
                                 if (!nextTier) {
                                     // Every model tier is exhausted for the current key.

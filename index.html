@@ -105,6 +105,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- pdf-lib: real page-level PDF editing (merge/split) that preserves the
+         original vector content, instead of rasterizing pages to images. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <script>
         // pdf.js needs its worker script pointed at a matching CDN build,
         // or PDF text-extraction silently fails.
@@ -2195,6 +2198,31 @@
             color: #2fd05c;
         }
 
+        .pdf-tools-tab.active {
+            background: rgba(47, 208, 92, 0.18) !important;
+            color: #2fd05c;
+        }
+        .pdf-tools-file-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+        .pdf-tools-file-row button {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.6);
+            cursor: pointer;
+            font-size: 13px;
+            padding: 2px 6px;
+        }
+        .pdf-tools-file-row button:hover { color: #ff6b6b; }
+
         .attach-menu-item span.attach-menu-sub {
             display: block;
             font-size: 11px;
@@ -4281,12 +4309,20 @@
                             </span>
                             <span>Convert File<span class="attach-menu-sub">Docs, spreadsheets, audio &amp; video</span></span>
                         </button>
+                        <button class="attach-menu-item" id="attachMenuPdfTools" type="button">
+                            <span class="attach-menu-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="12" y2="17"></line></svg>
+                            </span>
+                            <span>PDF Tools<span class="attach-menu-sub">Merge, split &amp; translate PDFs</span></span>
+                        </button>
                     </div>
                 </div>
                 <input type="file" id="fileInput" style="display: none;" accept="*/*" multiple>
                 <input type="file" id="photoInput" style="display: none;" accept="image/*,video/*" multiple>
                 <input type="file" id="cameraInput" style="display: none;" accept="image/*" capture="environment">
                 <input type="file" id="converterFileInput" style="display: none;" accept="*/*">
+                <input type="file" id="pdfToolsFileInput" style="display: none;" accept="application/pdf" multiple>
+
 
                 <textarea id="userInput" rows="1" placeholder="Ask Cavdo anything..." autocomplete="off"></textarea>
 
@@ -4400,6 +4436,89 @@
             <div class="modal-actions">
                 <button class="modal-btn cancel" id="converterModalClose">Close</button>
                 <button class="modal-btn confirm" id="converterModalRun" disabled>Convert</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="pdfToolsModalOverlay">
+        <div class="modal-box" id="pdfToolsModalContent">
+            <h3>🧰 PDF Tools</h3>
+            <p style="font-size:13px; opacity:0.75; margin-top:-6px;">Merge, split, or translate PDFs — done locally in your browser (translation uses AI and needs an internet connection).</p>
+
+            <div id="pdfToolsTabs" style="display:flex; gap:6px; margin:14px 0; background:rgba(255,255,255,0.05); border-radius:10px; padding:4px;">
+                <button type="button" class="pdf-tools-tab" data-tab="merge" style="flex:1; padding:8px 6px; border:none; border-radius:8px; background:transparent; color:inherit; cursor:pointer; font-size:13px; font-weight:600;">Merge</button>
+                <button type="button" class="pdf-tools-tab" data-tab="split" style="flex:1; padding:8px 6px; border:none; border-radius:8px; background:transparent; color:inherit; cursor:pointer; font-size:13px; font-weight:600;">Split</button>
+                <button type="button" class="pdf-tools-tab" data-tab="translate" style="flex:1; padding:8px 6px; border:none; border-radius:8px; background:transparent; color:inherit; cursor:pointer; font-size:13px; font-weight:600;">Translate</button>
+            </div>
+
+            <!-- Merge panel -->
+            <div id="pdfToolsPanelMerge" class="pdf-tools-panel">
+                <div id="pdfMergeDropZone" style="border:1.5px dashed rgba(255,255,255,0.25); border-radius:12px; padding:18px; text-align:center; cursor:pointer; margin-bottom:12px;">
+                    <div style="opacity:0.75; font-size:14px;">Click to choose 2+ PDFs, or drag them here</div>
+                </div>
+                <div id="pdfMergeFileList" style="margin-bottom:12px;"></div>
+            </div>
+
+            <!-- Split panel -->
+            <div id="pdfToolsPanelSplit" class="pdf-tools-panel" style="display:none;">
+                <div id="pdfSplitDropZone" style="border:1.5px dashed rgba(255,255,255,0.25); border-radius:12px; padding:18px; text-align:center; cursor:pointer; margin-bottom:12px;">
+                    <div id="pdfSplitFileLabel" style="opacity:0.75; font-size:14px;">Click to choose a PDF, or drag one here</div>
+                </div>
+                <div id="pdfSplitOptions" style="display:none; margin-bottom:12px;">
+                    <label style="display:block; font-size:13px; opacity:0.7; margin-bottom:6px;">Split mode:</label>
+                    <select id="pdfSplitMode" style="width:100%; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.15); margin-bottom:10px;">
+                        <option value="range">Extract specific pages</option>
+                        <option value="every">Split every N pages</option>
+                        <option value="each">Split into individual pages</option>
+                    </select>
+                    <div id="pdfSplitRangeRow">
+                        <label style="display:block; font-size:13px; opacity:0.7; margin-bottom:6px;">Pages (e.g. 1-3,5,8-10):</label>
+                        <input type="text" id="pdfSplitRangeInput" placeholder="1-3,5,8-10" style="width:100%; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.15); box-sizing:border-box;">
+                    </div>
+                    <div id="pdfSplitEveryRow" style="display:none;">
+                        <label style="display:block; font-size:13px; opacity:0.7; margin-bottom:6px;">Pages per file:</label>
+                        <input type="number" id="pdfSplitEveryInput" min="1" value="1" style="width:100%; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.15); box-sizing:border-box;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Translate panel -->
+            <div id="pdfToolsPanelTranslate" class="pdf-tools-panel" style="display:none;">
+                <div id="pdfTranslateDropZone" style="border:1.5px dashed rgba(255,255,255,0.25); border-radius:12px; padding:18px; text-align:center; cursor:pointer; margin-bottom:12px;">
+                    <div id="pdfTranslateFileLabel" style="opacity:0.75; font-size:14px;">Click to choose a PDF, or drag one here</div>
+                </div>
+                <div id="pdfTranslateOptions" style="display:none; margin-bottom:12px;">
+                    <label style="display:block; font-size:13px; opacity:0.7; margin-bottom:6px;">Translate to:</label>
+                    <select id="pdfTranslateLang" style="width:100%; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.15);">
+                        <option value="Spanish">Spanish</option>
+                        <option value="French">French</option>
+                        <option value="German">German</option>
+                        <option value="Hindi">Hindi</option>
+                        <option value="Portuguese">Portuguese</option>
+                        <option value="Italian">Italian</option>
+                        <option value="Russian">Russian</option>
+                        <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Korean">Korean</option>
+                        <option value="Arabic">Arabic</option>
+                        <option value="Bengali">Bengali</option>
+                        <option value="Marathi">Marathi</option>
+                        <option value="Tamil">Tamil</option>
+                        <option value="Telugu">Telugu</option>
+                        <option value="Urdu">Urdu</option>
+                    </select>
+                    <p style="font-size:12px; opacity:0.6; margin-top:8px; margin-bottom:0;">Note: the translated PDF is rebuilt from the extracted text — page layout, images, and exact formatting from the original aren't preserved, only the text content and structure.</p>
+                </div>
+            </div>
+
+            <div id="pdfToolsStatus" style="font-size:13px; opacity:0.8; min-height:18px; margin-top:4px; margin-bottom:6px;"></div>
+            <div id="pdfToolsProgressTrack" style="display:none; height:6px; border-radius:4px; background:rgba(255,255,255,0.1); overflow:hidden; margin-bottom:14px;">
+                <div id="pdfToolsProgressBar" style="height:100%; width:0%; background:var(--accent, #22c55e); transition:width .15s ease;"></div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="modal-btn cancel" id="pdfToolsModalClose">Close</button>
+                <button class="modal-btn confirm" id="pdfToolsModalRun" disabled>Run</button>
             </div>
         </div>
     </div>
@@ -8002,7 +8121,10 @@
             return blob;
         }
 
-        async function extractPdfText(file) {
+        // Returns the extracted text of each page as a separate array entry
+        // (used for translation, which needs to chunk requests page-by-page
+        // rather than as one giant blob of text).
+        async function extractPdfPagesArray(file) {
             if (!window.pdfjsLib) throw new Error('PDF engine failed to load. Check your internet connection.');
             const buf = await file.arrayBuffer();
             const doc = await window.pdfjsLib.getDocument({ data: buf }).promise;
@@ -8012,7 +8134,12 @@
                 const content = await page.getTextContent();
                 out.push(content.items.map(it => it.str).join(' '));
             }
-            return out.join('\n\n');
+            return out;
+        }
+
+        async function extractPdfText(file) {
+            const pages = await extractPdfPagesArray(file);
+            return pages.join('\n\n');
         }
 
         async function textToPdfBlob(text, title) {
@@ -8276,6 +8403,323 @@
                     statusEl.textContent = `⚠ ${err.message || 'Conversion failed.'}`;
                 } finally {
                     runBtn.disabled = false;
+                }
+            };
+        })();
+
+        // ============================================================================
+        // PDF Tools: merge, split, and translate — all page-level operations use
+        // pdf-lib (preserves the original vector content/fonts instead of
+        // rasterizing pages to images like the html2canvas-based PDF export does).
+        // ============================================================================
+
+        async function loadPdfLibDoc(file) {
+            if (!window.PDFLib) throw new Error('PDF editing engine failed to load. Check your internet connection.');
+            const buf = await file.arrayBuffer();
+            return window.PDFLib.PDFDocument.load(buf);
+        }
+
+        async function mergePdfFiles(files) {
+            if (!window.PDFLib) throw new Error('PDF editing engine failed to load. Check your internet connection.');
+            const { PDFDocument } = window.PDFLib;
+            const merged = await PDFDocument.create();
+            for (const file of files) {
+                const src = await loadPdfLibDoc(file);
+                const pages = await merged.copyPages(src, src.getPageIndices());
+                pages.forEach(p => merged.addPage(p));
+            }
+            const bytes = await merged.save();
+            return new Blob([bytes], { type: 'application/pdf' });
+        }
+
+        // Parses a page-range string like "1-3,5,8-10" into a zero-based,
+        // de-duplicated, in-order list of page indices, clamped to totalPages.
+        function parsePageRangeString(input, totalPages) {
+            const indices = new Set();
+            String(input).split(',').forEach(part => {
+                const trimmed = part.trim();
+                if (!trimmed) return;
+                const rangeMatch = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+                if (rangeMatch) {
+                    let start = parseInt(rangeMatch[1], 10);
+                    let end = parseInt(rangeMatch[2], 10);
+                    if (start > end) [start, end] = [end, start];
+                    for (let n = start; n <= end; n++) {
+                        if (n >= 1 && n <= totalPages) indices.add(n - 1);
+                    }
+                } else if (/^\d+$/.test(trimmed)) {
+                    const n = parseInt(trimmed, 10);
+                    if (n >= 1 && n <= totalPages) indices.add(n - 1);
+                }
+            });
+            return Array.from(indices).sort((a, b) => a - b);
+        }
+
+        async function extractPdfPageIndices(file, indices) {
+            const { PDFDocument } = window.PDFLib;
+            const src = await loadPdfLibDoc(file);
+            const out = await PDFDocument.create();
+            const pages = await out.copyPages(src, indices);
+            pages.forEach(p => out.addPage(p));
+            const bytes = await out.save();
+            return new Blob([bytes], { type: 'application/pdf' });
+        }
+
+        // Splits a PDF into groups of `groupSize` consecutive pages, returning
+        // an array of { name, content } ready for downloadFilesAsZip.
+        async function splitPdfEveryNPages(file, groupSize, baseFileName) {
+            const src = await loadPdfLibDoc(file);
+            const total = src.getPageCount();
+            const files = [];
+            let partNum = 1;
+            for (let start = 0; start < total; start += groupSize) {
+                const end = Math.min(start + groupSize, total);
+                const indices = [];
+                for (let i = start; i < end; i++) indices.push(i);
+                const blob = await extractPdfPageIndices(file, indices);
+                files.push({ name: `${baseFileName}-part${partNum}.pdf`, content: blob });
+                partNum++;
+            }
+            return files;
+        }
+
+        // Translates a PDF's extracted text page-by-page through Gemini, then
+        // rebuilds it as a new, polished PDF via the app's existing document
+        // export pipeline. Layout/images from the source aren't preserved —
+        // only the text content, translated and re-flowed into a clean document.
+        async function translatePdfDocument(file, targetLanguage, onProgress) {
+            const pages = await extractPdfPagesArray(file);
+            const nonEmptyPages = pages.map(p => (p || '').trim());
+            const translatedPages = [];
+            const translateModel = MODEL_TIERS[MODEL_TIERS.length - 1].textModel;
+
+            for (let i = 0; i < nonEmptyPages.length; i++) {
+                const pageText = nonEmptyPages[i];
+                if (onProgress) onProgress(i, nonEmptyPages.length);
+                if (!pageText) { translatedPages.push(''); continue; }
+                const prompt = `Translate the following text into ${targetLanguage}. Preserve paragraph breaks and structure as closely as possible. Respond with ONLY the translated text — no commentary, no notes, no markdown formatting, no explanations.\n\n${pageText}`;
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${translateModel}:generateContent?key=${getActiveGeminiKey()}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                const data = await response.json();
+                const translated = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                translatedPages.push((translated || pageText).trim());
+            }
+            if (onProgress) onProgress(nonEmptyPages.length, nonEmptyPages.length);
+            return translatedPages.join('\n\n');
+        }
+
+        // ---- PDF Tools modal wiring ----
+        (function initPdfToolsModal() {
+            const overlay = document.getElementById('pdfToolsModalOverlay');
+            const menuItem = document.getElementById('attachMenuPdfTools');
+            if (!overlay || !menuItem) return;
+
+            const tabs = Array.from(document.querySelectorAll('.pdf-tools-tab'));
+            const panels = {
+                merge: document.getElementById('pdfToolsPanelMerge'),
+                split: document.getElementById('pdfToolsPanelSplit'),
+                translate: document.getElementById('pdfToolsPanelTranslate')
+            };
+            const fileInput = document.getElementById('pdfToolsFileInput');
+            const statusEl = document.getElementById('pdfToolsStatus');
+            const progressTrack = document.getElementById('pdfToolsProgressTrack');
+            const progressBar = document.getElementById('pdfToolsProgressBar');
+            const runBtn = document.getElementById('pdfToolsModalRun');
+            const closeBtn = document.getElementById('pdfToolsModalClose');
+
+            const mergeDropZone = document.getElementById('pdfMergeDropZone');
+            const mergeFileList = document.getElementById('pdfMergeFileList');
+
+            const splitDropZone = document.getElementById('pdfSplitDropZone');
+            const splitFileLabel = document.getElementById('pdfSplitFileLabel');
+            const splitOptions = document.getElementById('pdfSplitOptions');
+            const splitModeSelect = document.getElementById('pdfSplitMode');
+            const splitRangeRow = document.getElementById('pdfSplitRangeRow');
+            const splitEveryRow = document.getElementById('pdfSplitEveryRow');
+            const splitRangeInput = document.getElementById('pdfSplitRangeInput');
+            const splitEveryInput = document.getElementById('pdfSplitEveryInput');
+
+            const translateDropZone = document.getElementById('pdfTranslateDropZone');
+            const translateFileLabel = document.getElementById('pdfTranslateFileLabel');
+            const translateOptions = document.getElementById('pdfTranslateOptions');
+            const translateLangSelect = document.getElementById('pdfTranslateLang');
+
+            let activeTab = 'merge';
+            let mergeFiles = [];
+            let splitFile = null;
+            let splitTotalPages = 0;
+            let translateFile = null;
+
+            function setActiveTab(tab) {
+                activeTab = tab;
+                tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+                Object.keys(panels).forEach(key => { panels[key].style.display = (key === tab) ? 'block' : 'none'; });
+                statusEl.textContent = '';
+                updateRunEnabled();
+            }
+            tabs.forEach(t => t.onclick = () => setActiveTab(t.dataset.tab));
+
+            function updateRunEnabled() {
+                if (activeTab === 'merge') runBtn.disabled = mergeFiles.length < 2;
+                else if (activeTab === 'split') runBtn.disabled = !splitFile;
+                else if (activeTab === 'translate') runBtn.disabled = !translateFile;
+            }
+
+            function renderMergeList() {
+                mergeFileList.innerHTML = mergeFiles.map((f, i) => `
+                    <div class="pdf-tools-file-row">
+                        <span>📄 ${f.name}</span>
+                        <span>
+                            ${i > 0 ? `<button type="button" data-act="up" data-i="${i}">↑</button>` : ''}
+                            ${i < mergeFiles.length - 1 ? `<button type="button" data-act="down" data-i="${i}">↓</button>` : ''}
+                            <button type="button" data-act="remove" data-i="${i}">✕</button>
+                        </span>
+                    </div>
+                `).join('');
+                mergeFileList.querySelectorAll('button').forEach(btn => {
+                    btn.onclick = () => {
+                        const i = parseInt(btn.dataset.i, 10);
+                        const act = btn.dataset.act;
+                        if (act === 'remove') mergeFiles.splice(i, 1);
+                        else if (act === 'up' && i > 0) [mergeFiles[i - 1], mergeFiles[i]] = [mergeFiles[i], mergeFiles[i - 1]];
+                        else if (act === 'down' && i < mergeFiles.length - 1) [mergeFiles[i + 1], mergeFiles[i]] = [mergeFiles[i], mergeFiles[i + 1]];
+                        renderMergeList();
+                        updateRunEnabled();
+                    };
+                });
+            }
+
+            function addMergeFiles(fileListLike) {
+                Array.from(fileListLike).forEach(f => {
+                    if (getFileExt(f.name) === 'pdf') mergeFiles.push(f);
+                });
+                renderMergeList();
+                updateRunEnabled();
+            }
+
+            async function pickSplitFile(file) {
+                if (getFileExt(file.name) !== 'pdf') { statusEl.textContent = '⚠ Please choose a PDF file.'; return; }
+                splitFile = file;
+                splitFileLabel.textContent = `📄 ${file.name}`;
+                statusEl.textContent = 'Reading page count…';
+                try {
+                    const doc = await loadPdfLibDoc(file);
+                    splitTotalPages = doc.getPageCount();
+                    statusEl.textContent = `${splitTotalPages} page${splitTotalPages === 1 ? '' : 's'} found.`;
+                    splitOptions.style.display = 'block';
+                    updateRunEnabled();
+                } catch (err) {
+                    console.error('Reading PDF failed:', err);
+                    statusEl.textContent = `⚠ ${err.message || 'Could not read that PDF.'}`;
+                    splitFile = null;
+                    updateRunEnabled();
+                }
+            }
+
+            function pickTranslateFile(file) {
+                if (getFileExt(file.name) !== 'pdf') { statusEl.textContent = '⚠ Please choose a PDF file.'; return; }
+                translateFile = file;
+                translateFileLabel.textContent = `📄 ${file.name}`;
+                translateOptions.style.display = 'block';
+                statusEl.textContent = '';
+                updateRunEnabled();
+            }
+
+            splitModeSelect.onchange = () => {
+                const mode = splitModeSelect.value;
+                splitRangeRow.style.display = (mode === 'range') ? 'block' : 'none';
+                splitEveryRow.style.display = (mode === 'every') ? 'block' : 'none';
+            };
+
+            mergeDropZone.onclick = () => { fileInput.multiple = true; fileInput.onchange = () => { if (fileInput.files.length) addMergeFiles(fileInput.files); fileInput.value = ''; }; fileInput.click(); };
+            mergeDropZone.ondragover = (e) => { e.preventDefault(); mergeDropZone.style.borderColor = 'rgba(255,255,255,0.6)'; };
+            mergeDropZone.ondragleave = () => { mergeDropZone.style.borderColor = 'rgba(255,255,255,0.25)'; };
+            mergeDropZone.ondrop = (e) => { e.preventDefault(); mergeDropZone.style.borderColor = 'rgba(255,255,255,0.25)'; if (e.dataTransfer.files) addMergeFiles(e.dataTransfer.files); };
+
+            splitDropZone.onclick = () => { fileInput.multiple = false; fileInput.onchange = () => { if (fileInput.files[0]) pickSplitFile(fileInput.files[0]); fileInput.value = ''; }; fileInput.click(); };
+            splitDropZone.ondragover = (e) => { e.preventDefault(); splitDropZone.style.borderColor = 'rgba(255,255,255,0.6)'; };
+            splitDropZone.ondragleave = () => { splitDropZone.style.borderColor = 'rgba(255,255,255,0.25)'; };
+            splitDropZone.ondrop = (e) => { e.preventDefault(); splitDropZone.style.borderColor = 'rgba(255,255,255,0.25)'; if (e.dataTransfer.files && e.dataTransfer.files[0]) pickSplitFile(e.dataTransfer.files[0]); };
+
+            translateDropZone.onclick = () => { fileInput.multiple = false; fileInput.onchange = () => { if (fileInput.files[0]) pickTranslateFile(fileInput.files[0]); fileInput.value = ''; }; fileInput.click(); };
+            translateDropZone.ondragover = (e) => { e.preventDefault(); translateDropZone.style.borderColor = 'rgba(255,255,255,0.6)'; };
+            translateDropZone.ondragleave = () => { translateDropZone.style.borderColor = 'rgba(255,255,255,0.25)'; };
+            translateDropZone.ondrop = (e) => { e.preventDefault(); translateDropZone.style.borderColor = 'rgba(255,255,255,0.25)'; if (e.dataTransfer.files && e.dataTransfer.files[0]) pickTranslateFile(e.dataTransfer.files[0]); };
+
+            function resetModal() {
+                mergeFiles = []; renderMergeList();
+                splitFile = null; splitTotalPages = 0;
+                splitFileLabel.textContent = 'Click to choose a PDF, or drag one here';
+                splitOptions.style.display = 'none';
+                splitRangeInput.value = ''; splitEveryInput.value = '1'; splitModeSelect.value = 'range';
+                splitRangeRow.style.display = 'block'; splitEveryRow.style.display = 'none';
+                translateFile = null;
+                translateFileLabel.textContent = 'Click to choose a PDF, or drag one here';
+                translateOptions.style.display = 'none';
+                statusEl.textContent = '';
+                progressTrack.style.display = 'none';
+                progressBar.style.width = '0%';
+                setActiveTab('merge');
+            }
+
+            function openModal() { resetModal(); overlay.classList.add('show'); toggleAttachMenu(false); }
+            function closeModal() { overlay.classList.remove('show'); }
+            menuItem.onclick = openModal;
+            closeBtn.onclick = closeModal;
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+            runBtn.onclick = async () => {
+                runBtn.disabled = true;
+                try {
+                    if (activeTab === 'merge') {
+                        statusEl.textContent = 'Merging…';
+                        const blob = await mergePdfFiles(mergeFiles);
+                        triggerBlobDownload(blob, `cavdo-merged-${Date.now()}.pdf`);
+                        statusEl.textContent = '✓ Done — merged PDF downloaded.';
+                    } else if (activeTab === 'split') {
+                        const mode = splitModeSelect.value;
+                        const baseFileName = baseName(splitFile.name);
+                        if (mode === 'range') {
+                            statusEl.textContent = 'Extracting pages…';
+                            const indices = parsePageRangeString(splitRangeInput.value, splitTotalPages);
+                            if (!indices.length) throw new Error('Enter at least one valid page number in range.');
+                            const blob = await extractPdfPageIndices(splitFile, indices);
+                            triggerBlobDownload(blob, `${baseFileName}-extracted.pdf`);
+                            statusEl.textContent = '✓ Done — extracted PDF downloaded.';
+                        } else if (mode === 'every') {
+                            const n = Math.max(1, parseInt(splitEveryInput.value, 10) || 1);
+                            statusEl.textContent = 'Splitting…';
+                            const files = await splitPdfEveryNPages(splitFile, n, baseFileName);
+                            await downloadFilesAsZip(files, `${baseFileName}-split.zip`);
+                            statusEl.textContent = `✓ Done — ${files.length} file(s) downloaded as a zip.`;
+                        } else {
+                            statusEl.textContent = 'Splitting into individual pages…';
+                            const files = await splitPdfEveryNPages(splitFile, 1, baseFileName);
+                            await downloadFilesAsZip(files, `${baseFileName}-pages.zip`);
+                            statusEl.textContent = `✓ Done — ${files.length} page(s) downloaded as a zip.`;
+                        }
+                    } else if (activeTab === 'translate') {
+                        const lang = translateLangSelect.value;
+                        progressTrack.style.display = 'block';
+                        progressBar.style.width = '0%';
+                        const translated = await translatePdfDocument(translateFile, lang, (done, total) => {
+                            const pct = total ? Math.round((done / total) * 100) : 0;
+                            progressBar.style.width = pct + '%';
+                            statusEl.textContent = `Translating… page ${Math.min(done + 1, total)} of ${total}`;
+                        });
+                        statusEl.textContent = 'Building translated PDF…';
+                        await downloadTextAsPDF(translated, `${baseName(translateFile.name)}-${lang.toLowerCase().replace(/[^a-z]+/g, '-')}.pdf`);
+                        progressBar.style.width = '100%';
+                        statusEl.textContent = '✓ Done — translated PDF downloaded.';
+                    }
+                } catch (err) {
+                    console.error('PDF Tools operation failed:', err);
+                    statusEl.textContent = `⚠ ${err.message || 'Something went wrong.'}`;
+                } finally {
+                    updateRunEnabled();
                 }
             };
         })();
@@ -11775,6 +12219,8 @@
                     sysInstruction += " ZIP requests: whenever the user asks you to zip, bundle, combine, package, or 'compress' files — whether those are files they just uploaded as attachments, files/code you generated earlier in this conversation, or brand new files you're writing now — respond with a SINGLE ```zip fenced code block containing a JSON array manifest: [{\"name\": \"path/file.ext\", \"content\": \"...full file content...\"}, ...]. Include the COMPLETE, exact content of every file being zipped (never truncate, summarize, or use placeholders like '...'). If the user says something like 'zip these two files' after uploading two attachments, reuse each attachment's full content verbatim as its own entry. If the user says 'zip that code' or 'zip what you just made' referring to something earlier in the conversation, pull the exact content of that earlier code block/file and put it in the manifest. Give each entry a sensible filename with extension. Do not wrap the zip block in any other code fence or explanation text around the JSON. Separately: when an ordinary (non-zip) reply contains multiple generated files/snippets, the UI automatically also offers a combined ZIP download for all of them — no action needed from you for that case.";
 
                     sysInstruction += " File conversion: if the user asks to convert a file's format — Word/docx to PDF, PDF to text, txt/markdown to docx, CSV to Excel/JSON, images between png/jpg/webp/bmp/gif, or audio/video between mp3/wav/ogg/m4a/mp4/webm/gif — tell them to use the 'Convert File' option in the attach (+) menu next to the message box: they pick the file and the target format there, and it converts and downloads it for real, right in the browser. Don't try to perform the conversion yourself inside the chat reply, and don't claim you can't do file conversion at all — point them to that button instead.";
+
+                    sysInstruction += " PDF tools: if the user asks to merge/combine multiple PDFs into one, split a PDF (extract specific pages, split every N pages, or split into individual pages), or translate a PDF into another language, tell them to use the 'PDF Tools' option in the attach (+) menu next to the message box (a separate button from 'Convert File'). They pick their PDF(s) there, choose Merge, Split, or Translate, and it runs and downloads the result for real, right in the browser — merges/splits preserve the original PDF content, and translation extracts the text, translates it with AI, and rebuilds it as a new PDF (note: the rebuilt translated PDF keeps the text and structure but not exact original layout/images). Don't try to perform these PDF operations yourself inside the chat reply, and don't claim you can't do them at all — point them to that button instead.";
 
                     sysInstruction += " Math and calculations: you can and should solve ANY math question fully — arithmetic, algebra, geometry, trigonometry, calculus, statistics, word problems, unit conversions, etc. Always show clear step-by-step working before the final answer, and double-check every calculation before giving it. This app has NO LaTeX or MathJax renderer, so never use LaTeX/TeX math syntax or dollar-sign math delimiters, and never use backslash commands such as frac, sqrt, or times — that would show up as broken raw text instead of a formula. Instead write math in plain text using real Unicode characters: superscripts like x², x³, xⁿ; roots like √x or ³√x; and symbols like π, ×, ÷, ±, ≈, ≠, ≤, ≥, °, ∞, Σ, Δ where natural. Write fractions as 'a/b' with a short explanation instead of a stacked fraction command. Use plain markdown (headings, bold, numbered steps) to structure the solution, exactly like the rest of your answers.";
 

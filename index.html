@@ -6240,6 +6240,26 @@
                 lowered.includes('denied access') || lowered.includes('permission_denied') || lowered.includes('permission denied');
         }
 
+        // Stops the current generation dead, drops the empty "thinking"
+        // placeholder bubble, and shows the Upgrade modal instead of
+        // letting the send either cascade to a lower tier or fail with a
+        // plain "try again later" error. Used once Ultimate hits its limit,
+        // and again once every tier (and every API key) is exhausted.
+        function stopWithUpgradePrompt(requestContextChatId, aiMsgIndex, message, title) {
+            const stopChat = JSON.parse(localStorage.getItem(requestContextChatId));
+            if (stopChat && stopChat.messages[aiMsgIndex]) {
+                stopChat.messages.splice(aiMsgIndex, 1);
+                localStorage.setItem(requestContextChatId, JSON.stringify(stopChat));
+            }
+            if (currentChatId === requestContextChatId) {
+                renderActiveChatMessages();
+            }
+            showPlanLimitModal(message, title);
+            const stopErr = new Error(title || 'Limit reached');
+            stopErr.name = 'AbortError';
+            throw stopErr;
+        }
+
         function downgradeAfterLimit() {
             markModelExhausted(MODEL_TIERS[activeTierIndex].key);
             renderModelDropdown();
@@ -11841,18 +11861,9 @@
                                 if (usedTier.key === 'ultimate') {
                                     markModelExhausted('ultimate');
                                     renderModelDropdown();
-                                    const stopChat = JSON.parse(localStorage.getItem(requestContextChatId));
-                                    if (stopChat && stopChat.messages[aiMsgIndex]) {
-                                        stopChat.messages.splice(aiMsgIndex, 1);
-                                        localStorage.setItem(requestContextChatId, JSON.stringify(stopChat));
-                                    }
-                                    if (currentChatId === requestContextChatId) {
-                                        renderActiveChatMessages();
-                                    }
-                                    showPlanLimitModal("You've reached the limit for Cavdo Ultimate. Upgrade your plan for more Ultimate messages, or pick another model from the selector.", 'Ultimate limit reached');
-                                    const ultimateLimitErr = new Error('Ultimate limit reached');
-                                    ultimateLimitErr.name = 'AbortError';
-                                    throw ultimateLimitErr;
+                                    stopWithUpgradePrompt(requestContextChatId, aiMsgIndex,
+                                        "You've reached the limit for Cavdo Ultimate. Upgrade your plan for more Ultimate messages, or pick another model from the selector.",
+                                        'Ultimate limit reached');
                                 }
                                 const nextTier = downgradeAfterLimit();
                                 if (!nextTier) {
@@ -11869,7 +11880,13 @@
                                         }
                                         continue;
                                     }
-                                    throw new Error("All available API keys have hit their limit. Please try again later.");
+                                    // Ultimate, Speed, and Lite are all exhausted, on
+                                    // every available key — nothing left to fall back
+                                    // to, so surface the upgrade prompt rather than a
+                                    // plain "try again later" error.
+                                    stopWithUpgradePrompt(requestContextChatId, aiMsgIndex,
+                                        "You've reached the limit for all models — Cavdo Ultimate, Speed, and Lite. Upgrade your plan for more messages, or wait for a limit to reset.",
+                                        'All models exhausted');
                                 }
                                 const switchChat = JSON.parse(localStorage.getItem(requestContextChatId));
                                 if (switchChat) {

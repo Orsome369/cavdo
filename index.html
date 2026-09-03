@@ -11463,7 +11463,7 @@
                 }
                 if (m.role === 'user') break; // only look at the immediately preceding AI turn's code
             }
-            const codeEditIntentRegex = /\b(nice|nicer|nicely|better|clean(?:er)?|cleanup|improve|improved|polish|prettier|refactor|optimi[sz]e|shorten|shorter|simplify|rewrite|comment|document|fix (it|this|that)|update (it|this|that)|modify (it|this|that)|change (it|this|that)|the code|this code|that code|make it|make this)\b/i;
+            const codeEditIntentRegex = /\b(nice|nicer|nicely|better|clean(?:er)?|cleanup|improve|improved|polish|prettier|refactor|optimi[sz]e|shorten|shorter|simplify|rewrite|comment|document|fix (it|this|that)|update (it|this|that)|modify (it|this|that)|change (it|this|that)|edit (it|this|that)|the code|this code|that code|make it|make this|don'?t want|do not want|remove (it|this|that)|delete (it|this|that)|get rid of|take (it|this|that) out|without this|drop (it|this|that))\b/i;
             const isCodeEditRequest = !!(lastCodeContext && selectedMode !== 'image' && !hasExplicitImageAsk && codeEditIntentRegex.test(lowerText));
             if (isCodeEditRequest) {
                 selectedMode = 'code';
@@ -11768,7 +11768,7 @@
                     }
 
                     if (isCodeEditRequest && lastCodeContext) {
-                        sysInstruction += " The user's message is a follow-up on the code you just gave them in your previous reply (something like 'make it nicer', 'clean this up', 'add a comment') — it is NOT a request for a new topic or an image. Treat their message as edit instructions for that exact code, keep the same language/structure unless asked otherwise, and return the complete updated code in a single fenced code block, not just the changed lines.";
+                        sysInstruction += " The user's message is a follow-up on the code you just gave them in your previous reply (something like 'make it nicer', 'clean this up', 'add a comment', 'I don't want this in the code', 'edit this', 'remove that part') — it is NOT a request for a new topic or an image. Treat their message as edit instructions for that exact code. Do NOT re-paste or rewrite the entire file/code from scratch — that wastes the user's time re-reading code that didn't change. Instead, return ONLY the specific part that changes: a short fenced code block containing just the lines being removed, added, or replaced, with a brief note on where it goes (e.g. which function/section it's in, or what line/block it replaces) so the user can find and swap it in themselves. Keep this targeted patch approach for any 'remove/delete/don't want/edit/change/fix that' style request. Only return the full, complete file/code again if the user explicitly asks for the whole thing (e.g. 'give me the full code', 'show the entire file', 'paste the whole thing').";
                     }
 
                     let aiText = null;

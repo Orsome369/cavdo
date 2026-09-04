@@ -10801,6 +10801,102 @@
             throw lastErr;
         }
 
+        // ------------------------------------------------------------
+        // 🧠 Real intent classification for "image is attached/in play" +
+        // a user message, done the way Gemini/Claude's own apps do it —
+        // via function calling, not regex keyword guessing.
+        //
+        // We hand the model ONE tool, `edit_image`, and tell it plainly:
+        // call this tool ONLY if the user wants the image itself modified;
+        // otherwise just answer normally (no call). The model actually
+        // reads the sentence — "what's in this photo?" and "remove the
+        // background from this photo" look identical to a keyword regex
+        // (both contain "this photo") but are trivially different to a
+        // model that understands grammar and intent.
+        //
+        // Two things come back:
+        //  - isEdit: true/false
+        //  - instruction: a clean, standalone edit instruction (only when
+        //    isEdit is true) — e.g. resolves "make it darker" against the
+        //    actual image content instead of passing the vague phrase on
+        //    verbatim.
+        //  - answer: when isEdit is false, the model's direct answer to
+        //    the user's question is returned here too, since it already
+        //    looked at the image to make the decision — so the caller can
+        //    often skip a second round-trip entirely.
+        // ------------------------------------------------------------
+        const EDIT_IMAGE_TOOL_DECLARATION = {
+            name: 'edit_image',
+            description: "Call this ONLY when the user is explicitly asking to modify, change, remove something from, add something to, or otherwise alter the attached/referenced image itself (e.g. 'remove the background', 'make it black and white', 'add a hat', 'crop it tighter'). Do NOT call this for questions about the image, requests to describe/explain/identify/read/analyze it, or general chat — for those, just answer normally in your response text without calling any tool.",
+            parameters: {
+                type: 'OBJECT',
+                properties: {
+                    instruction: {
+                        type: 'STRING',
+                        description: "A clean, self-contained instruction describing exactly what change to make to the image, written so an image-editing model with no other context could follow it (resolve any vague pronouns like 'it'/'that' against what you actually see in the image)."
+                    }
+                },
+                required: ['instruction']
+            }
+        };
+
+        async function classifyImageMessageIntentOnce(userText, base64, mimeType, apiKey) {
+            const model = getActiveTier().textModel;
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(20000),
+                body: JSON.stringify({
+                    systemInstruction: {
+                        parts: [{ text: "You are looking at an image the user attached or is referring to, plus their message. Decide: do they want the image itself MODIFIED (call edit_image), or are they asking a question / wanting a description / just chatting (in which case respond normally with no tool call — actually answer their question about the image using what you see in it)." }]
+                    },
+                    contents: [{
+                        role: 'user',
+                        parts: [
+                            { inline_data: { mime_type: mimeType || 'image/png', data: base64 } },
+                            { text: userText || '(no additional text — just the image)' }
+                        ]
+                    }],
+                    tools: [{ functionDeclarations: [EDIT_IMAGE_TOOL_DECLARATION] }]
+                })
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                const err = new Error((data && data.error && data.error.message) || `Intent classification failed (HTTP ${res.status}).`);
+                err.status = res.status;
+                throw err;
+            }
+            const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+            const callPart = parts.find(p => p.functionCall && p.functionCall.name === 'edit_image');
+            if (callPart) {
+                const instruction = (callPart.functionCall.args && callPart.functionCall.args.instruction) || userText;
+                return { isEdit: true, instruction: instruction, answer: null };
+            }
+            const textPart = parts.find(p => typeof p.text === 'string' && p.text.trim());
+            return { isEdit: false, instruction: null, answer: textPart ? textPart.text : null };
+        }
+
+        // Same key-rotation pattern as every other Gemini call in this app —
+        // one rate-limited/forbidden key shouldn't fail the whole decision.
+        async function classifyImageMessageIntent(userText, base64, mimeType) {
+            const maxKeyAttempts = sessionGeminiKeyOverride ? 1 : KEY_POOL.length;
+            let lastErr;
+            for (let i = 0; i < maxKeyAttempts; i++) {
+                const apiKey = getActiveGeminiKey();
+                try {
+                    return await classifyImageMessageIntentOnce(userText, base64, mimeType, apiKey);
+                } catch (err) {
+                    lastErr = err;
+                    const rotatable = !sessionGeminiKeyOverride && (err.status === 429 || err.status === 403) && i < maxKeyAttempts - 1;
+                    if (!rotatable) throw err;
+                    console.error(`Intent classification failed on key ${i + 1}/${maxKeyAttempts}, rotating:`, err);
+                    advanceApiKey();
+                }
+            }
+            throw lastErr;
+        }
+
         // Kontext needs a real, publicly fetchable image URL. We only have
         // that for images this app itself generated via the Pollinations
         // tier — a user's uploaded photo, or an image from the Cloudflare
@@ -11899,32 +11995,57 @@
                 }
             }
 
-            // Only genuine "change the pixels" verbs count as edit intent.
-            // Bare references to the image ("this image", "that photo")
-            // used to be lumped in here too, but a question ("what's in
-            // this image?", "describe this photo") uses that exact same
-            // phrasing without asking for any modification — so those
-            // phrases were removed from this list; see imageQuestionRegex
-            // below for how question-style messages are ruled out instead.
-            const editIntentRegex = /\b(edit|remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add)\b/i;
-            // If the message reads like a question/analysis request about
-            // the image ("what is this", "who is in this photo", "describe
-            // it", "how many...", anything ending in "?") treat it as
-            // analysis, not an edit — even if it happens to also contain an
-            // edit-y word (e.g. "does the color change in this photo?").
-            const imageQuestionRegex = /^\s*(what|who|where|when|why|how|is|are|does|do|did|can|could|will|would|should)\b|\b(describe|explain|tell me|identify|analy[sz]e|caption|summari[sz]e|read (the|this)|what'?s|who'?s|how many|how much)\b|\?\s*$/i;
-            // Words that mean the person is asking to edit something OTHER
-            // than the image (a document, PDF, webpage, plain text, code,
-            // or the AI's own written response) — even generic edit verbs
-            // like "add"/"change"/"remove" show up constantly in these
-            // requests too, so without this check any leftover image from
-            // earlier in the chat would wrongly hijack an unrelated
-            // text/code/PDF edit request into the "can't edit images" reply.
-            const nonImageEditContextRegex = /\b(pdf|document|doc|html|web ?page|website|text|response|message|paragraph|essay|article|file|code|script|sentence|title|heading|word|slide|presentation|spreadsheet)\b/i;
-            const isImageEditRequest = !!(lastImageContext && selectedMode !== 'code' && editIntentRegex.test(lowerText) && !imageQuestionRegex.test(lowerText) && (hasImageWord || !nonImageEditContextRegex.test(lowerText)));
-            if (isImageEditRequest) {
-                selectedMode = 'image';
+            // ------------------------------------------------------------
+            // 🧠 Deciding "edit this image" vs "answer a question about
+            // this image" vs "generate something new" used to be done with
+            // hand-written regexes matching words like "change"/"remove"/
+            // "this image". That approach fundamentally can't tell "remove
+            // the background from this photo" (an edit) apart from "does
+            // anything change in this photo?" (a question) — both contain
+            // the same trigger words. Real AI products (Gemini, Claude)
+            // don't guess like this: they hand the model a tool and let it
+            // read the sentence. We do the same here — one small
+            // function-calling request that actually looks at the image
+            // and the text together and decides for real.
+            // ------------------------------------------------------------
+            let isImageEditRequest = false;
+            if (lastImageContext && selectedMode !== 'code') {
+                try {
+                    // Only the isEdit/instruction fields are used here — the
+                    // classifier's own draft "answer" is deliberately
+                    // discarded rather than reused, so that a real vision
+                    // question always gets generated by the full pipeline
+                    // below (with the real chat history and all of this
+                    // app's system-prompt rules for formatting, greetings,
+                    // diagrams, etc.) instead of a lighter-weight answer
+                    // that skipped all of that.
+                    const intent = await classifyImageMessageIntent(text, lastImageContext.base64, lastImageContext.mimeType);
+                    if (intent.isEdit) {
+                        isImageEditRequest = true;
+                        selectedMode = 'image';
+                        // Use the model's own cleaned-up, disambiguated
+                        // instruction (it resolved "it"/"that" against what
+                        // it actually saw) instead of the raw user text.
+                        text = intent.instruction || text;
+                    } else {
+                        // Not an edit — make sure a bare noun like "image"/
+                        // "photo" in the question ("what's in this image?")
+                        // can't still route this into image-GENERATION mode
+                        // below; force it into the normal text/vision reply
+                        // path, which sends the attached image along too.
+                        selectedMode = 'text';
+                    }
+                } catch (classifyErr) {
+                    // Classification itself failed (network hiccup, rate
+                    // limit, etc.) — fail safe into the plain text/vision
+                    // path rather than silently guessing with regex again;
+                    // the normal reply flow below still has the image and
+                    // will answer correctly.
+                    console.error('Image intent classification failed, falling back to text/vision reply:', classifyErr);
+                    selectedMode = 'text';
+                }
             }
+
 
             // ------------------------------------------------------------
             // 🧠 Code follow-up memory: same idea as the image memory above,

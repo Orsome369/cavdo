@@ -10854,7 +10854,7 @@
                     contents: [{
                         role: 'user',
                         parts: [
-                            { inline_data: { mime_type: mimeType || 'image/png', data: base64 } },
+                            { inlineData: { mimeType: mimeType || 'image/png', data: base64 } },
                             { text: userText || '(no additional text — just the image)' }
                         ]
                     }],
@@ -12037,12 +12037,22 @@
                     }
                 } catch (classifyErr) {
                     // Classification itself failed (network hiccup, rate
-                    // limit, etc.) — fail safe into the plain text/vision
-                    // path rather than silently guessing with regex again;
-                    // the normal reply flow below still has the image and
-                    // will answer correctly.
-                    console.error('Image intent classification failed, falling back to text/vision reply:', classifyErr);
-                    selectedMode = 'text';
+                    // limit, malformed response, etc.) — don't silently
+                    // assume "not an edit" (that would mean a real edit
+                    // request quietly turns into a text answer with no
+                    // image, which looks like the edit just vanished).
+                    // Fall back to a simple local keyword check instead, so
+                    // an obvious request like "edit this image: remove the
+                    // background" still gets routed to editing even when
+                    // the classification call itself couldn't be made.
+                    console.error('Image intent classification failed, falling back to keyword check:', classifyErr);
+                    const fallbackEditRegex = /\b(edit|remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add)\b/i;
+                    if (fallbackEditRegex.test(lowerText)) {
+                        isImageEditRequest = true;
+                        selectedMode = 'image';
+                    } else {
+                        selectedMode = 'text';
+                    }
                 }
             }
 

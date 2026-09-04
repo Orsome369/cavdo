@@ -11899,7 +11899,20 @@
                 }
             }
 
-            const editIntentRegex = /\b(edit|remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add|this image|that image|the image|this photo|that photo|the photo|it,|to it|of it)\b/i;
+            // Only genuine "change the pixels" verbs count as edit intent.
+            // Bare references to the image ("this image", "that photo")
+            // used to be lumped in here too, but a question ("what's in
+            // this image?", "describe this photo") uses that exact same
+            // phrasing without asking for any modification — so those
+            // phrases were removed from this list; see imageQuestionRegex
+            // below for how question-style messages are ruled out instead.
+            const editIntentRegex = /\b(edit|remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add)\b/i;
+            // If the message reads like a question/analysis request about
+            // the image ("what is this", "who is in this photo", "describe
+            // it", "how many...", anything ending in "?") treat it as
+            // analysis, not an edit — even if it happens to also contain an
+            // edit-y word (e.g. "does the color change in this photo?").
+            const imageQuestionRegex = /^\s*(what|who|where|when|why|how|is|are|does|do|did|can|could|will|would|should)\b|\b(describe|explain|tell me|identify|analy[sz]e|caption|summari[sz]e|read (the|this)|what'?s|who'?s|how many|how much)\b|\?\s*$/i;
             // Words that mean the person is asking to edit something OTHER
             // than the image (a document, PDF, webpage, plain text, code,
             // or the AI's own written response) — even generic edit verbs
@@ -11908,7 +11921,7 @@
             // earlier in the chat would wrongly hijack an unrelated
             // text/code/PDF edit request into the "can't edit images" reply.
             const nonImageEditContextRegex = /\b(pdf|document|doc|html|web ?page|website|text|response|message|paragraph|essay|article|file|code|script|sentence|title|heading|word|slide|presentation|spreadsheet)\b/i;
-            const isImageEditRequest = !!(lastImageContext && selectedMode !== 'code' && editIntentRegex.test(lowerText) && (hasImageWord || !nonImageEditContextRegex.test(lowerText)));
+            const isImageEditRequest = !!(lastImageContext && selectedMode !== 'code' && editIntentRegex.test(lowerText) && !imageQuestionRegex.test(lowerText) && (hasImageWord || !nonImageEditContextRegex.test(lowerText)));
             if (isImageEditRequest) {
                 selectedMode = 'image';
             }

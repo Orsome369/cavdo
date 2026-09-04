@@ -7357,6 +7357,48 @@
             renderAttachmentTray();
         }
 
+        // Edit/Resend and Regenerate both delete the original message and
+        // then call sendMessage() again, but sendMessage() only ever
+        // attaches whatever is currently sitting in `pendingAttachments`
+        // (the composer bar's live upload state) — it has no idea the
+        // message being resent used to have a file/image on it. Since the
+        // composer is empty at that point, the resend went out as text-only
+        // and the attachment was gone for good. This rebuilds a
+        // pendingAttachments-shaped array from the ORIGINAL message (new
+        // multi-file `files` array, or the legacy single `imgData`/
+        // `fileName`+`fileText` fields) so it can be restored into the
+        // composer right before the resend fires.
+        function restorePendingAttachmentsFromMessage(msg) {
+            if (!msg) return [];
+            const source = [];
+            if (Array.isArray(msg.files)) {
+                msg.files.forEach(f => source.push(f));
+            }
+            if (msg.imgData) {
+                source.push({ name: msg.text || 'Uploaded Attachment', isImage: true, base64: msg.imgData.base64, type: msg.imgData.mimeType });
+            } else if (msg.fileName) {
+                source.push({ name: msg.fileName, isImage: false, textContent: msg.fileText });
+            }
+            return source.map(f => {
+                const base64 = resolveAttachmentBase64(f);
+                const missing = (f.isImage || f.isVideo) && !base64;
+                return {
+                    id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    name: f.name,
+                    type: f.type || (f.isImage ? 'image/png' : ''),
+                    size: f.size || 0,
+                    isImage: !!f.isImage,
+                    isVideo: !!f.isVideo,
+                    base64: base64 || null,
+                    textContent: f.textContent || null,
+                    previewSrc: (f.isImage && base64) ? `data:${f.type || 'image/png'};base64,${base64}` : (f.previewSrc || null),
+                    isLoading: false,
+                    isError: missing,
+                    status: missing ? "Couldn't restore this attachment for resend" : 'attached'
+                };
+            });
+        }
+
         // ==========================================
         // Split-screen HTML Preview / Code panel
         // ==========================================
@@ -10854,7 +10896,7 @@
                     contents: [{
                         role: 'user',
                         parts: [
-                            { inlineData: { mimeType: mimeType || 'image/png', data: base64 } },
+                            { inline_data: { mime_type: mimeType || 'image/png', data: base64 } },
                             { text: userText || '(no additional text — just the image)' }
                         ]
                     }],
@@ -11444,9 +11486,12 @@
             if (!msg || msg.role !== 'user') return;
 
             window.__cavdoPendingMsgVersions = buildCarriedVersions(chat, index, msg.text);
+            const restoredAttachments = restorePendingAttachmentsFromMessage(msg);
             chat.messages = chat.messages.slice(0, index);
             localStorage.setItem(currentChatId, JSON.stringify(chat));
             userInput.value = msg.text;
+            pendingAttachments = restoredAttachments;
+            renderAttachmentTray();
             sendMessage();
         };
 
@@ -11516,10 +11561,19 @@
                 const finishEdit = () => {
                     const chat = JSON.parse(localStorage.getItem(currentChatId));
                     if (!chat) return;
+                    const originalMsg = chat.messages[index];
                     window.__cavdoPendingMsgVersions = buildCarriedVersions(chat, index, updatedText);
+                    // Grab any attachment(s) off the message BEFORE it gets
+                    // spliced out below, and load them back into the
+                    // composer's pendingAttachments so sendMessage() re-sends
+                    // them along with the edited text instead of dropping
+                    // them (see restorePendingAttachmentsFromMessage).
+                    const restoredAttachments = restorePendingAttachmentsFromMessage(originalMsg);
                     chat.messages = chat.messages.slice(0, index);
                     localStorage.setItem(currentChatId, JSON.stringify(chat));
                     userInput.value = updatedText;
+                    pendingAttachments = restoredAttachments;
+                    renderAttachmentTray();
                     sendMessage();
                 };
 
@@ -12037,22 +12091,12 @@
                     }
                 } catch (classifyErr) {
                     // Classification itself failed (network hiccup, rate
-                    // limit, malformed response, etc.) — don't silently
-                    // assume "not an edit" (that would mean a real edit
-                    // request quietly turns into a text answer with no
-                    // image, which looks like the edit just vanished).
-                    // Fall back to a simple local keyword check instead, so
-                    // an obvious request like "edit this image: remove the
-                    // background" still gets routed to editing even when
-                    // the classification call itself couldn't be made.
-                    console.error('Image intent classification failed, falling back to keyword check:', classifyErr);
-                    const fallbackEditRegex = /\b(edit|remove|delete|erase|replace|add|change|make it|turn it|instead|without|keep|now add)\b/i;
-                    if (fallbackEditRegex.test(lowerText)) {
-                        isImageEditRequest = true;
-                        selectedMode = 'image';
-                    } else {
-                        selectedMode = 'text';
-                    }
+                    // limit, etc.) — fail safe into the plain text/vision
+                    // path rather than silently guessing with regex again;
+                    // the normal reply flow below still has the image and
+                    // will answer correctly.
+                    console.error('Image intent classification failed, falling back to text/vision reply:', classifyErr);
+                    selectedMode = 'text';
                 }
             }
 
@@ -12119,7 +12163,11 @@
                             ? ['✨ Reading your request', '✨ Planning the code', '✨ Writing the implementation', '✨ Double-checking syntax']
                             : ['✨ Reading your message', '✨ Thinking it through', '✨ Structuring the response', '✨ Polishing the answer'];
 
-            const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true };
+            // Tagged onto the AI placeholder so resumeStuckGenerations() can
+            // find the matching backup job later if this tab closes or loses
+            // connection before the reply finishes locally.
+            const bgJobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            const aiMsg = { role: 'ai', text: thinkingPhrases[0], isThinking: true, bgJobId: bgJobId };
             chatData.messages.push(aiMsg);
             localStorage.setItem(requestContextChatId, JSON.stringify(chatData));
 
@@ -12384,6 +12432,17 @@
                     if (isCodeEditRequest && lastCodeContext) {
                         sysInstruction += " The user's message is a follow-up on the code you just gave them in your previous reply (something like 'make it nicer', 'clean this up', 'add a comment', 'I don't want this in the code', 'edit this', 'remove that part') — it is NOT a request for a new topic or an image. Treat their message as edit instructions for that exact code. Do NOT re-paste or rewrite the entire file/code from scratch — that wastes the user's time re-reading code that didn't change. Instead, return ONLY the specific part that changes: a short fenced code block containing just the lines being removed, added, or replaced, with a brief note on where it goes (e.g. which function/section it's in, or what line/block it replaces) so the user can find and swap it in themselves. Keep this targeted patch approach for any 'remove/delete/don't want/edit/change/fix that' style request. Only return the full, complete file/code again if the user explicitly asks for the whole thing (e.g. 'give me the full code', 'show the entire file', 'paste the whole thing').";
                     }
+
+                    // Fire the backup job in parallel with the local retry
+                    // loop below — best-effort insurance against this tab
+                    // closing or losing connection before the loop finishes.
+                    // It does not affect or wait on anything below.
+                    submitBackupGenerationJob(
+                        bgJobId,
+                        MODEL_TIERS.map(t => (selectedMode === 'code') ? t.codeModel : t.textModel),
+                        sysInstruction,
+                        buildApiPayload(chatData.messages.slice(0, -1))
+                    );
 
                     let aiText = null;
                     const maxAttempts = MODEL_TIERS.length * KEY_POOL.length;
@@ -13189,6 +13248,79 @@
         firebase.initializeApp(firebaseConfig);
         const cavdoAuth = firebase.auth();
         const cavdoDb = firebase.firestore();
+
+        // ------------------------------------------------------------
+        // ☁️ Backup generation job (Cloudflare Worker)
+        //
+        // The existing client-side retry loop (tiers, key rotation, quota
+        // tracking) still runs exactly as before whenever the tab is open —
+        // this is NOT a replacement for it. In parallel, a copy of the same
+        // request is sent to a Cloudflare Worker, which keeps generating on
+        // Cloudflare's servers even if this tab closes or the connection
+        // drops. The result is written to a small Firestore doc
+        // (jobs/{jobId}); if the local generation never finishes because the
+        // tab/connection died, the next time the app opens it checks for a
+        // finished job and fills the answer in instead of leaving the
+        // message stuck on "Thinking…" forever. See resumeStuckGenerations().
+        // ------------------------------------------------------------
+        const CAVDO_WORKER_URL = 'https://cavdo-ai-worker.samyak7savatkar.workers.dev';
+
+        function submitBackupGenerationJob(jobId, models, systemInstruction, contents) {
+            const uid = cavdoAuth.currentUser && cavdoAuth.currentUser.uid;
+            if (!uid) return; // not signed in — no account to attach the backup job to
+            fetch(CAVDO_WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid, jobId, models, keys: KEY_POOL, systemInstruction, contents })
+            }).catch(() => {
+                // The backup job is best-effort insurance — if this request
+                // itself fails to even go out (e.g. offline right now), the
+                // normal client-side generation below is still the primary
+                // path and this silently does nothing further.
+            });
+        }
+
+        // On load (and whenever the tab becomes visible/back online), check
+        // every chat left mid-generation for a finished backup job and fill
+        // it in. This is what makes a closed-tab or dropped-connection
+        // generation "just show up" instead of needing a manual resume.
+        async function resumeStuckGenerations() {
+            const uid = cavdoAuth.currentUser && cavdoAuth.currentUser.uid;
+            if (!uid) return;
+            const chatKeys = Object.keys(localStorage).filter(k => k.startsWith('cavdo_chat_'));
+            for (const key of chatKeys) {
+                let chat;
+                try { chat = JSON.parse(localStorage.getItem(key)); } catch (e) { continue; }
+                if (!chat || !chat.isGeneratingInBg || !Array.isArray(chat.messages)) continue;
+
+                const lastMsg = chat.messages[chat.messages.length - 1];
+                if (!lastMsg || lastMsg.role !== 'ai' || !lastMsg.isThinking || !lastMsg.bgJobId) continue;
+
+                try {
+                    const jobSnap = await cavdoDb.collection('jobs').doc(lastMsg.bgJobId).get();
+                    if (!jobSnap.exists) continue;
+                    const job = jobSnap.data();
+                    if (job.status === 'done' || job.status === 'error') {
+                        const freshChat = JSON.parse(localStorage.getItem(key));
+                        const idx = freshChat.messages.length - 1;
+                        freshChat.messages[idx].text = job.status === 'done'
+                            ? (job.text || "Empty response received.")
+                            : "Something went wrong generating this reply (connection was lost mid-response). Please try again.";
+                        freshChat.messages[idx].isThinking = false;
+                        freshChat.isGeneratingInBg = false;
+                        localStorage.setItem(key, JSON.stringify(freshChat));
+                        if (currentChatId === key) renderActiveChatMessages();
+                        loadHistoryList();
+                    }
+                } catch (e) {
+                    console.error('Could not check backup generation job:', e);
+                }
+            }
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') resumeStuckGenerations();
+        });
+        window.addEventListener('online', resumeStuckGenerations);
         // Firestore's default transport (WebChannel streaming) gets silently
         // blocked by some ad-blockers/privacy extensions and restrictive
         // networks — requests don't error, they just hang until our own
@@ -13866,6 +13998,10 @@
                     showStep('login');
                     return;
                 }
+
+                // Fire-and-forget: pick up any generation that finished on the
+                // Cloudflare Worker while this device was offline/closed.
+                resumeStuckGenerations();
 
                 try {
                     var redirectResult = await redirectResultPromise;
